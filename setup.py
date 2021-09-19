@@ -42,19 +42,19 @@ setup(
         'Programming Language :: Python :: 3 :: Only',
     ],
 
-    package_dir={'': 'python'},  # Optional
-
-    packages=find_packages(where='python'),  # Required
+    packages=find_packages(),  # Required
 
     python_requires='>=3.6, <4',
 
-    install_requires=['torch', 'torch_geometric'],  # Optional
+    install_requires=['torch', 'torch_geometric', 'pytest'],  # Optional
 
     extras_require={  # Optional
-        'test': ['coverage'],
+        'test': ['pytest'],
     },
 
     project_urls={  # Optional
         'Source': 'https://github.com/Jokeren/fasten'
     },
+
+    include_package_data=True,
 )
