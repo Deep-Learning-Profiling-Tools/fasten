@@ -1,4 +1,4 @@
-# FASTEN: A **FAST** Library for H**e**teroge**n**ous Graphs
+# FASTEN: A *Fast* Library for H*e*teroge*n*ous Graphs
 
 ## Introduction
 

@@ -2,15 +2,13 @@ import torch
 
 
 class TensorSlice:
-    def __init__(self, tensor: torch.Tensor, type_slices: list = []) -> None:
+    def __init__(self, tensor: torch.tensor, type_slices: list = None) -> None:
         self._tensor = tensor
-        self._type_slices = type_slices
+        self._type_slices = type_slices or []
 
-    @property
     def tensor(self):
         return self._tensor
 
-    @property
     def type_slices(self):
         return self._type_slices
 
@@ -30,35 +28,38 @@ class HeteroOps:
             for _ in range(nstreams):
                 self._streams.append(torch.cuda.Stream())
 
-    def compact(self, tensor: torch.Tensor, types: torch.Tensor, descending: bool = False) -> TensorSlice:
+    def compact(self, tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> TensorSlice:
         '''
             Sort a tensor (node or edge) according to their types.
 
             Args:
-                tensor: the torch Tensor data
+                tensor: the torch tensor data
                 types: the type of each entry
                 descending: sort the tensor in the descending order
 
             Returns:
                 TensorSlice
         '''
-        sorted_type, type_indices = torch.sort(types, descending=descending)
+        sorted_types, type_indices = torch.sort(types, descending=descending)
         sorted_tensor = tensor[type_indices]
-        unique_type, type_counts = torch.unique(
-            sorted_type, sorted=True, return_inverse=False, return_counts=True)
+        # This function is different from torch.unique() in the sense that this function only eliminates
+        # consecutive duplicate values. This semantics is similar to std::unique in C++.
+        # torch.unique() may sort elements even if sorted is specified.
+        unique_types, type_counts = torch.unique_consecutive(
+            sorted_types, return_inverse=False, return_counts=True)
 
         tensor_slice = TensorSlice(sorted_tensor)
         cur_index = 0
-        for i in range(len(unique_type)):
+        for i in range(len(unique_types)):
             # Ensure slice is on CPU
             type_slice = (
-                unique_type[i].item(), slice(cur_index, cur_index + type_counts[i].item()))
+                unique_types[i].item(), slice(cur_index, cur_index + type_counts[i].item()))
             tensor_slice.append(type_slice)
             cur_index += type_counts[i].item()
 
         return tensor_slice
 
-    def bmm(self, input: TensorSlice, other: TensorSlice) -> torch.Tensor:
+    def bmm(self, input: TensorSlice, other: TensorSlice) -> torch.tensor:
         '''
             Batch multiple input with other, where input and other contains many subslices with different sizes
 
@@ -73,13 +74,13 @@ class HeteroOps:
                 other: A TensorSlice
 
             Returns:
-                torch.Tensor: A 1-d torch Tensor
+                torch.tensor: A 1-d torch Tensor
         '''
 
-        def _apply_native(self, input: TensorSlice, other: TensorSlice) -> torch.Tensor:
+        def apply_native(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             pass
 
-        def _apply_streams(self, input: TensorSlice, other: TensorSlice) -> torch.Tensor:
+        def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             output_size: int = 0
             input_tensors = []
             other_tensors = []
@@ -92,7 +93,7 @@ class HeteroOps:
                 other_tensors.append(other_tensor)
                 output_size += input_tensor.shape[0] * other_tensor.shape[1]
 
-            output = torch.Tensor(output_size, device=self._device)
+            output = torch.tensor(output_size, device=self._device)
 
             cur_size = 0
             for i in range(len(input.type_slices)):
@@ -100,15 +101,15 @@ class HeteroOps:
                 input_tensor = input_tensors[i]
                 other_tensor = other_tensors[i]
                 size = input_tensor.shape[0] * other_tensor.shape[1]
-                with self._streams[stream_id]:
+                with torch.cuda.stream(self._streams[stream_id]):
                     torch.matmul(input_tensor, other_tensor,
-                                 output[(cur_size, cur_size + size)])
+                                 output[slice(cur_size, cur_size + size)])
                 cur_size += size
             torch.cuda.synchronize()
 
             return output
 
         if self._native is True:
-            self._apply_native(input, other)
+            apply_native(input, other)
         else:
-            self._apply_streams(input, other)
+            apply_streams(input, other)
