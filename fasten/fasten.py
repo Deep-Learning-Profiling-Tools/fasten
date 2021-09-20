@@ -6,9 +6,11 @@ class TensorSlice:
         self._tensor = tensor
         self._type_slices = type_slices or []
 
+    @property
     def tensor(self):
         return self._tensor
 
+    @property
     def type_slices(self):
         return self._type_slices
 
@@ -81,35 +83,31 @@ class HeteroOps:
             pass
 
         def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
-            output_size: int = 0
-            input_tensors = []
-            other_tensors = []
-            for i in range(len(input.type_slices)):
-                input_slice = input.type_slices[i]
-                other_slice = other.type_slices[i]
-                input_tensor = input.tensor[input_slice[1], :]
-                other_tensor = other.tensor[other_slice[1], :]
-                input_tensors.append(input_tensor)
-                other_tensors.append(other_tensor)
-                output_size += input_tensor.shape[0] * other_tensor.shape[1]
-
-            output = torch.tensor(output_size, device=self._device)
+            output_size = input.tensor.shape[0] * other.tensor.shape[-1]
+            output = torch.empty(
+                output_size, device=self._device, dtype=input.tensor.dtype)
 
             cur_size = 0
             for i in range(len(input.type_slices)):
                 stream_id = i % self._nstreams
-                input_tensor = input_tensors[i]
-                other_tensor = other_tensors[i]
-                size = input_tensor.shape[0] * other_tensor.shape[1]
+                input_slice = input.type_slices[i]
+                other_slice = other.type_slices[i]
+                input_tensor = input.tensor[input_slice[1], :]
+                other_tensor = other.tensor[other_slice[1], :].squeeze(0)
+                size = input_tensor.shape[0] * other_tensor.shape[-1]
+                output_slice = output[slice(cur_size, cur_size + size)]
+                output_slice = output_slice.view(
+                    input_tensor.shape[0], other_tensor.shape[-1])
                 with torch.cuda.stream(self._streams[stream_id]):
-                    torch.matmul(input_tensor, other_tensor,
-                                 output[slice(cur_size, cur_size + size)])
+                    torch.matmul(input_tensor, other_tensor, out=output_slice)
                 cur_size += size
-            torch.cuda.synchronize()
 
-            return output
+            if self._nstreams > 1:
+                torch.cuda.synchronize()
+
+            return output.view(input.tensor.shape[0], other.tensor.shape[-1])
 
         if self._native is True:
-            apply_native(input, other)
+            return apply_native(input, other)
         else:
-            apply_streams(input, other)
+            return apply_streams(input, other)
