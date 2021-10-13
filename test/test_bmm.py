@@ -57,7 +57,7 @@ def speed():
 
     ret1 = run('Single stream', single_stream_ops)
     ret2 = run('Multi streams', multi_stream_ops)
-    assert(torch.equal(ret1, ret2) is True)
+    assert(torch.allclose(ret1, ret2) is True)
 
 
 def test_bmm():
