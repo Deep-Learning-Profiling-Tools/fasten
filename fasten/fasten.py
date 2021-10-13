@@ -65,9 +65,9 @@ class HeteroOps:
         '''
             Batch multiple input with other, where input and other contains many subslices with different sizes
 
-            [b1, k] x [k, n]
-            [b2, k] x [k, n]
-            [b3, k] x [k, n]
+            [m1, k] x [k, n] -> [m1, n]
+            [m2, k] x [k, n] -> [m2, n]
+            [m3, k] x [k, n] -> [m3, n]
 
             The output can be reshaped into a 2-d tensor using reshape(-1, n)
 
@@ -102,7 +102,7 @@ class HeteroOps:
                     torch.matmul(input_tensor, other_tensor, out=output_slice)
                 cur_size += size
 
-            if self._nstreams > 1:
+            if self._nstreams >= 1:
                 torch.cuda.synchronize()
 
             return output.view(input.tensor.shape[0], other.tensor.shape[-1])

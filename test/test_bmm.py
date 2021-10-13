@@ -3,10 +3,10 @@ import fasten
 import torch
 
 device = torch.device('cuda:0')
-ops = fasten.HeteroOps(device)
 
 
 def correctness():
+    ops = fasten.HeteroOps(device)
     input_slice = [(1, slice(0, 2)), (2, slice(2, 3))]
     input = torch.tensor([[1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
@@ -24,8 +24,42 @@ def correctness():
 # 1. Compare single stream vs multiple streams
 # 2. Compare bmm + index vs heterogenous bmm
 def speed():
-    pass
+    # 16 edge types
+    input = torch.rand((2 << 8, 2 << 14), dtype=torch.float, device=device)
+    other = torch.rand((16, 2 << 14, 2 << 8), dtype=torch.float, device=device)
+    input_types = torch.randint(0, 16, (128,), dtype=torch.int, device=device)
+    other_types = torch.arange(0, 16, device=device)
+
+    def run(test_name, ops):
+        repeat = 3
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        input_tensor_slice = ops.compact(input, input_types)
+        other_tensor_slice = ops.compact(other, other_types)
+
+        ops.bmm(input_tensor_slice, other_tensor_slice)
+
+        start_event.record()
+        for _ in range(repeat):
+            ret = ops.bmm(input_tensor_slice, other_tensor_slice)
+        end_event.record()
+        end_event.synchronize()
+
+        ms = start_event.elapsed_time(end_event) / repeat
+
+        print('{}: {} ms'.format(test_name, ms))
+
+        return ret
+
+    single_stream_ops = fasten.HeteroOps(device)
+    multi_stream_ops = fasten.HeteroOps(device, nstreams=8)
+
+    ret1 = run('Single stream', single_stream_ops)
+    ret2 = run('Multi streams', multi_stream_ops)
+    assert(torch.equal(ret1, ret2) is True)
 
 
 def test_bmm():
     correctness()
+    speed()
