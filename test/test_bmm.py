@@ -25,10 +25,11 @@ def correctness():
 # 2. Compare bmm + index vs heterogenous bmm
 def speed():
     # 16 edge types
-    input = torch.rand((2 << 8, 2 << 14), dtype=torch.float, device=device)
-    other = torch.rand((16, 2 << 14, 2 << 8), dtype=torch.float, device=device)
-    input_types = torch.randint(0, 16, (128,), dtype=torch.int, device=device)
-    other_types = torch.arange(0, 16, device=device)
+    input = torch.rand((16384, 16), dtype=torch.float, device=device)
+    other = torch.rand((128, 16, 8), dtype=torch.float, device=device)
+    input_types = torch.randint(
+        0, 128, (16384,), dtype=torch.int, device=device)
+    other_types = torch.arange(0, 128, device=device)
 
     def run(test_name, ops):
         repeat = 3
