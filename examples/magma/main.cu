@@ -72,17 +72,17 @@ static void setup() {
   RUNTIME_API_CALL(cudaMalloc(&r_gpu, sizeof(float) * K * N * B));
   RUNTIME_API_CALL(cudaMalloc(&p_gpu, sizeof(float) * M * N));
 
-	RUNTIME_API_CALL(cudaMalloc(&m_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
-	RUNTIME_API_CALL(cudaMalloc(&n_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
-	RUNTIME_API_CALL(cudaMalloc(&k_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
+  RUNTIME_API_CALL(cudaMalloc(&m_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
+  RUNTIME_API_CALL(cudaMalloc(&n_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
+  RUNTIME_API_CALL(cudaMalloc(&k_shapes_gpu, sizeof(magma_int_t) * (B + 1)));
 
   RUNTIME_API_CALL(cudaMalloc(&l_ldd_gpu, sizeof(magma_int_t) * (B + 1)));
   RUNTIME_API_CALL(cudaMalloc(&r_ldd_gpu, sizeof(magma_int_t) * (B + 1)));
   RUNTIME_API_CALL(cudaMalloc(&p_ldd_gpu, sizeof(magma_int_t) * (B + 1)));
 
-	RUNTIME_API_CALL(cudaMalloc(&l_gpu_arr_gpu, sizeof(float *) * B));
-	RUNTIME_API_CALL(cudaMalloc(&r_gpu_arr_gpu, sizeof(float *) * B));
-	RUNTIME_API_CALL(cudaMalloc(&p_gpu_arr_gpu, sizeof(float *) * B));
+  RUNTIME_API_CALL(cudaMalloc(&l_gpu_arr_gpu, sizeof(float *) * B));
+  RUNTIME_API_CALL(cudaMalloc(&r_gpu_arr_gpu, sizeof(float *) * B));
+  RUNTIME_API_CALL(cudaMalloc(&p_gpu_arr_gpu, sizeof(float *) * B));
 }
 
 static void cleanup() {
@@ -94,17 +94,17 @@ static void cleanup() {
   RUNTIME_API_CALL(cudaFree(r_gpu));
   RUNTIME_API_CALL(cudaFree(p_gpu));
 
-	RUNTIME_API_CALL(cudaFree(m_shapes_gpu));
-	RUNTIME_API_CALL(cudaFree(n_shapes_gpu));
-	RUNTIME_API_CALL(cudaFree(k_shapes_gpu));
+  RUNTIME_API_CALL(cudaFree(m_shapes_gpu));
+  RUNTIME_API_CALL(cudaFree(n_shapes_gpu));
+  RUNTIME_API_CALL(cudaFree(k_shapes_gpu));
 
-	RUNTIME_API_CALL(cudaFree(l_ldd_gpu));
-	RUNTIME_API_CALL(cudaFree(r_ldd_gpu));
-	RUNTIME_API_CALL(cudaFree(p_ldd_gpu));
+  RUNTIME_API_CALL(cudaFree(l_ldd_gpu));
+  RUNTIME_API_CALL(cudaFree(r_ldd_gpu));
+  RUNTIME_API_CALL(cudaFree(p_ldd_gpu));
 
-	RUNTIME_API_CALL(cudaFree(l_gpu_arr_gpu));
-	RUNTIME_API_CALL(cudaFree(r_gpu_arr_gpu));
-	RUNTIME_API_CALL(cudaFree(p_gpu_arr_gpu));
+  RUNTIME_API_CALL(cudaFree(l_gpu_arr_gpu));
+  RUNTIME_API_CALL(cudaFree(r_gpu_arr_gpu));
+  RUNTIME_API_CALL(cudaFree(p_gpu_arr_gpu));
 
   magma_queue_destroy(queue);
   magma_finalize();
@@ -120,7 +120,7 @@ static void init() {
     m_shapes_cpu[i] = M / B;
     n_shapes_cpu[i] = N;
     k_shapes_cpu[i] = K;
-		// column major
+    // column major
     l_ldd_cpu[i] = m_shapes_cpu[i];
     r_ldd_cpu[i] = K;
     p_ldd_cpu[i] = m_shapes_cpu[i];
@@ -129,17 +129,17 @@ static void init() {
     p_gpu_arr_cpu[i] = p_gpu + i * m_shapes_cpu[i] * N;
   }
 
-	RUNTIME_API_CALL(cudaMemcpy(m_shapes_gpu, m_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
-	RUNTIME_API_CALL(cudaMemcpy(n_shapes_gpu, n_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
-	RUNTIME_API_CALL(cudaMemcpy(k_shapes_gpu, k_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(m_shapes_gpu, m_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(n_shapes_gpu, n_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(k_shapes_gpu, k_shapes_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
 
   RUNTIME_API_CALL(cudaMemcpy(l_ldd_gpu, l_ldd_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
   RUNTIME_API_CALL(cudaMemcpy(r_ldd_gpu, r_ldd_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
   RUNTIME_API_CALL(cudaMemcpy(p_ldd_gpu, p_ldd_cpu, sizeof(magma_int_t) * B, cudaMemcpyHostToDevice));
 
-	RUNTIME_API_CALL(cudaMemcpy(l_gpu_arr_gpu, l_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
-	RUNTIME_API_CALL(cudaMemcpy(r_gpu_arr_gpu, r_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
-	RUNTIME_API_CALL(cudaMemcpy(p_gpu_arr_gpu, p_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(l_gpu_arr_gpu, l_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(r_gpu_arr_gpu, r_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
+  RUNTIME_API_CALL(cudaMemcpy(p_gpu_arr_gpu, p_gpu_arr_cpu, sizeof(float *) * B, cudaMemcpyHostToDevice));
 }
 
 static void compute() {
@@ -169,7 +169,7 @@ static void compute() {
 
   float ms = 0.0;
   RUNTIME_API_CALL(cudaEventElapsedTime(&ms, start_event, end_event));
-	std::cout << "Elapsed time: " << ms << "ms" << std::endl;
+  std::cout << "Elapsed time: " << ms << "ms" << std::endl;
   
   RUNTIME_API_CALL(cudaEventDestroy(start_event));
   RUNTIME_API_CALL(cudaEventDestroy(end_event));
