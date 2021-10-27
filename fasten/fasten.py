@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Union
+
 import torch
 
 
@@ -8,23 +10,24 @@ class TensorSlice:
 
         Args:
             tensor: A PyTorch Tensor
-            type_slices: A list of slices that store the offset of each sub-tensor with the same type
+            slices: A 3-dim PyTorch Tensor, where each row represents [type, start, end].
+                    It can also be a list, then internally we transform it to a tensor
     '''
 
-    def __init__(self, tensor: torch.tensor, type_slices: list = None) -> None:
+    def __init__(self, tensor: torch.tensor, slices: Union[torch.tensor, list] = None) -> None:
         self._tensor = tensor
-        self._type_slices = type_slices or []
+        if type(slices) is list:
+            self._slices = torch.as_tensor(slices)
+        else:
+            self._slices = slices
 
     @property
     def tensor(self):
         return self._tensor
 
     @property
-    def type_slices(self):
-        return self._type_slices
-
-    def append(self, type_slice):
-        self._type_slices.append(type_slice)
+    def slices(self):
+        return self._slices
 
 
 class Backend(Enum):
@@ -81,16 +84,15 @@ class HeteroOps:
         unique_types, type_counts = torch.unique_consecutive(
             sorted_types, return_inverse=False, return_counts=True)
 
-        tensor_slice = TensorSlice(sorted_tensor)
+        types = []
         cur_index = 0
         for i in range(len(unique_types)):
             # Ensure slice is on CPU
-            type_slice = (
-                unique_types[i].item(), slice(cur_index, cur_index + type_counts[i].item()))
-            tensor_slice.append(type_slice)
+            types.append([
+                unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
             cur_index += type_counts[i].item()
 
-        return tensor_slice
+        return TensorSlice(sorted_tensor, torch.as_tensor(types))
 
     def bmm(self, input: TensorSlice, other: TensorSlice) -> torch.tensor:
         '''
@@ -121,19 +123,26 @@ class HeteroOps:
             output = torch.empty(
                 output_size, device=self._device, dtype=input.tensor.dtype)
 
+            other_types = {}
+            for i in range(len(other.type_slices)):
+                other_types[other.type_slices[i][0]] = i
+
             cur_size = 0
             for i in range(len(input.type_slices)):
                 stream_id = i % self._nstreams
-                input_slice = input.type_slices[i]
-                other_slice = other.type_slices[i]
-                input_tensor = input.tensor[input_slice[1], :]
-                other_tensor = other.tensor[other_slice[1], :].squeeze(0)
+                input_slice = input.slices[i]
+                input_type = input_slice[0]
+                other_slice = other.slices[other_types[input_type]]
+                input_tensor = input.tensor[slice(
+                    input_slice[1].item(), input_slice[2].item()), :]
+                other_tensor = other.tensor[slice(
+                    other_slice[1].item(), input_slice[2].item()), :].squeeze(0)
                 size = input_tensor.shape[0] * other_tensor.shape[-1]
                 output_slice = output[slice(cur_size, cur_size + size)]
                 output_slice = output_slice.view(
                     input_tensor.shape[0], other_tensor.shape[-1])
                 with torch.cuda.stream(self._streams[stream_id]):
-                    torch.matmul(input_tensor, other_tensor, out=output_slice)
+                    torch.mm(input_tensor, other_tensor, out=output_slice)
                 cur_size += size
 
             if self._nstreams >= 1:
