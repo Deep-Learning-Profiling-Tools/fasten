@@ -6,14 +6,15 @@
 
 ### Required packages
 
-- torch  
-- torch-geometric
-- pytest
+```bash
+pip install -U torch torch-geometric pytest
+```
 
 ### Optional packages
 
-- spack
-- MAGMA
+```bash
+spack install magma
+```
 
 ### Build instructions
 
