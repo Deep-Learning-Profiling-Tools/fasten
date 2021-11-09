@@ -5,8 +5,8 @@ import torch
 device = torch.device('cuda:0')
 
 
-def correctness():
-    ops = fasten.HeteroOps(device)
+def correctness(backend: fasten.Backend):
+    ops = fasten.HeteroOps(device, backend=backend)
     input_slice = [[1, 0, 2], [2, 2, 3]]
     input = torch.tensor([[1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
@@ -23,7 +23,7 @@ def correctness():
 
 # 1. Compare single stream vs multiple streams
 # 2. Compare bmm + index vs heterogenous bmm
-def speed():
+def speed(backend: fasten.Backend):
     # 16 edge types
     input = torch.rand((16384, 16), dtype=torch.float, device=device)
     other = torch.rand((128, 16, 8), dtype=torch.float, device=device)
@@ -53,8 +53,8 @@ def speed():
 
         return ret
 
-    single_stream_ops = fasten.HeteroOps(device)
-    multi_stream_ops = fasten.HeteroOps(device, nstreams=8)
+    single_stream_ops = fasten.HeteroOps(device, backend=backend)
+    multi_stream_ops = fasten.HeteroOps(device, nstreams=8, backend=backend)
 
     ret1 = run('Single stream', single_stream_ops)
     ret2 = run('Multi streams', multi_stream_ops)
@@ -62,5 +62,7 @@ def speed():
 
 
 def test_bmm():
-    correctness()
-    speed()
+    correctness(fasten.Backend.PYTHON)
+    correctness(fasten.Backend.NATIVE)
+    speed(fasten.Backend.PYTHON)
+    speed(fasten.Backend.NATIVE)

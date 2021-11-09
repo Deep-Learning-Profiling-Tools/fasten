@@ -1,21 +1,19 @@
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages, Extension
 from torch.utils import cpp_extension
-import pathlib
+import os
 
-here = pathlib.Path(__file__).parent.resolve()
-
-operators_dir = here / 'fasten/operators'
+operators_dir = os.path.join('fasten', 'operators')
 
 
 def make_cpp_extension(op):
-    op_file = operators_dir / (op + '.cc')
+    op_file = os.path.join(operators_dir, op + '.cc')
     op_name = op + '_cpp'
     return cpp_extension.CppExtension(op_name, [op_file], extra_compile_args=['-O3', '-g'])
 
 
 def make_cuda_extension(op):
-    op_file = operators_dir / (op + '.cu')
+    op_file = os.path.join(operators_dir, op + '.cu')
     op_name = op + '_cuda'
     return cpp_extension.CUDAExtension(op_name, [op_file],
                                        extra_compile_args={'nvcc': ['-O3', '-g', '-lineinfo'],
@@ -23,7 +21,8 @@ def make_cuda_extension(op):
 
 
 # Get the long description from the README file
-long_description = (here / 'README.md').read_text(encoding='utf-8')
+with open('README.md', 'r') as f:
+    long_description = f.read()
 
 cpp_extensions = [make_cpp_extension('bmm')]
 cuda_extensions = [make_cuda_extension('bmm')]
@@ -81,4 +80,8 @@ setup(
     },
 
     include_package_data=True,
+
+    long_description=long_description,
+
+    long_description_content_type='text/markdown'
 )
