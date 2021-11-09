@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Union
 
 import torch
+import bmm
 
 
 class TensorSlice:
@@ -38,9 +39,8 @@ class Backend(Enum):
         MAGMA: using magma's functions
         NATIVE: using fasten's native c++ interface
     '''
-    TORCH = 1
-    MAGMA = 2
-    NATIVE = 3
+    PYTHON = 1
+    NATIVE = 2
 
 
 class HeteroOps:
@@ -53,7 +53,7 @@ class HeteroOps:
             nstreams: the number of used streams
     '''
 
-    def __init__(self, device: torch.device, backend: Backend = Backend.TORCH, nstreams: int = 1) -> None:
+    def __init__(self, device: torch.device, backend: Backend = Backend.PYTHON, nstreams: int = 1) -> None:
         self._device = device
         self._backend = backend
         self._nstreams = nstreams
@@ -113,10 +113,7 @@ class HeteroOps:
         '''
 
         def apply_native(input: TensorSlice, other: TensorSlice) -> torch.tensor:
-            pass
-
-        def apply_magma(input: TensorSlice, other: TensorSlice) -> torch.tensor:
-            pass
+            return bmm.FastenBmm(input.tensor, input.slices, other.tensor, other.slices)
 
         def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             output_size = input.tensor.shape[0] * other.tensor.shape[-1]
@@ -152,7 +149,5 @@ class HeteroOps:
 
         if self._backend == Backend.NATIVE:
             return apply_native(input, other)
-        elif self._backend == Backend.MAGMA:
-            return apply_magma(input, other)
         else:
             return apply_streams(input, other)

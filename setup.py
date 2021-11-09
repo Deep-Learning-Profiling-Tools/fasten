@@ -1,12 +1,32 @@
 # Always prefer setuptools over distutils
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Extension
+from torch.utils import cpp_extension
 import pathlib
 
 here = pathlib.Path(__file__).parent.resolve()
 
+operators_dir = here / 'fasten/operators'
+
+
+def make_cpp_extension(op):
+    op_file = operators_dir / (op + '.cc')
+    op_name = op + '_cpp'
+    return cpp_extension.CppExtension(op_name, [op_file], extra_compile_args=['-O3', '-g'])
+
+
+def make_cuda_extension(op):
+    op_file = operators_dir / (op + '.cu')
+    op_name = op + '_cuda'
+    return cpp_extension.CUDAExtension(op_name, [op_file],
+                                       extra_compile_args={'nvcc': ['-O3', '-g', '-lineinfo'],
+                                                           'cxx': ['-O3', '-g']})
+
+
 # Get the long description from the README file
 long_description = (here / 'README.md').read_text(encoding='utf-8')
 
+cpp_extensions = [make_cpp_extension('bmm')]
+cuda_extensions = [make_cuda_extension('bmm')]
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
 
@@ -51,6 +71,10 @@ setup(
     extras_require={  # Optional
         'test': ['pytest'],
     },
+
+    ext_modules=cpp_extensions + cuda_extensions,
+
+    cmdclass={'build_ext': cpp_extension.BuildExtension},
 
     project_urls={  # Optional
         'Source': 'https://github.com/Jokeren/fasten'

@@ -7,10 +7,10 @@ device = torch.device('cuda:0')
 
 def correctness():
     ops = fasten.HeteroOps(device)
-    input_slice = [(1, slice(0, 2)), (2, slice(2, 3))]
+    input_slice = [[1, 0, 2], [2, 2, 3]]
     input = torch.tensor([[1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
-    other_slice = [(1, slice(0, 1)), (2, slice(1, 2))]
+    other_slice = [[1, 0, 1], [2, 1, 2]]
     other = torch.tensor([[[7, 8], [1, 2]], [[3, 4], [5, 6]]],
                          device=device, dtype=torch.float)
     input_tensor_slice = fasten.TensorSlice(input, input_slice)
