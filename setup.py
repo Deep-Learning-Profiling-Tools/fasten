@@ -7,13 +7,13 @@ operators_dir = os.path.join('fasten', 'operators')
 
 
 def make_cpp_extension(ops):
-    op_files = os.path.join(operators_dir, lambda: [op + '.cc' for op in ops])
+    op_files = [os.path.join(operators_dir, op + '.cc') for op in ops]
     op_name = 'fasten_cpp'
     return cpp_extension.CppExtension(op_name, op_files, extra_compile_args=['-O3', '-g'])
 
 
 def make_cuda_extension(ops):
-    op_files = os.path.join(operators_dir, lambda: [op + '.cc' for op in ops])
+    op_files = [os.path.join(operators_dir, op + '.cc') for op in ops]
     op_name = 'fasten_cuda'
     return cpp_extension.CUDAExtension(op_name, op_files,
                                        extra_compile_args={'nvcc': ['-O3', '-g', '-lineinfo'],
@@ -24,8 +24,8 @@ def make_cuda_extension(ops):
 with open('README.md', 'r') as f:
     long_description = f.read()
 
-cpp_extensions = [make_cpp_extension('bmm')]
-cuda_extensions = [make_cuda_extension('bmm')]
+cpp_extensions = [make_cpp_extension(['bmm'])]
+cuda_extensions = [make_cuda_extension(['bmm'])]
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
 

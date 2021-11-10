@@ -2,8 +2,8 @@ from enum import Enum
 from typing import Union
 
 import torch
-import bmm
 import warnings
+from .bmm import FastenBmm
 
 
 class TensorSlice:
@@ -59,7 +59,7 @@ class HeteroOps:
         self._backend = backend
         self._nstreams = nstreams
         self._streams = []
-        if 'cuda' in self._device:
+        if 'cuda' in str(self._device):
             if nstreams == 1:
                 self._streams.append(torch.cuda.current_stream())
             else:
@@ -100,7 +100,7 @@ class HeteroOps:
 
         return TensorSlice(sorted_tensor, torch.as_tensor(types))
 
-    def bmm(self, input: TensorSlice, other: TensorSlice, engine = None) -> torch.tensor:
+    def bmm(self, input: TensorSlice, other: TensorSlice, engine=None) -> torch.tensor:
         '''
             Batch multiple input with other, where input and other contains many subslices with different sizes
 
@@ -119,7 +119,7 @@ class HeteroOps:
         '''
 
         def apply_native(input: TensorSlice, other: TensorSlice, engine) -> torch.tensor:
-            return bmm.FastenBmm(input.tensor, input.slices, other.tensor, other.slices, engine)
+            return FastenBmm(input.tensor, input.slices, other.tensor, other.slices, engine)
 
         def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             output_size = input.tensor.shape[0] * other.tensor.shape[-1]

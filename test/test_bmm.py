@@ -1,4 +1,3 @@
-from torch._C import dtype
 import fasten
 import torch
 
