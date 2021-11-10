@@ -119,7 +119,7 @@ class HeteroOps:
         '''
 
         def apply_native(input: TensorSlice, other: TensorSlice, engine) -> torch.tensor:
-            return FastenBmm(input.tensor, input.slices, other.tensor, other.slices, engine)
+            return FastenBmm.apply(input.tensor, input.slices, other.tensor, other.slices, engine)
 
         def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             output_size = input.tensor.shape[0] * other.tensor.shape[-1]
@@ -127,19 +127,19 @@ class HeteroOps:
                 output_size, device=self._device, dtype=input.tensor.dtype)
 
             other_types = {}
-            for i in range(len(other.type_slices)):
-                other_types[other.type_slices[i][0]] = i
+            for i in range(len(other.slices)):
+                other_types[other.slices[i][0].item()] = i
 
             cur_size = 0
-            for i in range(len(input.type_slices)):
+            for i in range(len(input.slices)):
                 stream_id = i % self._nstreams
-                input_slice = input.slices[i]
-                input_type = input_slice[0]
-                other_slice = other.slices[other_types[input_type]]
+                input_slice = input.slices[i, :]
+                input_type = input_slice[0].item()
+                other_slice = other.slices[other_types[input_type], :]
                 input_tensor = input.tensor[slice(
                     input_slice[1].item(), input_slice[2].item()), :]
                 other_tensor = other.tensor[slice(
-                    other_slice[1].item(), input_slice[2].item()), :].squeeze(0)
+                    other_slice[1].item(), other_slice[2].item()), :]
                 size = input_tensor.shape[0] * other_tensor.shape[-1]
                 output_slice = output[slice(cur_size, cur_size + size)]
                 output_slice = output_slice.view(

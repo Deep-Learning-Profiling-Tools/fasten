@@ -9,14 +9,16 @@ def correctness(backend: fasten.Backend):
     input_slice = [[1, 0, 2], [2, 2, 3]]
     input = torch.tensor([[1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
-    other_slice = [[1, 0, 1], [2, 1, 2]]
-    other = torch.tensor([[[7, 8], [1, 2]], [[3, 4], [5, 6]]],
+    other_slice = [[1, 0, 2], [2, 2, 4]]
+    other = torch.tensor([[7, 8], [1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
     input_tensor_slice = fasten.TensorSlice(input, input_slice)
     other_tensor_slice = fasten.TensorSlice(other, other_slice)
     output = ops.bmm(input_tensor_slice, other_tensor_slice)
     truth = torch.tensor([[9, 12], [25, 32], [45, 56]],
                          device=device, dtype=torch.float)
+    print(output)
+    print(truth)
     assert(torch.all(output == truth).item() is True)
 
 
@@ -70,8 +72,8 @@ def speed(backend: fasten.Backend):
 def test_bmm_forward():
     correctness(fasten.Backend.PYTHON)
     correctness(fasten.Backend.NATIVE)
-    speed(fasten.Backend.PYTHON)
-    speed(fasten.Backend.NATIVE)
+    # speed(fasten.Backend.PYTHON)
+    # speed(fasten.Backend.NATIVE)
 
 
 def test_bmm_backward():

@@ -1,5 +1,5 @@
 # Always prefer setuptools over distutils
-from setuptools import setup, find_packages, Extension
+from setuptools import setup, find_packages
 from torch.utils import cpp_extension
 import os
 
