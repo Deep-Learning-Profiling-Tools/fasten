@@ -6,16 +6,16 @@ import os
 operators_dir = os.path.join('fasten', 'operators')
 
 
-def make_cpp_extension(op):
-    op_file = os.path.join(operators_dir, op + '.cc')
-    op_name = op + '_cpp'
-    return cpp_extension.CppExtension(op_name, [op_file], extra_compile_args=['-O3', '-g'])
+def make_cpp_extension(ops):
+    op_files = os.path.join(operators_dir, lambda: [op + '.cc' for op in ops])
+    op_name = 'fasten_cpp'
+    return cpp_extension.CppExtension(op_name, op_files, extra_compile_args=['-O3', '-g'])
 
 
-def make_cuda_extension(op):
-    op_file = os.path.join(operators_dir, op + '.cu')
-    op_name = op + '_cuda'
-    return cpp_extension.CUDAExtension(op_name, [op_file],
+def make_cuda_extension(ops):
+    op_files = os.path.join(operators_dir, lambda: [op + '.cc' for op in ops])
+    op_name = 'fasten_cuda'
+    return cpp_extension.CUDAExtension(op_name, op_files,
                                        extra_compile_args={'nvcc': ['-O3', '-g', '-lineinfo'],
                                                            'cxx': ['-O3', '-g']})
 

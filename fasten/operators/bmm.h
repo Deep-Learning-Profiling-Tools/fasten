@@ -4,6 +4,7 @@
 #include <torch/extension.h>
 
 #include "utils.h"
+
 namespace fasten {
 
 template <Engine engine>

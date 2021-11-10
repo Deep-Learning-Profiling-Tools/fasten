@@ -3,6 +3,7 @@ from typing import Union
 
 import torch
 import bmm
+import warnings
 
 
 class TensorSlice:
@@ -58,11 +59,16 @@ class HeteroOps:
         self._backend = backend
         self._nstreams = nstreams
         self._streams = []
-        if nstreams == 1:
-            self._streams.append(torch.cuda.current_stream())
-        else:
-            for _ in range(nstreams):
-                self._streams.append(torch.cuda.Stream())
+        if 'cuda' in self._device:
+            if nstreams == 1:
+                self._streams.append(torch.cuda.current_stream())
+            else:
+                if backend is Backend.PYTHON:
+                    for _ in range(nstreams):
+                        self._streams.append(torch.cuda.Stream())
+                else:
+                    warnings.warn(
+                        'Fasten bmm only supports multi-streaming for the PYTHON backend', RuntimeWarning)
 
     def compact(self, tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> TensorSlice:
         '''
@@ -94,7 +100,7 @@ class HeteroOps:
 
         return TensorSlice(sorted_tensor, torch.as_tensor(types))
 
-    def bmm(self, input: TensorSlice, other: TensorSlice) -> torch.tensor:
+    def bmm(self, input: TensorSlice, other: TensorSlice, engine = None) -> torch.tensor:
         '''
             Batch multiple input with other, where input and other contains many subslices with different sizes
 
@@ -112,8 +118,8 @@ class HeteroOps:
                 torch.tensor: A 1-d torch Tensor
         '''
 
-        def apply_native(input: TensorSlice, other: TensorSlice) -> torch.tensor:
-            return bmm.FastenBmm(input.tensor, input.slices, other.tensor, other.slices)
+        def apply_native(input: TensorSlice, other: TensorSlice, engine) -> torch.tensor:
+            return bmm.FastenBmm(input.tensor, input.slices, other.tensor, other.slices, engine)
 
         def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
             output_size = input.tensor.shape[0] * other.tensor.shape[-1]
@@ -148,6 +154,6 @@ class HeteroOps:
             return output.view(input.tensor.shape[0], other.tensor.shape[-1])
 
         if self._backend == Backend.NATIVE:
-            return apply_native(input, other)
+            return apply_native(input, other, engine)
         else:
             return apply_streams(input, other)

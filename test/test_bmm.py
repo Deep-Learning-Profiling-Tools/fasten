@@ -53,16 +53,27 @@ def speed(backend: fasten.Backend):
 
         return ret
 
-    single_stream_ops = fasten.HeteroOps(device, backend=backend)
-    multi_stream_ops = fasten.HeteroOps(device, nstreams=8, backend=backend)
+    if backend is fasten.Backend.PYTHON:
+        single_stream_ops = fasten.HeteroOps(device, backend=backend)
+        multi_stream_ops = fasten.HeteroOps(
+            device, nstreams=8, backend=backend)
+        ret1 = run('Single stream', single_stream_ops)
+        ret2 = run('Multi streams', multi_stream_ops)
+    else:
+        default_ops = fasten.HeteroOps(device)
+        backend_ops = fasten.HeteroOps(device, backend=backend)
+        ret1 = run('Default backend', default_ops)
+        ret2 = run('{} backend'.format(backend), backend_ops)
 
-    ret1 = run('Single stream', single_stream_ops)
-    ret2 = run('Multi streams', multi_stream_ops)
     assert(torch.allclose(ret1, ret2) is True)
 
 
-def test_bmm():
+def test_bmm_forward():
     correctness(fasten.Backend.PYTHON)
     correctness(fasten.Backend.NATIVE)
     speed(fasten.Backend.PYTHON)
     speed(fasten.Backend.NATIVE)
+
+
+def test_bmm_backward():
+    pass
