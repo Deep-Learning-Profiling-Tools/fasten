@@ -11,8 +11,8 @@ namespace fasten {
 torch::Tensor bmm_forward_handle(torch::Tensor input, torch::Tensor input_slices,
                                  torch::Tensor weight, torch::Tensor weight_slices,
                                  Engine engine = Engine::TORCH) {
-  auto input_slice_accessor = input_slices.accessor<size_t, 2>();
-  auto weight_slice_accessor = weight_slices.accessor<size_t, 2>();
+  auto input_slice_accessor = input_slices.accessor<long, 2>();
+  auto weight_slice_accessor = weight_slices.accessor<long, 2>();
   auto output = torch::zeros({input.size(0), weight.size(-1)}, input.options());
 
   if (engine == Engine::TORCH) {
@@ -25,8 +25,8 @@ torch::Tensor bmm_forward_handle(torch::Tensor input, torch::Tensor input_slices
 std::tuple<torch::Tensor, torch::Tensor> bmm_backward_handle(
     torch::Tensor grad, torch::Tensor input, torch::Tensor input_slices, torch::Tensor weight,
     torch::Tensor weight_slices, Engine engine = Engine::TORCH) {
-  auto input_slice_accessor = input_slices.accessor<size_t, 2>();
-  auto weight_slice_accessor = weight_slices.accessor<size_t, 2>();
+  auto input_slice_accessor = input_slices.accessor<long, 2>();
+  auto weight_slice_accessor = weight_slices.accessor<long, 2>();
   auto input_grad = torch::zeros_like(input, input.options());
   auto weight_grad = torch::zeros_like(weight, weight.options());
 

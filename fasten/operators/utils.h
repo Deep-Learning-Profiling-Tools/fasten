@@ -9,9 +9,9 @@ namespace fasten {
 
 enum class Engine { TORCH = 0, MAGMA = 1, NATIVE = 2 };
 
-typedef std::map<size_t, size_t> SliceIndex;
+typedef std::map<long, long> SliceIndex;
 
-inline SliceIndex fasten_slice_index_build(const torch::TensorAccessor<size_t, 2> slice_accessor) {
+inline SliceIndex fasten_slice_index_build(const torch::TensorAccessor<long, 2> slice_accessor) {
   SliceIndex slice_index;
   for (auto i = 0; i < slice_accessor.size(0); ++i) {
     auto indicator = slice_accessor[i][0];

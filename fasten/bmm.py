@@ -8,7 +8,7 @@ class FastenBmm(torch.autograd.Function):
     def forward(ctx, input: torch.Tensor, input_slices: torch.Tensor,
                 weight: torch.Tensor, weight_slices: torch.Tensor, engine_name=None):
         module = get_module(input.is_cuda)
-        engine = get_engine(engine_name=engine_name)
+        engine = get_engine(module, engine_name=engine_name)
         output = module.forward(
             input, input_slices, weight, weight_slices, engine)
         variables = [input, input_slices, weight, weight_slices, engine]

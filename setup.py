@@ -9,7 +9,7 @@ operators_dir = os.path.join('fasten', 'operators')
 def make_cpp_extension(ops):
     op_files = [os.path.join(operators_dir, op + '.cc') for op in ops]
     op_name = 'fasten_cpp'
-    return cpp_extension.CppExtension(op_name, op_files, extra_compile_args=['-O3', '-g'])
+    return cpp_extension.CppExtension(op_name, op_files, extra_compile_args=['-O3', '-g', '-march=native'])
 
 
 def make_cuda_extension(ops):
@@ -48,17 +48,7 @@ setup(
         'Development Status :: 3 - Alpha',
 
         # Pick your license as you wish
-        'License :: OSI Approved :: BSD-2 License',
-
-        # Specify the Python versions you support here. In particular, ensure
-        # that you indicate you support Python 3. These classifiers are *not*
-        # checked by 'pip install'. See instead 'python_requires' below.
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3 :: Only',
+        'License :: OSI Approved :: BSD-2 License'
     ],
 
     packages=find_packages(),  # Required

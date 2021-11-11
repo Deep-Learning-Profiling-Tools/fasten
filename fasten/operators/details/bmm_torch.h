@@ -10,9 +10,9 @@ namespace fasten {
 
 template <>
 void bmm_forward<Engine::TORCH>(torch::Tensor input,
-                                torch::TensorAccessor<size_t, 2> input_slice_accessor,
+                                torch::TensorAccessor<long, 2> input_slice_accessor,
                                 torch::Tensor weight,
-                                torch::TensorAccessor<size_t, 2> weight_slice_accessor,
+                                torch::TensorAccessor<long, 2> weight_slice_accessor,
                                 torch::Tensor output) {
   auto weight_slice_index = fasten_slice_index_build(weight_slice_accessor);
 
@@ -33,9 +33,9 @@ void bmm_forward<Engine::TORCH>(torch::Tensor input,
 
 template <>
 void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
-                                 torch::TensorAccessor<size_t, 2> input_slice_accessor,
+                                 torch::TensorAccessor<long, 2> input_slice_accessor,
                                  torch::Tensor weight,
-                                 torch::TensorAccessor<size_t, 2> weight_slice_accessor,
+                                 torch::TensorAccessor<long, 2> weight_slice_accessor,
                                  torch::Tensor input_grad, torch::Tensor weight_grad) {
   using torch::indexing::Slice;
 

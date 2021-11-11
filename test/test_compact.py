@@ -1,5 +1,5 @@
-import fasten
 import torch
+import fasten
 
 device = torch.device('cpu')
 ops = fasten.HeteroOps(device)

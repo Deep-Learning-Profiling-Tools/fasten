@@ -2,6 +2,8 @@ import warnings
 
 
 def get_engine(module, engine_name: str):
+    if engine_name is None:
+        return module.TORCH
     if engine_name.lower() == 'magma':
         return module.MAGMA
     elif engine_name.lower() == 'torch':
@@ -9,12 +11,14 @@ def get_engine(module, engine_name: str):
     elif engine_name.lower() == 'native':
         return module.NATIVE
     else:
-        return module.TORCH
+        warnings.warn("Fasten: No such compute engine {}".format(
+            engine_name), RuntimeError)
 
 
 def get_module(use_cuda: bool):
+    import fasten_cpp as module_cpp
+    import fasten_cuda as module_cuda
     if use_cuda:
-        import fasten_cuda as module
+        return module_cuda
     else:
-        import fasten_cpp as module
-    return module
+        return module_cpp
