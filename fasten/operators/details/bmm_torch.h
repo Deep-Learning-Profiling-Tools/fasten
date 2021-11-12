@@ -52,13 +52,13 @@ void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
     auto input_end = input_slice_accessor[i][2];
     auto weight_start = weight_slice_accessor[weight_index][1];
     auto weight_end = weight_slice_accessor[weight_index][2];
-    auto sub_input_tensor = input.index({Slice(input_start, input_end)});
-    auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end)});
-    auto sub_grad_tensor = grad.index({Slice(input_start, input_end)});
-    auto sub_input_grad_tensor = input_grad.index({Slice(input_start, input_end)});
-    auto sub_weight_grad_tensor = weight_grad.index({Slice(weight_start, weight_end)});
-    sub_input_grad_tensor = torch::mm(sub_grad_tensor, sub_weight_tensor);
-    sub_weight_grad_tensor = torch::mm(sub_grad_tensor, sub_input_tensor);
+    auto sub_input_tensor = input.index({Slice(input_start, input_end), Slice()});
+    auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end), Slice()});
+    auto sub_grad_tensor = grad.index({Slice(input_start, input_end), Slice()});
+    auto sub_input_grad_tensor = input_grad.index_put_(
+        {Slice(input_start, input_end), Slice()}, torch::mm(sub_grad_tensor, sub_weight_tensor));
+    auto sub_weight_grad_tensor = weight_grad.index_put_(
+        {Slice(weight_start, weight_end), Slice()}, torch::mm(sub_grad_tensor, sub_input_tensor));
   }
 }
 
