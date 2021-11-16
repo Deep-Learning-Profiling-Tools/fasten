@@ -107,6 +107,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("badd_backward", &badd_backward_handle, "Fasten add backward");
   m.def("bsub_forward", &bsub_forward_handle, "Fasten sub forward");
   m.def("bsub_backward", &bsub_backward_handle, "Fasten sub backward");
+  m.attr("MAX_TENSOR_DIMS") = MAX_TENSOR_DIMS;
+  m.attr("MIN_TENSOR_DIMS") = MIN_TENSOR_DIMS;
   py::enum_<Engine>(m, "Engine", py::module_local())
       .value("TORCH", Engine::TORCH)
       .value("NATIVE", Engine::NATIVE)

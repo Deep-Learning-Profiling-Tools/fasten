@@ -12,15 +12,21 @@ def correctness(backend: Backend):
                          device=device, dtype=torch.float)
     other_slice = [[1, 0, 2], [2, 2, 4]]
     other = torch.tensor([[7, 8], [1, 2], [3, 4], [5, 6]],
-                         device=device, dtype=torch.float)
+                         device=device, dtype=torch.float, requires_grad=True)
     input_tensor_slice = TensorSlice(input, input_slice)
     other_tensor_slice = TensorSlice(other, other_slice)
+
+    # forward
     output = ops.bmm(input_tensor_slice, other_tensor_slice, backend=backend)
     truth = torch.tensor([[9, 12], [25, 32], [45, 56]],
                          device=device, dtype=torch.float)
-    print(output)
-    print(truth)
     assert(torch.all(output == truth).item() is True)
+
+    # backward
+    output.backward(torch.ones_like(output))
+    other_grad = torch.tensor(
+        [[4, 4], [6, 6], [5, 5], [6, 6]], device=device, dtype=torch.float)
+    assert(torch.all(other.grad == other_grad).item() is True)
 
 
 # 1. Compare single stream vs multiple streams
@@ -61,18 +67,14 @@ def speed(backend: Backend):
         ret1 = run('Single stream', backend, nstreams=1)
         ret2 = run('Multi streams', backend, nstreams=8)
     else:
-        ret1 = run('Default backend', backend)
-        ret2 = run('{} backend'.format(backend), backend)
+        ret1 = run('PYTHON backend', Backend.PYTHON)
+        ret2 = run('NATIVE backend', Backend.NATIVE)
 
     assert(torch.allclose(ret1, ret2) is True)
 
 
-def test_bmm_forward():
+def test_bmm():
     correctness(Backend.PYTHON)
     correctness(Backend.NATIVE)
     speed(Backend.PYTHON)
     speed(Backend.NATIVE)
-
-
-def test_bmm_backward():
-    pass

@@ -26,12 +26,21 @@ void bmm_forward<Engine::TORCH>(torch::Tensor input,
     auto weight_end = weight_slice_accessor[weight_index][2];
     auto output_start = input_slice_accessor[i][1];
     auto output_end = input_slice_accessor[i][2];
+
     auto sub_input_tensor = input.index({Slice(input_start, input_end), Slice()});
+    TORCH_CHECK(sub_input_tensor.dim() == MIN_TENSOR_DIMS ||
+                sub_input_tensor.dim() == MAX_TENSOR_DIMS);
+    if (sub_input_tensor.dim() == MAX_TENSOR_DIMS) {
+      sub_input_tensor = torch::squeeze(sub_input_tensor, 0);
+    }
+
     auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end), Slice()});
-    TORCH_CHECK(sub_weight_tensor.dim() == 2 || sub_weight_tensor.dim() == 3);
-    if (sub_weight_tensor.dim() == 3) {
+    TORCH_CHECK(sub_weight_tensor.dim() == MIN_TENSOR_DIMS ||
+                sub_weight_tensor.dim() == MAX_TENSOR_DIMS);
+    if (sub_weight_tensor.dim() == MAX_TENSOR_DIMS) {
       sub_weight_tensor = torch::squeeze(sub_weight_tensor, 0);
     }
+
     auto sub_output_tensor = output.index({Slice(output_start, output_end), Slice()});
     torch::mm_out(sub_output_tensor, sub_input_tensor, sub_weight_tensor);
   }
@@ -51,14 +60,30 @@ void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
     auto input_end = input_slice_accessor[i][2];
     auto weight_start = weight_slice_accessor[weight_index][1];
     auto weight_end = weight_slice_accessor[weight_index][2];
+
     auto sub_input_tensor = input.index({Slice(input_start, input_end), Slice()});
+    auto sub_input_grad_tensor = input_grad.index({Slice(input_start, input_end), Slice()});
+    TORCH_CHECK(sub_input_tensor.dim() == MIN_TENSOR_DIMS ||
+                sub_input_tensor.dim() == MAX_TENSOR_DIMS);
+    if (sub_input_tensor.dim() == MAX_TENSOR_DIMS) {
+      sub_input_tensor = torch::squeeze(sub_input_tensor, 0);
+      sub_input_grad_tensor = torch::squeeze(sub_input_grad_tensor, 0);
+    }
+
     auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end), Slice()});
-    auto sub_grad_tensor = grad.index({Slice(input_start, input_end), Slice()});
-    auto sub_input_grad_tensor = weight_grad.index({Slice(input_start, input_end), Slice()});
     auto sub_weight_grad_tensor = weight_grad.index({Slice(weight_start, weight_end), Slice()});
-    torch::mm_out(sub_input_grad_tensor, sub_grad_tensor, sub_weight_tensor);
-    torch::addmm_out(sub_weight_grad_tensor, sub_weight_grad_tensor, sub_grad_tensor,
-                     sub_input_tensor);
+    TORCH_CHECK(sub_weight_tensor.dim() == MIN_TENSOR_DIMS ||
+                sub_weight_tensor.dim() == MAX_TENSOR_DIMS);
+    if (sub_weight_tensor.dim() == MAX_TENSOR_DIMS) {
+      sub_weight_tensor = torch::squeeze(sub_weight_tensor, 0);
+      sub_weight_grad_tensor = torch::squeeze(sub_input_grad_tensor, 0);
+    }
+
+    auto sub_grad_tensor = grad.index({Slice(input_start, input_end), Slice()});
+    torch::mm_out(sub_input_grad_tensor, sub_grad_tensor,
+                  torch::transpose(sub_weight_tensor, 0, 1));
+    torch::mm_out(sub_weight_grad_tensor, torch::transpose(sub_input_tensor, 0, 1),
+                  sub_grad_tensor);
   }
 }
 

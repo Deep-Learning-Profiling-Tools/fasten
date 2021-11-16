@@ -51,6 +51,8 @@ class TensorSlice:
             self._slices = torch.as_tensor(slices)
         else:
             self._slices = slices
+        # Don't backpropagate on slice tensors
+        self._slices.requires_grad = False
 
     @property
     def tensor(self):
@@ -172,10 +174,9 @@ class Ops:
                 other_slice[1].item(), other_slice[2].item()), :]
             if len(other_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 other_tensor = torch.squeeze(other_tensor, 0)
-            output_tensor = output[slice(
-                input_slice[1].item(), input_slice[2].item()), :]
             with torch.cuda.stream(StreamPool.get(stream_id)):
-                op(input_tensor, other_tensor, out=output_tensor)
+                output[slice(input_slice[1].item(), input_slice[2].item()), :] = op(
+                    input_tensor, other_tensor)
 
         if nstreams > 1:
             torch.cuda.synchronize()

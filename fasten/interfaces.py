@@ -11,7 +11,10 @@ class FastenBmm(torch.autograd.Function):
         engine = get_engine(module, engine_name=engine_name)
         output = module.bmm_forward(
             input, input_slices, other, other_slices, output, engine)
-        variables = [input, input_slices, other, other_slices, engine]
+        variables = [input, other]
+        ctx.input_slices = input_slices
+        ctx.other_slices = other_slices
+        ctx.engine = engine
         ctx.save_for_backward(*variables)
 
         return output
@@ -19,10 +22,10 @@ class FastenBmm(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad: torch.tensor):
         module = get_module(grad.is_cuda)
-        input, input_slices, other, other_slices, engine = ctx.saved_tensors
+        input, other = ctx.saved_tensors
         grad_output, grad_other = module.bmm_backward(
-            grad, input, input_slices, other, other_slices, engine)
-        return grad_output, grad_other
+            grad, input, ctx.input_slices, other, ctx.other_slices, ctx.engine)
+        return grad_output, None, grad_other, None, None, None
 
 
 class FastenBmul(torch.autograd.Function):
