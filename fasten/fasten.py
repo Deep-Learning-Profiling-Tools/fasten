@@ -3,7 +3,36 @@ from typing import Union
 
 import torch
 import warnings
-from .bmm import FastenBmm
+
+from .interfaces import *
+
+
+class StreamPool:
+    _streams = []
+    if torch.cuda.is_available():
+        _streams.append(torch.cuda.current_stream())
+
+    @classmethod
+    def add(cls, nstreams: int = 1) -> None:
+        for _ in nstreams:
+            cls._streams.append(torch.cuda.stream())
+
+    @classmethod
+    def reserve(cls, nstreams: int = 1) -> None:
+        if torch.cuda.is_available():
+            if len(cls._streams) < nstreams:
+                cls.add(nstreams - len(cls._streams))
+
+    @classmethod
+    def get(cls, stream_idx: int = 1) -> torch.cuda.Stream:
+        if torch.cuda.is_available():
+            return cls._streams[stream_idx]
+        else:
+            return None
+
+    @classmethod
+    def size(cls) -> int:
+        return len(cls._streams)
 
 
 class TensorSlice:
@@ -36,41 +65,51 @@ class Backend(Enum):
     '''
         The execution engines in fasten
 
-        TORCH: using torch compute functions
-        MAGMA: using magma's functions
-        NATIVE: using fasten's native c++ interface
+        PYTHON: using python functions
+        NATIVE: using c++ native functions
     '''
     PYTHON = 1
     NATIVE = 2
 
 
-class HeteroOps:
+class Ops:
+    MAX_TENSOR_DIMS = 3
+    MIN_TENSOR_DIMS = 2
+
     '''
-        Operations for heterogenous graphs
+        This class contains all operations supported by fasten.
 
-        Args:
-            device: execution device
-            backend: math operation execution engine
-            nstreams: the number of used streams
+        The core idea of fasten is to support broadcastable batch operations for 2d matrices with various sizes.
+
+        op(m1, m2)
+
+        m1 and m2 can be either a 2d matrix or a 3d tensor. Based on m1 and m2's dims, there are four scenarios.
+
+        1. m1-3d, m2-3d
+
+        In this case, the outmost dimensions of m1 and m2 represent the type information. 
+        So each sub-matrices in m1 or m2 should have the same shape.
+        Since we only operate on submatrices with the same type, it falls back to the regular batch operation.
+
+        2. m1-2d, m2-3d
+
+        In this case, the sub-matrices in m1 can have different sizes, though their innermost dimensions are still the same.
+        For example, m1 with shape [5, 4] can be composed of submatrices [3, 4] and [2, 4].
+
+        3. m1-3d, m2-2d
+
+        Similar to m2, the sub-matrices in m2 can have different sizes.
+
+        4. m1-2d, m2-2d
+
+        In this case, sub-matrices in m1 and m2 can have different sizes.
+
+        MIN_TENSOR_DIMS: the minimum dimensions supported by fasten
+        MAX_TENSOR_DIMS: the maximum dimensions supported by fasten
     '''
 
-    def __init__(self, device: torch.device, backend: Backend = Backend.PYTHON, nstreams: int = 1) -> None:
-        self._device = device
-        self._backend = backend
-        self._nstreams = nstreams
-        self._streams = []
-        if 'cuda' in str(self._device):
-            if nstreams == 1:
-                self._streams.append(torch.cuda.current_stream())
-            else:
-                if backend is Backend.PYTHON:
-                    for _ in range(nstreams):
-                        self._streams.append(torch.cuda.Stream())
-                else:
-                    warnings.warn(
-                        'Fasten bmm only supports multi-streaming for the PYTHON backend', RuntimeWarning)
-
-    def compact(self, tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> TensorSlice:
+    @staticmethod
+    def compact(tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> TensorSlice:
         '''
             Sort a tensor (node or edge) according to their types.
 
@@ -100,60 +139,168 @@ class HeteroOps:
 
         return TensorSlice(sorted_tensor, torch.as_tensor(types))
 
-    def bmm(self, input: TensorSlice, other: TensorSlice, engine=None) -> torch.tensor:
+    @classmethod
+    def _apply_streams(cls, op, input: TensorSlice, other: TensorSlice, output: torch.tensor, nstreams: int = 1) -> torch.tensor:
         '''
-            Batch multiple input with other, where input and other contains many subslices with different sizes
+            Sort a tensor (node or edge) according to their types.
 
-            [m1, k] x [k, n] -> [m1, n]
-            [m2, k] x [k, n] -> [m2, n]
-            [m3, k] x [k, n] -> [m3, n]
+            Args:
+                tensor: the torch tensor data
+                types: the type of each entry
+                descending: sort the tensor in the descending order
 
-            The output can be reshaped into a 2-d tensor using reshape(-1, n)
+            Returns:
+                TensorSlice
+        '''
+        other_types = {}
+        for i in range(len(other.slices)):
+            other_types[other.slices[i][0].item()] = i
+
+        for i in range(len(input.slices)):
+            stream_id = i % nstreams
+            input_slice = input.slices[i, :]
+            input_type = input_slice[0].item()
+            other_slice = other.slices[other_types[input_type], :]
+            input_tensor = input.tensor[slice(
+                input_slice[1].item(), input_slice[2].item()), :]
+            if len(input_tensor.shape) == cls.MAX_TENSOR_DIMS:
+                input_tensor = torch.squeeze(other_tensor, 0)
+            other_tensor = other.tensor[slice(
+                other_slice[1].item(), other_slice[2].item()), :]
+            if len(other_tensor.shape) == cls.MAX_TENSOR_DIMS:
+                other_tensor = torch.squeeze(other_tensor, 0)
+            output_tensor = output[slice(
+                input_slice[1].item(), input_slice[2].item()), :]
+            with torch.cuda.stream(StreamPool.get(stream_id)):
+                op(input_tensor, other_tensor, out=output_tensor)
+
+        if nstreams > 1:
+            torch.cuda.synchronize()
+
+    @classmethod
+    def _validate_output(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor) -> torch.tensor:
+        '''
+            Check if the given tensor shapes are valid and allocate an output tensor if needed
+        '''
+        output_dims = []
+        if len(input.tensor.shape) == cls.MIN_TENSOR_DIMS and len(other.tensor.shape) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.tensor.shape[0], other.tensor.shape[-1]]
+        elif len(input.tensor.shape) == cls.MAX_TENSOR_DIMS and len(other.tensor.shape) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.tensor.shape[1], other.tensor.shape[-1]]
+        else:
+            warnings.warn("Fasten: do not support tensor shape input {} other {}".format(
+                input.shape, other.shape), RuntimeError)
+
+        if output is None:
+            output = torch.tensor((output_dims), device=output.device)
+
+        if output_dims != output.shape:
+            warnings.warn("Fasten: tensor shape error output {}".format(
+                output.shape), RuntimeError)
+
+        return output
+
+    @classmethod
+    def bmm(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON, engine=None) -> torch.tensor:
+        '''
+            Batch matrix multiple input with other
 
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
+                output: A torch Tensor
+                nstreams: Number of CUDA streams
+                backend: Whether to use Python or Native C++ backend
+                engine: If using the C++ backend, what algorithm to use
 
             Returns:
-                torch.tensor: A 1-d torch Tensor
+                torch.tensor: A torch Tensor
         '''
-
-        def apply_native(input: TensorSlice, other: TensorSlice, engine) -> torch.tensor:
-            return FastenBmm.apply(input.tensor, input.slices, other.tensor, other.slices, engine)
-
-        def apply_streams(input: TensorSlice, other: TensorSlice) -> torch.tensor:
-            output_size = input.tensor.shape[0] * other.tensor.shape[-1]
-            output = torch.empty(
-                output_size, device=self._device, dtype=input.tensor.dtype)
-
-            other_types = {}
-            for i in range(len(other.slices)):
-                other_types[other.slices[i][0].item()] = i
-
-            cur_size = 0
-            for i in range(len(input.slices)):
-                stream_id = i % self._nstreams
-                input_slice = input.slices[i, :]
-                input_type = input_slice[0].item()
-                other_slice = other.slices[other_types[input_type], :]
-                input_tensor = input.tensor[slice(
-                    input_slice[1].item(), input_slice[2].item()), :]
-                other_tensor = other.tensor[slice(
-                    other_slice[1].item(), other_slice[2].item()), :]
-                size = input_tensor.shape[0] * other_tensor.shape[-1]
-                output_slice = output[slice(cur_size, cur_size + size)]
-                output_slice = output_slice.view(
-                    input_tensor.shape[0], other_tensor.shape[-1])
-                with torch.cuda.stream(self._streams[stream_id]):
-                    torch.mm(input_tensor, other_tensor, out=output_slice)
-                cur_size += size
-
-            if self._nstreams >= 1:
-                torch.cuda.synchronize()
-
-            return output.view(input.tensor.shape[0], other.tensor.shape[-1])
-
-        if self._backend == Backend.NATIVE:
-            return apply_native(input, other, engine)
+        output = cls._validate_output(input, other, output)
+        if backend == Backend.NATIVE:
+            return FastenBmm.apply(input.tensor, input.slices, other.tensor, other.slices, output, engine)
         else:
-            return apply_streams(input, other)
+            return cls._apply_streams(torch.mm, input, other, output, nstreams)
+
+    @classmethod
+    def bmul(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+        '''
+            Batch multiple input with other
+
+            Args:
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A torch Tensor
+                nstreams: Number of CUDA streams
+                backend: Whether to use Python or Native C++ backend
+
+            Returns:
+                torch.tensor: A torch Tensor
+        '''
+        output = cls._validate_output(input, other, output)
+        if backend == Backend.NATIVE:
+            return FastenBmul.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+        else:
+            return cls._apply_streams(torch.mul, input, other, output, nstreams)
+
+    @classmethod
+    def badd(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+        '''
+            Batch add input with other
+
+            Args:
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A torch Tensor
+                nstreams: Number of CUDA streams
+                backend: Whether to use Python or Native C++ backend
+
+            Returns:
+                torch.tensor: A torch Tensor
+        '''
+        output = cls._validate_output(input, other, output)
+        if backend == Backend.NATIVE:
+            return FastenBadd.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+        else:
+            return cls._apply_streams(torch.add, input, other, output, nstreams)
+
+    @classmethod
+    def bsub(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+        '''
+            Batch sub input with other
+
+            Args:
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A torch Tensor
+                nstreams: Number of CUDA streams
+                backend: Whether to use Python or Native C++ backend
+
+            Returns:
+                torch.tensor: A torch Tensor
+        '''
+        output = cls._validate_output(input, other, output)
+        if backend == Backend.NATIVE:
+            return FastenBsub.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+        else:
+            return cls._apply_streams(torch.sub, input, other, output, nstreams)
+
+    def bdiv(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+        '''
+            Batch div input with other
+
+            Args:
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A torch Tensor
+                nstreams: Number of CUDA streams
+                backend: Whether to use Python or Native C++ backend
+
+            Returns:
+                torch.tensor: A torch Tensor
+        '''
+        output = cls._validate_output(input, other, output)
+        if backend == Backend.NATIVE:
+            return FastenBdiv.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+        else:
+            return cls._apply_streams(torch.div, input, other, output, nstreams)

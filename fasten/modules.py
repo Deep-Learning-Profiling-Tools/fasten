@@ -16,9 +16,8 @@ def get_engine(module, engine_name: str):
 
 
 def get_module(use_cuda: bool):
-    import fasten_cpp as module_cpp
-    import fasten_cuda as module_cuda
     if use_cuda:
-        return module_cuda
+        import fasten_cuda as module
     else:
-        return module_cpp
+        import fasten_cpp as module
+    return module

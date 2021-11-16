@@ -1,8 +1,7 @@
 import torch
-import fasten
+from fasten import Ops as ops
 
 device = torch.device('cpu')
-ops = fasten.HeteroOps(device)
 
 
 def compact_ascending():

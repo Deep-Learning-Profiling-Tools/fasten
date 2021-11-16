@@ -5,20 +5,18 @@
 
 #include <iostream>
 
-#include "../bmm.h"
+#include "../ops.h"
 #include "../utils.h"
 namespace fasten {
+
+using torch::indexing::Slice;
 
 template <>
 void bmm_forward<Engine::TORCH>(torch::Tensor input,
                                 torch::TensorAccessor<long, 2> input_slice_accessor,
                                 torch::Tensor weight,
                                 torch::TensorAccessor<long, 2> weight_slice_accessor,
-                                torch::Tensor output) {
-  using torch::indexing::Slice;
-
-  auto weight_slice_index = fasten_slice_index_build(weight_slice_accessor);
-
+                                SliceIndex &weight_slice_index, torch::Tensor output) {
   for (auto i = 0; i < input_slice_accessor.size(0); ++i) {
     auto indicator = input_slice_accessor[i][0];
     auto weight_index = weight_slice_index[indicator];
@@ -30,8 +28,12 @@ void bmm_forward<Engine::TORCH>(torch::Tensor input,
     auto output_end = input_slice_accessor[i][2];
     auto sub_input_tensor = input.index({Slice(input_start, input_end), Slice()});
     auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end), Slice()});
-    output.index_put_({Slice(output_start, output_end), Slice()},
-                      torch::mm(sub_input_tensor, sub_weight_tensor));
+    TORCH_CHECK(sub_weight_tensor.dim() == 2 || sub_weight_tensor.dim() == 3);
+    if (sub_weight_tensor.dim() == 3) {
+      sub_weight_tensor = torch::squeeze(sub_weight_tensor, 0);
+    }
+    auto sub_output_tensor = output.index({Slice(output_start, output_end), Slice()});
+    torch::mm_out(sub_output_tensor, sub_input_tensor, sub_weight_tensor);
   }
 }
 
@@ -40,11 +42,8 @@ void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
                                  torch::TensorAccessor<long, 2> input_slice_accessor,
                                  torch::Tensor weight,
                                  torch::TensorAccessor<long, 2> weight_slice_accessor,
-                                 torch::Tensor input_grad, torch::Tensor weight_grad) {
-  using torch::indexing::Slice;
-
-  auto weight_slice_index = fasten_slice_index_build(weight_slice_accessor);
-
+                                 SliceIndex &weight_slice_index, torch::Tensor input_grad,
+                                 torch::Tensor weight_grad) {
   for (auto i = 0; i < input_slice_accessor.size(0); ++i) {
     auto indicator = input_slice_accessor[i][0];
     auto weight_index = weight_slice_index[indicator];
@@ -55,10 +54,11 @@ void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
     auto sub_input_tensor = input.index({Slice(input_start, input_end), Slice()});
     auto sub_weight_tensor = weight.index({Slice(weight_start, weight_end), Slice()});
     auto sub_grad_tensor = grad.index({Slice(input_start, input_end), Slice()});
-    auto sub_input_grad_tensor = input_grad.index_put_(
-        {Slice(input_start, input_end), Slice()}, torch::mm(sub_grad_tensor, sub_weight_tensor));
-    auto sub_weight_grad_tensor = weight_grad.index_put_(
-        {Slice(weight_start, weight_end), Slice()}, torch::mm(sub_grad_tensor, sub_input_tensor));
+    auto sub_input_grad_tensor = weight_grad.index({Slice(input_start, input_end), Slice()});
+    auto sub_weight_grad_tensor = weight_grad.index({Slice(weight_start, weight_end), Slice()});
+    torch::mm_out(sub_input_grad_tensor, sub_grad_tensor, sub_weight_tensor);
+    torch::addmm_out(sub_weight_grad_tensor, sub_weight_grad_tensor, sub_grad_tensor,
+                     sub_input_tensor);
   }
 }
 

@@ -24,8 +24,8 @@ def make_cuda_extension(ops):
 with open('README.md', 'r') as f:
     long_description = f.read()
 
-cpp_extensions = [make_cpp_extension(['bmm'])]
-cuda_extensions = [make_cuda_extension(['bmm'])]
+cpp_extensions = [make_cpp_extension(['ops'])]
+cuda_extensions = [make_cuda_extension(['ops'])]
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
 

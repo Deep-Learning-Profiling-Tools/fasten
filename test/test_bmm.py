@@ -1,30 +1,29 @@
 import torch
-import fasten
+from fasten import Ops as ops
+from fasten import TensorSlice
+from fasten import Backend
 
 device = torch.device('cuda:0')
 
 
-def correctness(backend: fasten.Backend):
-    ops = fasten.HeteroOps(device, backend=backend)
+def correctness(backend: Backend):
     input_slice = [[1, 0, 2], [2, 2, 3]]
     input = torch.tensor([[1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
     other_slice = [[1, 0, 2], [2, 2, 4]]
     other = torch.tensor([[7, 8], [1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float)
-    input_tensor_slice = fasten.TensorSlice(input, input_slice)
-    other_tensor_slice = fasten.TensorSlice(other, other_slice)
-    output = ops.bmm(input_tensor_slice, other_tensor_slice)
+    input_tensor_slice = TensorSlice(input, input_slice)
+    other_tensor_slice = TensorSlice(other, other_slice)
+    output = ops.bmm(input_tensor_slice, other_tensor_slice, backend=backend)
     truth = torch.tensor([[9, 12], [25, 32], [45, 56]],
                          device=device, dtype=torch.float)
-    print(output)
-    print(truth)
     assert(torch.all(output == truth).item() is True)
 
 
 # 1. Compare single stream vs multiple streams
 # 2. Compare bmm + index vs heterogenous bmm
-def speed(backend: fasten.Backend):
+def speed(backend: Backend):
     # 16 edge types
     input = torch.rand((16384, 16), dtype=torch.float, device=device)
     other = torch.rand((128, 16, 8), dtype=torch.float, device=device)
@@ -32,7 +31,7 @@ def speed(backend: fasten.Backend):
         0, 128, (16384,), dtype=torch.int, device=device)
     other_types = torch.arange(0, 128, device=device)
 
-    def run(test_name, ops):
+    def run(test_name, backend, nstreams=1):
         repeat = 3
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
@@ -40,11 +39,13 @@ def speed(backend: fasten.Backend):
         input_tensor_slice = ops.compact(input, input_types)
         other_tensor_slice = ops.compact(other, other_types)
 
-        ops.bmm(input_tensor_slice, other_tensor_slice)
+        ops.bmm(input_tensor_slice, other_tensor_slice,
+                backend=backend, nstreams=nstreams)
 
         start_event.record()
         for _ in range(repeat):
-            ret = ops.bmm(input_tensor_slice, other_tensor_slice)
+            ret = ops.bmm(input_tensor_slice,
+                          other_tensor_slice,  backend=backend, nstreams=nstreams)
         end_event.record()
         end_event.synchronize()
 
@@ -54,26 +55,21 @@ def speed(backend: fasten.Backend):
 
         return ret
 
-    if backend is fasten.Backend.PYTHON:
-        single_stream_ops = fasten.HeteroOps(device, backend=backend)
-        multi_stream_ops = fasten.HeteroOps(
-            device, nstreams=8, backend=backend)
-        ret1 = run('Single stream', single_stream_ops)
-        ret2 = run('Multi streams', multi_stream_ops)
+    if backend is Backend.PYTHON:
+        ret1 = run('Single stream', backend, nstreams=1)
+        ret2 = run('Multi streams', backend, nstreams=8)
     else:
-        default_ops = fasten.HeteroOps(device)
-        backend_ops = fasten.HeteroOps(device, backend=backend)
-        ret1 = run('Default backend', default_ops)
-        ret2 = run('{} backend'.format(backend), backend_ops)
+        ret1 = run('Default backend', backend)
+        ret2 = run('{} backend'.format(backend), backend)
 
     assert(torch.allclose(ret1, ret2) is True)
 
 
 def test_bmm_forward():
-    correctness(fasten.Backend.PYTHON)
-    correctness(fasten.Backend.NATIVE)
-    # speed(fasten.Backend.PYTHON)
-    # speed(fasten.Backend.NATIVE)
+    correctness(Backend.PYTHON)
+    correctness(Backend.NATIVE)
+    speed(Backend.PYTHON)
+    speed(Backend.NATIVE)
 
 
 def test_bmm_backward():
