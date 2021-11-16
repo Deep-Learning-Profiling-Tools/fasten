@@ -47,9 +47,11 @@ def speed(backend: Backend):
         input_tensor_slice = ops.compact(input, input_types)
         other_tensor_slice = ops.compact(other, other_types)
 
+        # warmup
         ops.bmm(input_tensor_slice, other_tensor_slice,
                 backend=backend, nstreams=nstreams)
 
+        # forward
         start_event.record()
         for _ in range(repeat):
             ret = ops.bmm(input_tensor_slice,
@@ -59,18 +61,33 @@ def speed(backend: Backend):
 
         ms = start_event.elapsed_time(end_event) / repeat
 
-        print('{}: {} ms'.format(test_name, ms))
+        print('{} forward: {} ms'.format(test_name, ms))
 
-        return ret
+        # forward + backward
+        start_event.record()
+        other_tensor_slice.tensor.requires_grad = True
+        for _ in range(repeat):
+            ret = ops.bmm(input_tensor_slice, other_tensor_slice,
+                          backend=backend, nstreams=nstreams)
+            ret.backward(torch.ones_like(ret))
+        end_event.record()
+        end_event.synchronize()
+
+        ms = start_event.elapsed_time(end_event) / repeat
+
+        print('{} forward + backward: {} ms'.format(test_name, ms))
+
+        return ret, other_tensor_slice.tensor.grad
 
     if backend is Backend.PYTHON:
-        ret1 = run('Single stream', backend, nstreams=1)
-        ret2 = run('Multi streams', backend, nstreams=8)
+        ret1, ret1_grad = run('Single stream', backend, nstreams=1)
+        ret2, ret2_grad = run('Multi streams', backend, nstreams=8)
     else:
-        ret1 = run('PYTHON backend', Backend.PYTHON)
-        ret2 = run('NATIVE backend', Backend.NATIVE)
+        ret1, ret1_grad = run('PYTHON backend', Backend.PYTHON)
+        ret2, ret2_grad = run('NATIVE backend', Backend.NATIVE)
 
     assert(torch.allclose(ret1, ret2) is True)
+    assert(torch.allclose(ret1_grad, ret2_grad) is True)
 
 
 def test_bmm():

@@ -76,7 +76,7 @@ void bmm_backward<Engine::TORCH>(torch::Tensor grad, torch::Tensor input,
                 sub_weight_tensor.dim() == MAX_TENSOR_DIMS);
     if (sub_weight_tensor.dim() == MAX_TENSOR_DIMS) {
       sub_weight_tensor = torch::squeeze(sub_weight_tensor, 0);
-      sub_weight_grad_tensor = torch::squeeze(sub_input_grad_tensor, 0);
+      sub_weight_grad_tensor = torch::squeeze(sub_weight_grad_tensor, 0);
     }
 
     auto sub_grad_tensor = grad.index({Slice(input_start, input_end), Slice()});
