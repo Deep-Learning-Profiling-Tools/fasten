@@ -14,8 +14,8 @@ class StreamPool:
 
     @classmethod
     def add(cls, nstreams: int = 1) -> None:
-        for _ in nstreams:
-            cls._streams.append(torch.cuda.stream())
+        for _ in range(nstreams):
+            cls._streams.append(torch.cuda.Stream())
 
     @classmethod
     def reserve(cls, nstreams: int = 1) -> None:
@@ -114,12 +114,12 @@ class Ops:
             Sort a tensor (node or edge) according to their types.
 
             Args:
-                tensor: the torch tensor data
+                tensor: the PyTorch tensor data
                 types: the type of each entry
                 descending: sort the tensor in the descending order
 
             Returns:
-                TensorSlice
+                A TensorSlice
         '''
         sorted_types, type_indices = torch.sort(types, descending=descending)
         sorted_tensor = tensor[type_indices]
@@ -145,13 +145,16 @@ class Ops:
             Sort a tensor (node or edge) according to their types.
 
             Args:
-                tensor: the torch tensor data
-                types: the type of each entry
-                descending: sort the tensor in the descending order
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A PyTorch tensor
+                nstreams: Number of CUDA streams
 
             Returns:
-                TensorSlice
+                A TensorSlice
         '''
+        StreamPool.reserve(nstreams)
+
         other_types = {}
         for i in range(len(other.slices)):
             other_types[other.slices[i][0].item()] = i
@@ -163,11 +166,11 @@ class Ops:
             other_slice = other.slices[other_types[input_type], :]
             input_tensor = input.tensor[slice(
                 input_slice[1].item(), input_slice[2].item()), :]
-            if len(input_tensor.shape) == cls.MAX_TENSOR_DIMS:
+            if len(input_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 input_tensor = torch.squeeze(other_tensor, 0)
             other_tensor = other.tensor[slice(
                 other_slice[1].item(), other_slice[2].item()), :]
-            if len(other_tensor.shape) == cls.MAX_TENSOR_DIMS:
+            if len(other_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 other_tensor = torch.squeeze(other_tensor, 0)
             output_tensor = output[slice(
                 input_slice[1].item(), input_slice[2].item()), :]
@@ -177,26 +180,36 @@ class Ops:
         if nstreams > 1:
             torch.cuda.synchronize()
 
+        return output
+
     @classmethod
     def _validate_output(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor) -> torch.tensor:
         '''
             Check if the given tensor shapes are valid and allocate an output tensor if needed
+
+            Args:
+                input: A TensorSlice
+                other: A TensorSlice
+                output: A PyTorch tensor
+
+            Returns:
+                A PyTorch tensor
         '''
         output_dims = []
-        if len(input.tensor.shape) == cls.MIN_TENSOR_DIMS and len(other.tensor.shape) <= cls.MAX_TENSOR_DIMS:
-            output_dims = [input.tensor.shape[0], other.tensor.shape[-1]]
-        elif len(input.tensor.shape) == cls.MAX_TENSOR_DIMS and len(other.tensor.shape) <= cls.MAX_TENSOR_DIMS:
-            output_dims = [input.tensor.shape[1], other.tensor.shape[-1]]
+        if len(input.tensor.size()) == cls.MIN_TENSOR_DIMS and len(other.tensor.size()) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.tensor.size()[0], other.tensor.size()[-1]]
+        elif len(input.tensor.size()) == cls.MAX_TENSOR_DIMS and len(other.tensor.size()) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.tensor.size()[1], other.tensor.size()[-1]]
         else:
-            warnings.warn("Fasten: do not support tensor shape input {} other {}".format(
-                input.shape, other.shape), RuntimeError)
+            raise RuntimeError("Fasten: do not support tensor shape input {} other {}".format(
+                list(input.size()), list(other.size())))
 
         if output is None:
-            output = torch.tensor((output_dims), device=output.device)
+            output = torch.zeros((output_dims), device=input.tensor.device)
 
-        if output_dims != output.shape:
-            warnings.warn("Fasten: tensor shape error output {}".format(
-                output.shape), RuntimeError)
+        if output_dims != list(output.size()):
+            raise RuntimeError("Fasten: tensor shape error output {}".format(
+                list(output.size())))
 
         return output
 
@@ -208,13 +221,13 @@ class Ops:
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
-                output: A torch Tensor
+                output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
                 engine: If using the C++ backend, what algorithm to use
 
             Returns:
-                torch.tensor: A torch Tensor
+                A PyTorch tensor
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
@@ -230,12 +243,12 @@ class Ops:
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
-                output: A torch Tensor
+                output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
 
             Returns:
-                torch.tensor: A torch Tensor
+                A PyTorch tensor
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
@@ -251,12 +264,12 @@ class Ops:
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
-                output: A torch Tensor
+                output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
 
             Returns:
-                torch.tensor: A torch Tensor
+                A PyTorch tensor
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
@@ -272,12 +285,12 @@ class Ops:
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
-                output: A torch Tensor
+                output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
 
             Returns:
-                torch.tensor: A torch Tensor
+                A PyTorch tensor
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
@@ -292,12 +305,12 @@ class Ops:
             Args:
                 input: A TensorSlice
                 other: A TensorSlice
-                output: A torch Tensor
+                output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
 
             Returns:
-                torch.tensor: A torch Tensor
+                A PyTorch tensor
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:

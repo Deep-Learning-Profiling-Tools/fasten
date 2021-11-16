@@ -4,12 +4,6 @@
 
 ## Installation
 
-### Required packages
-
-```bash
-pip install -U torch torch-geometric pytest
-```
-
 ### Optional packages
 
 ```bash
@@ -19,8 +13,8 @@ spack install magma
 ### Build instructions
 
 ```bash
-mkdir build && cd build
-../bin/build.sh
+git clone https://github.com/Jokeren/fasten.git && cd fasten
+pip install .
 ```
 
 ## Examples

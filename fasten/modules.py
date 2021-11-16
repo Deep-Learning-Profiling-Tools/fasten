@@ -11,8 +11,8 @@ def get_engine(module, engine_name: str):
     elif engine_name.lower() == 'native':
         return module.NATIVE
     else:
-        warnings.warn("Fasten: No such compute engine {}".format(
-            engine_name), RuntimeError)
+        raise RuntimeError("Fasten: No such compute engine {}".format(
+            engine_name))
 
 
 def get_module(use_cuda: bool):

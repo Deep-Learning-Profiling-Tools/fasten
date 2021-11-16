@@ -18,6 +18,8 @@ def correctness(backend: Backend):
     output = ops.bmm(input_tensor_slice, other_tensor_slice, backend=backend)
     truth = torch.tensor([[9, 12], [25, 32], [45, 56]],
                          device=device, dtype=torch.float)
+    print(output)
+    print(truth)
     assert(torch.all(output == truth).item() is True)
 
 
