@@ -55,7 +55,8 @@ setup(
 
     python_requires='>=3.6, <4',
 
-    install_requires=['torch', 'torch_geometric', 'pytest'],  # Optional
+    install_requires=['torch', 'torch_geometric',
+                      'pytest', 'timemory'],  # Optional
 
     extras_require={  # Optional
         'test': ['pytest'],

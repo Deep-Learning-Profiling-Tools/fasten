@@ -90,8 +90,11 @@ def speed(backend: Backend):
     assert(torch.allclose(ret1_grad, ret2_grad) is True)
 
 
-def test_bmm():
+def test_correctness():
     correctness(Backend.PYTHON)
     correctness(Backend.NATIVE)
+
+
+def test_speed():
     speed(Backend.PYTHON)
     speed(Backend.NATIVE)

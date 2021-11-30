@@ -45,10 +45,16 @@ class TensorSlice:
                     It can also be a list, then internally we transform it to a tensor
     '''
 
-    def __init__(self, tensor: torch.tensor, slices: Union[torch.tensor, list] = None) -> None:
+    def __init__(self, tensor: torch.tensor, slices: Union[torch.tensor, list, int] = None) -> None:
         self._tensor = tensor
         if type(slices) is list:
             self._slices = torch.as_tensor(slices)
+        elif type(slices) is int:
+            self._slices = torch.zeros([slices, 3])
+            for i in range(0, slices):
+               self._slices[i][0] = i 
+               self._slices[i][1] = i 
+               self._slices[i][2] = i + 1 
         else:
             self._slices = slices
         # Don't backpropagate on slice tensors

@@ -24,6 +24,9 @@ def compact_descending():
     assert(torch.all(tensor_slice.slices == slice_truth).item() is True)
 
 
-def test_compact():
+def test_compact_descending():
     compact_descending()
+
+
+def test_compact_ascending():
     compact_ascending()
