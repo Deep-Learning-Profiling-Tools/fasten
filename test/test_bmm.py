@@ -13,11 +13,12 @@ def correctness(backend: Backend):
     other_slice = [[1, 0, 2], [2, 2, 4]]
     other = torch.tensor([[7, 8], [1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float, requires_grad=True)
-    input_tensor_slice = TensorSlice(input, input_slice)
-    other_tensor_slice = TensorSlice(other, other_slice)
+    input_tensor_slice = TensorSlice(input_slice)
+    other_tensor_slice = TensorSlice(other_slice)
 
     # forward
-    output = ops.bmm(input_tensor_slice, other_tensor_slice, backend=backend)
+    output = ops.bmm(input, input_tensor_slice, other,
+                     other_tensor_slice, backend=backend)
     truth = torch.tensor([[9, 12], [25, 32], [45, 56]],
                          device=device, dtype=torch.float)
     assert(torch.all(output == truth).item() is True)
@@ -44,18 +45,18 @@ def speed(backend: Backend):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
 
-        input_tensor_slice = ops.compact(input, input_types)
-        other_tensor_slice = ops.compact(other, other_types)
+        input_tensor, input_tensor_slice = ops.compact(input, input_types)
+        other_tensor, other_tensor_slice = ops.compact(other, other_types)
 
         # warmup
-        ops.bmm(input_tensor_slice, other_tensor_slice,
+        ops.bmm(input_tensor, input_tensor_slice, other_tensor, other_tensor_slice,
                 backend=backend, nstreams=nstreams)
 
         # forward
         start_event.record()
         for _ in range(repeat):
-            ret = ops.bmm(input_tensor_slice,
-                          other_tensor_slice,  backend=backend, nstreams=nstreams)
+            ret = ops.bmm(input_tensor, input_tensor_slice,
+                          other_tensor, other_tensor_slice,  backend=backend, nstreams=nstreams)
         end_event.record()
         end_event.synchronize()
 
@@ -65,9 +66,9 @@ def speed(backend: Backend):
 
         # forward + backward
         start_event.record()
-        other_tensor_slice.tensor.requires_grad = True
+        other_tensor.requires_grad = True
         for _ in range(repeat):
-            ret = ops.bmm(input_tensor_slice, other_tensor_slice,
+            ret = ops.bmm(input_tensor, input_tensor_slice, other_tensor, other_tensor_slice,
                           backend=backend, nstreams=nstreams)
             ret.backward(torch.ones_like(ret))
         end_event.record()
@@ -77,7 +78,7 @@ def speed(backend: Backend):
 
         print('{} forward + backward: {} ms'.format(test_name, ms))
 
-        return ret, other_tensor_slice.tensor.grad
+        return ret, other_tensor.grad
 
     if backend is Backend.PYTHON:
         ret1, ret1_grad = run('Single stream', backend, nstreams=1)

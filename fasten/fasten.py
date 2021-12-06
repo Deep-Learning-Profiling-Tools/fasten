@@ -1,8 +1,8 @@
 from enum import Enum
-from typing import Union
+from typing import Union, Tuple
 
 import torch
-import warnings
+
 
 from .interfaces import *
 
@@ -40,33 +40,85 @@ class TensorSlice:
         Construct a TensorSlice data structure
 
         Args:
-            tensor: A PyTorch Tensor
             slices: A 3-dim PyTorch Tensor, where each row represents [type, start, end].
-                    It can also be a list, then internally we transform it to a tensor
+                    It can also be a int or a list, then internally we transform it to a tensor
     '''
 
-    def __init__(self, tensor: torch.tensor, slices: Union[torch.tensor, list, int] = None) -> None:
-        self._tensor = tensor
-        if type(slices) is list:
-            self._slices = torch.as_tensor(slices)
-        elif type(slices) is int:
+    def __init__(self, slices: Union[torch.tensor, list, int] = None) -> None:
+        if type(slices) is int:
             self._slices = torch.zeros([slices, 3])
             for i in range(0, slices):
-               self._slices[i][0] = i 
-               self._slices[i][1] = i 
-               self._slices[i][2] = i + 1 
+                self._slices[i][0] = i
+                self._slices[i][1] = i
+                self._slices[i][2] = i + 1
+        elif type(slices) is list:
+            self._slices = torch.as_tensor(slices)
         else:
             self._slices = slices
         # Don't backpropagate on slice tensors
         self._slices.requires_grad = False
 
-    @property
-    def tensor(self):
-        return self._tensor
+        # TODO(Keren): Simplify the internal data structures
+        # Currently a map is reconstructed every time when it is passed to the C++ backend
+        self._type_slice_dict = {}
+        for i in range(self._slices.size(0)):
+            self._type_slice_dict[self._slices[i, 0].item()] = i
+
+    def __len__(self):
+        return self._slices.size(0)
+
+    def __getitem__(self, key):
+        return self._slices.__getitem__(key).item()
+
+    def __setitem__(self, key, val):
+        self._slices.__setitem__(key, val)
+
+    def __eq__(self, __o: object) -> bool:
+        return self._slices == __o
 
     @property
     def slices(self):
         return self._slices
+
+    def get_slice(self, slice_type: int) -> slice:
+        '''
+            Get the slice of a specific type
+
+            Args:
+                slice_type: The type we want to get from the original slices
+        '''
+        if slice_type not in self._type_slice_dict:
+            raise RuntimeError(
+                "TensorSlice does not have type {}".format(slice_type))
+        row = self._type_slice_dict[slice_type]
+        return slice(self._slices[row, 1].item(), self._slices[row, 2].item())
+
+    def extract(self, slice_types: Union[slice, list], sorted: bool = True):
+        '''
+            Construct subslices from the original slices
+
+            Args:
+                slice_types: The types we want to extract from the original slices
+                sorted: If the types are sorted
+        '''
+        if type(slice_types) is slice:
+            slice_types = list(
+                range(slice_types.start, slice_types.stop, slice_types.step))
+        elif type(slice_types) is list and sorted is False:
+            slice_types.sort()
+
+        slices = torch.zeros([len(slice_types), 3])
+        offset = 0
+        for i in range(len(slice_types)):
+            slice_type = slice_types[i]
+            row = self._type_slice_dict[slice_type]
+            length = self.slices[row][2].item() - self.slices[row][1].item()
+            slices[i][0] = slice_type
+            slices[i][1] = offset
+            slices[i][2] = offset + length
+            offset += length
+
+        return TensorSlice(slices)
 
 
 class Backend(Enum):
@@ -117,17 +169,18 @@ class Ops:
     '''
 
     @staticmethod
-    def compact(tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> TensorSlice:
+    def compact(tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> Tuple[torch.tensor, TensorSlice]:
         '''
             Sort a tensor (node or edge) according to their types.
 
             Args:
-                tensor: the PyTorch tensor data
-                types: the type of each entry
-                descending: sort the tensor in the descending order
+                tensor: A PyTorch tensor data
+                types: The type of each row
+                descending: If true, sort the tensor in the descending order
 
             Returns:
-                A TensorSlice
+                tensor: A sorted tensor
+                TensorSlice: The tensor's TensorSlice
         '''
         sorted_types, type_indices = torch.sort(types, descending=descending)
         sorted_tensor = tensor[type_indices]
@@ -145,16 +198,18 @@ class Ops:
                 unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
             cur_index += type_counts[i].item()
 
-        return TensorSlice(sorted_tensor, torch.as_tensor(types))
+        return sorted_tensor, TensorSlice(types)
 
     @classmethod
-    def _apply_streams(cls, op, input: TensorSlice, other: TensorSlice, output: torch.tensor, nstreams: int = 1) -> torch.tensor:
+    def _apply_streams(cls, op, input: torch.tensor, input_slices: TensorSlice, other: TensorSlice, other_slices: TensorSlice, output: torch.tensor, nstreams: int = 1) -> torch.tensor:
         '''
             Sort a tensor (node or edge) according to their types.
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
 
@@ -163,26 +218,19 @@ class Ops:
         '''
         StreamPool.reserve(nstreams)
 
-        other_types = {}
-        for i in range(len(other.slices)):
-            other_types[other.slices[i][0].item()] = i
-
-        for i in range(len(input.slices)):
+        for i in range(len(input_slices)):
             stream_id = i % nstreams
-            input_slice = input.slices[i, :]
-            input_type = input_slice[0].item()
-            other_slice = other.slices[other_types[input_type], :]
-            input_tensor = input.tensor[slice(
-                input_slice[1].item(), input_slice[2].item()), :]
+            input_type = input_slices[i, 0]
+            input_slice = input_slices.get_slice(input_type)
+            other_slice = other_slices.get_slice(input_type)
+            input_tensor = input[input_slice, :]
             if len(input_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 input_tensor = torch.squeeze(other_tensor, 0)
-            other_tensor = other.tensor[slice(
-                other_slice[1].item(), other_slice[2].item()), :]
+            other_tensor = other[other_slice, :]
             if len(other_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 other_tensor = torch.squeeze(other_tensor, 0)
             with torch.cuda.stream(StreamPool.get(stream_id)):
-                output[slice(input_slice[1].item(), input_slice[2].item()), :] = op(
-                    input_tensor, other_tensor)
+                output[input_slice, :] = op(input_tensor, other_tensor)
 
         if nstreams > 1:
             torch.cuda.synchronize()
@@ -190,29 +238,29 @@ class Ops:
         return output
 
     @classmethod
-    def _validate_output(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor) -> torch.tensor:
+    def _validate_output(cls, input: torch.tensor, other: torch.tensor, output: torch.tensor) -> torch.tensor:
         '''
             Check if the given tensor shapes are valid and allocate an output tensor if needed
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                other: A PyTorch tensor
                 output: A PyTorch tensor
 
             Returns:
                 A PyTorch tensor
         '''
         output_dims = []
-        if len(input.tensor.size()) == cls.MIN_TENSOR_DIMS and len(other.tensor.size()) <= cls.MAX_TENSOR_DIMS:
-            output_dims = [input.tensor.size()[0], other.tensor.size()[-1]]
-        elif len(input.tensor.size()) == cls.MAX_TENSOR_DIMS and len(other.tensor.size()) <= cls.MAX_TENSOR_DIMS:
-            output_dims = [input.tensor.size()[1], other.tensor.size()[-1]]
+        if len(input.size()) == cls.MIN_TENSOR_DIMS and len(other.size()) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.size()[0], other.size()[-1]]
+        elif len(input.size()) == cls.MAX_TENSOR_DIMS and len(other.size()) <= cls.MAX_TENSOR_DIMS:
+            output_dims = [input.size()[1], other.size()[-1]]
         else:
             raise RuntimeError("Fasten: do not support tensor shape input {} other {}".format(
                 list(input.size()), list(other.size())))
 
         if output is None:
-            output = torch.zeros((output_dims), device=input.tensor.device)
+            output = torch.zeros((output_dims), device=input.device)
 
         if output_dims != list(output.size()):
             raise RuntimeError("Fasten: tensor shape error output {}".format(
@@ -221,13 +269,15 @@ class Ops:
         return output
 
     @classmethod
-    def bmm(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON, engine=None) -> torch.tensor:
+    def bmm(cls, input: torch.tensor, input_slices: TensorSlice, other: torch.tensor, other_slices: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON, engine=None) -> torch.tensor:
         '''
             Batch matrix multiple input with other
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
@@ -238,18 +288,20 @@ class Ops:
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
-            return FastenBmm.apply(input.tensor, input.slices, other.tensor, other.slices, output, engine)
+            return FastenBmm.apply(input, input_slices.slices, other, other_slices.slices, output, engine)
         else:
-            return cls._apply_streams(torch.mm, input, other, output, nstreams)
+            return cls._apply_streams(torch.mm, input, input_slices, other, other_slices, output, nstreams)
 
     @classmethod
-    def bmul(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+    def bmul(cls, input: torch.tensor, input_slices: TensorSlice, other: torch.tensor, other_slices: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
         '''
             Batch multiple input with other
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
@@ -259,18 +311,20 @@ class Ops:
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
-            return FastenBmul.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+            return FastenBmul.apply(input, input_slices.slices, other, other_slices.slices, output)
         else:
-            return cls._apply_streams(torch.mul, input, other, output, nstreams)
+            return cls._apply_streams(torch.mul, input, input_slices, other, other_slices, output, nstreams)
 
     @classmethod
-    def badd(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+    def badd(cls, input: torch.tensor, input_slices: TensorSlice, other: torch.tensor, other_slices: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
         '''
             Batch add input with other
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
@@ -280,18 +334,20 @@ class Ops:
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
-            return FastenBadd.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+            return FastenBadd.apply(input, input_slices.slices, other, other_slices.slices, output)
         else:
-            return cls._apply_streams(torch.add, input, other, output, nstreams)
+            return cls._apply_streams(torch.add, input, input_slices, other, other_slices, output, nstreams)
 
     @classmethod
-    def bsub(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+    def bsub(cls, input: torch.tensor, input_slices: TensorSlice, other: torch.tensor, other_slices: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
         '''
             Batch sub input with other
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
@@ -301,17 +357,19 @@ class Ops:
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
-            return FastenBsub.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+            return FastenBsub.apply(input, input_slices.slices, other, other_slices.slices, output)
         else:
-            return cls._apply_streams(torch.sub, input, other, output, nstreams)
+            return cls._apply_streams(torch.sub, input, input_slices, other, other_slices, output, nstreams)
 
-    def bdiv(cls, input: TensorSlice, other: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
+    def bdiv(cls, input: torch.tensor, input_slices: TensorSlice, other: torch.tensor, other_slices: TensorSlice, output: torch.tensor = None, nstreams: int = 1, backend: Backend = Backend.PYTHON) -> torch.tensor:
         '''
             Batch div input with other
 
             Args:
-                input: A TensorSlice
-                other: A TensorSlice
+                input: A PyTorch tensor
+                input_slices: A TensorSlice
+                other: A PyTorch tensor
+                other_slices: A TensorSlice
                 output: A PyTorch tensor
                 nstreams: Number of CUDA streams
                 backend: Whether to use Python or Native C++ backend
@@ -321,6 +379,6 @@ class Ops:
         '''
         output = cls._validate_output(input, other, output)
         if backend == Backend.NATIVE:
-            return FastenBdiv.apply(input.tensor, input.slices, other.tensor, other.slices, output)
+            return FastenBdiv.apply(input, input_slices.slices, other, other_slices.slices, output)
         else:
-            return cls._apply_streams(torch.div, input, other, output, nstreams)
+            return cls._apply_streams(torch.div, input, input_slices, other, other_slices, output, nstreams)
