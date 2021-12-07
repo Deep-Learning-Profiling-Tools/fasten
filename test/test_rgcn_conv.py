@@ -12,14 +12,22 @@ def test_correctness():
         [0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1],
     ])
     edge_type = torch.tensor([0, 1, 1, 0, 7, 6, 4, 3, 3, 2, 2, 3])
-    rgcn_conv = RGCNConv(4, 32, 8, num_bases=4)
-    rgcn_conv_out = rgcn_conv(x, edge_index, edge_type)
+    sorted_edge_type, _ = torch.sort(edge_type)
+    edge_index, edge_type = ops.compact(
+        edge_index, edge_type, type_dim=1)
 
-    edge_index, edge_type = ops.compact(edge_index, edge_type, type_dim=1)
-    fasten_rgcn_conv = FastenRGCNConv(4, 32, 8, num_bases=4)
-    #fasten_rgcn_conv_out = fasten_rgcn_conv(x, edge_index, edge_type)
-    # print(rgcn_conv_out)
-    # print(fasten_rgcn_conv_out)
+    torch.manual_seed(12345)
+    rgcn_conv = RGCNConv(4, 32, 8, num_bases=4, aggr='add')
+    rgcn_conv_out = rgcn_conv(x, edge_index, sorted_edge_type)
+
+    torch.manual_seed(12345)
+    fasten_rgcn_conv = FastenRGCNConv(4, 32, 8, num_bases=4, aggr='add')
+    fasten_rgcn_conv_out = fasten_rgcn_conv(x, edge_index, edge_type)
+
+    print(rgcn_conv_out)
+    print(fasten_rgcn_conv_out)
+    assert(fasten_rgcn_conv_out.shape == rgcn_conv_out.shape)
+    assert(torch.allclose(fasten_rgcn_conv_out, rgcn_conv_out) is True)
 
 
 def test_speedup():

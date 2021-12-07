@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Union, Tuple
+from collections import OrderedDict
 
 import torch
 
@@ -46,7 +47,7 @@ class TensorSlice:
 
     def __init__(self, slices: Union[torch.tensor, list, int] = None) -> None:
         if type(slices) is int:
-            self._slices = torch.zeros([slices, 3])
+            self._slices = torch.zeros([slices, 3], dtype=torch.long)
             for i in range(0, slices):
                 self._slices[i][0] = i
                 self._slices[i][1] = i
@@ -60,7 +61,7 @@ class TensorSlice:
 
         # TODO(Keren): Simplify the internal data structures
         # Currently a map is reconstructed every time when it is passed to the C++ backend
-        self._type_slice_dict = {}
+        self._type_slice_dict = OrderedDict()
         for i in range(self._slices.size(0)):
             self._type_slice_dict[self._slices[i, 0].item()] = i
 
@@ -76,9 +77,21 @@ class TensorSlice:
     def __eq__(self, __o: object) -> bool:
         return self._slices == __o
 
+    def __contains__(self, key) -> bool:
+        return key in self._type_slice_dict
+
     @property
     def slices(self):
         return self._slices
+
+    def start(self):
+        return self._slices[0].start
+
+    def stop(self):
+        return self._slices[-1].stop
+
+    def types(self):
+        return list(self._type_slice_dict.keys())
 
     def get_slice(self, slice_type: int) -> slice:
         '''
@@ -102,12 +115,13 @@ class TensorSlice:
                 sorted: If the types are sorted
         '''
         if type(slice_types) is slice:
+            step = 1 if slice_types.step is None else slice_types.step
             slice_types = list(
-                range(slice_types.start, slice_types.stop, slice_types.step))
+                range(slice_types.start, slice_types.stop, step))
         elif type(slice_types) is list and sorted is False:
             slice_types.sort()
 
-        slices = torch.zeros([len(slice_types), 3])
+        slices = torch.zeros([len(slice_types), 3], dtype=torch.long)
         offset = 0
         for i in range(len(slice_types)):
             slice_type = slice_types[i]
@@ -182,6 +196,7 @@ class Ops:
             Returns:
                 tensor: A sorted tensor
                 TensorSlice: The tensor's TensorSlice
+                index: The original row indices in the sorted tensor 
         '''
         sorted_types, type_indices = torch.sort(types, descending=descending)
         sorted_tensor = torch.index_select(
@@ -221,8 +236,9 @@ class Ops:
         StreamPool.reserve(nstreams)
 
         for i in range(len(input_slices)):
-            stream_id = i % nstreams
             input_type = input_slices[i, 0]
+            if input_type not in other_slices:
+                continue
             input_slice = input_slices.get_slice(input_type)
             other_slice = other_slices.get_slice(input_type)
             input_tensor = input[input_slice, :]
@@ -231,6 +247,7 @@ class Ops:
             other_tensor = other[other_slice, :]
             if len(other_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 other_tensor = torch.squeeze(other_tensor, 0)
+            stream_id = i % nstreams
             with torch.cuda.stream(StreamPool.get(stream_id)):
                 output[input_slice, :] = op(input_tensor, other_tensor)
 

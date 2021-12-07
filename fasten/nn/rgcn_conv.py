@@ -3,6 +3,8 @@ from torch_geometric.typing import OptTensor
 
 import torch
 from torch import Tensor
+import torch.nn.functional as F
+from torch_scatter import scatter
 from torch_geometric.nn import RGCNConv
 
 from fasten import TensorSlice
@@ -19,7 +21,7 @@ class FastenRGCNConv(RGCNConv):
            The larger the tile_size, the more memory consumed and the lower the execution
            time.
     '''
-    TILE_SIZE = 8
+    TILE_SIZE = 2
 
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int,
@@ -34,10 +36,7 @@ class FastenRGCNConv(RGCNConv):
                                              num_bases, num_blocks, aggr, root_weight, bias, **kwargs)
 
         self.tile_size = tile_size
-        if self.num_bases is not None:
-            self.weight_type = TensorSlice(self.num_bases)
-        elif self.num_blocks is not None:
-            self.weight_type = TensorSlice(self.num_relations)
+        self.weight_type = TensorSlice(self.num_relations)
 
     def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]], edge_index, edge_type: TensorSlice):
         # Convert input features to a pair of node features or node indices.
@@ -67,26 +66,33 @@ class FastenRGCNConv(RGCNConv):
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
-            for i in range(0, self.num_relations, self.tile_size):
-                start_relation = i
-                end_relation = self.num_relations - 1 if start_relation + \
-                    self.tile_size >= self.num_relations else start_relation + self.tile_size - 1
-                start_index = edge_type[start_relation, 0]
-                end_index = edge_type[end_relation - 1, 1]
-                weight_indices = slice(start_relation, end_relation)
-                edge_indices = slice(start_index, end_index)
-                tmp = edge_index[:, edge_indices]
-
+            types = edge_type.types()
+            for i in range(0, len(types), self.tile_size):
+                start_i = i
+                end_i = len(types) - 1 if start_i + \
+                    self.tile_size >= len(types) else start_i + self.tile_size - 1
+                start_relation = types[start_i]
+                end_relation = types[end_i]
+                edge_start_index = edge_type.get_slice(
+                    start_relation).start
+                edge_end_index = edge_type.get_slice(
+                    end_relation).stop
+                weight_start_index = self.weight_type.get_slice(
+                    start_relation).start
+                weight_end_index = self.weight_type.get_slice(
+                    end_relation).stop
+                weight_slice = slice(weight_start_index, weight_end_index)
+                edge_slice = slice(edge_start_index, edge_end_index)
+                edge_index_slice = edge_index[:, edge_slice]
+                h_type = edge_type.extract(types[start_i:end_i + 1])
+                weight_type = self.weight_type.extract(
+                    types[start_i:end_i + 1])
                 if x_l.dtype == torch.long:
-                    out += self.propagate(tmp,
-                                          x=weight[weight_indices, x_l], size=size)
+                    out = out + self.propagate(edge_index_slice, x=weight[weight_slice, x_l],
+                                               size=size, edge_type=h_type, weight=weight, weight_type=weight_type)
                 else:
-                    h_slice = self.propagate(tmp, x=x_l, size=size)
-                    h_type = edge_type.extract(weight_indices)
-                    weight_slice = weight[weight_indices, :]
-                    weight_type = self.weight_type.extract(weight_indices)
-                    out = out + ops.bmm(h_slice, h_type,
-                                        weight_slice, weight_type)
+                    out = out + self.propagate(edge_index_slice, x=x_l, size=size,
+                                               edge_type=h_type, weight=weight[weight_slice, :], weight_type=weight_type)
 
         root = self.root
         if root is not None:
@@ -97,8 +103,29 @@ class FastenRGCNConv(RGCNConv):
 
         return out
 
-    def message(self, x_j: Tensor) -> Tensor:
-        return torch.sum(x_j, 0)
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, weight_type: TensorSlice, index: Tensor) -> Tensor:
+        if self.num_blocks is not None:  # Block-diagonal-decomposition =======
+            raise RuntimeError(
+                'Block-decomposition is not supported by fasten yet')
+        else:  # No regularization/Basis-decomposition ========================
+            if x_j.dtype == torch.long:
+                weight_index = edge_type * weight.size(1) + index
+                return weight.view(-1, self.out_channels)[weight_index]
+
+            return ops.bmm(x_j, edge_type, weight, weight_type)
+
+    def aggregate(self, inputs: Tensor, edge_type: Tensor, index: Tensor,
+                  dim_size: Optional[int] = None) -> Tensor:
+
+        # Compute normalization in separation for each `edge_type`.
+        # if self.aggr == 'mean':
+        #    norm = F.one_hot(edge_type, self.num_relations).to(torch.float)
+        #    norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
+        #    norm = torch.gather(norm, 1, edge_type.view(-1, 1))
+        #    norm = 1. / norm.clamp_(1.)
+        #    inputs = norm * inputs
+
+        return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)
 
     def __repr__(self):
         return '{}({}, {}, num_relations={})'.format(self.__class__.__name__,

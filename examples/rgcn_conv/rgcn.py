@@ -5,10 +5,11 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import Entities
 from torch_geometric.utils import k_hop_subgraph
-from rgcnconv import RGCNConv, FastRGCNConv, FastenFastRGCNConv
+from .rgcn_conv import RGCNConv, FastRGCNConv
 
 from fasten import Ops as fasten_ops
 from fasten import TensorSlice
+from fasten.nn import FastenRGCNConv
 
 import timemory
 from timemory.util import marker
@@ -25,7 +26,7 @@ parser.add_argument('--fasten', action='store_true', default=False)
 args = parser.parse_args()
 
 if args.fasten:
-    RGCNConv = FastenFastRGCNConv
+    RGCNConv = FastenRGCNConv
 else:
     RGCNConv = FastRGCNConv
 
@@ -73,20 +74,20 @@ def train():
     if args.fasten:
         with torch.no_grad():
             edges = fasten_ops.compact(data.edge_index, data.edge_type)
-    with marker(["wall_clock"], key="forward"):
+    with marker(["wall_clock", "cuda_event"], key="forward"):
         #print(torch.histc(data.edge_type, bins=46))
         if args.fasten:
             out = model(edges)
         else:
             out = model(data.edge_index, data.edge_type)
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="loss"):
+    with marker(["wall_clock", "cuda_event"], key="loss"):
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="backward"):
+    with marker(["wall_clock", "cuda_event"], key="backward"):
         loss.backward()
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="optimize"):
+    with marker(["wall_clock", "cuda_event"], key="optimize"):
         optimizer.step()
         torch.cuda.synchronize()
     return loss.item()
@@ -102,7 +103,7 @@ def test():
 
 
 for epoch in range(1, 10):
-    with marker(["wall_clock"], key="train"):
+    with marker(["wall_clock", "cuda_event"], key="train"):
         loss = train()
     train_acc, test_acc = test()
     print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
