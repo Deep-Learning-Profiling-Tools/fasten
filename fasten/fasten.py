@@ -169,13 +169,14 @@ class Ops:
     '''
 
     @staticmethod
-    def compact(tensor: torch.tensor, types: torch.tensor, descending: bool = False) -> Tuple[torch.tensor, TensorSlice]:
+    def compact(tensor: torch.tensor, types: torch.tensor, type_dim: int = 0, descending: bool = False) -> Tuple[torch.tensor, TensorSlice]:
         '''
             Sort a tensor (node or edge) according to their types.
 
             Args:
                 tensor: A PyTorch tensor data
                 types: The type of each row
+                type_dim: Which dimension of the tensor represents types
                 descending: If true, sort the tensor in the descending order
 
             Returns:
@@ -183,7 +184,8 @@ class Ops:
                 TensorSlice: The tensor's TensorSlice
         '''
         sorted_types, type_indices = torch.sort(types, descending=descending)
-        sorted_tensor = tensor[type_indices]
+        sorted_tensor = torch.index_select(
+            tensor, dim=type_dim, index=type_indices)
         # This function is different from torch.unique() in the sense that this function only eliminates
         # consecutive duplicate values. This semantics is similar to std::unique in C++.
         # torch.unique() may sort elements even if sorted is specified.

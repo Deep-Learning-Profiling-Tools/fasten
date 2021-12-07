@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from torch_geometric.typing import OptTensor
 
 import torch
@@ -21,19 +21,25 @@ class FastenRGCNConv(RGCNConv):
     '''
     TILE_SIZE = 8
 
-    def __init__(self, **kwargs):
-        super(FastenRGCNConv, self).__init__(**kwargs)
+    def __init__(self, in_channels: Union[int, Tuple[int, int]],
+                 out_channels: int,
+                 num_relations: int,
+                 num_bases: Optional[int] = None,
+                 num_blocks: Optional[int] = None,
+                 aggr: str = 'mean',
+                 root_weight: bool = True,
+                 bias: bool = True,
+                 tile_size: int = TILE_SIZE, **kwargs):
+        super(FastenRGCNConv, self).__init__(in_channels, out_channels, num_relations,
+                                             num_bases, num_blocks, aggr, root_weight, bias, **kwargs)
 
-        self.tile_size = FastenRGCNConv.TILE_SIZE
-        if 'tile_size' in kwargs:
-            self.tile_size = kwargs['tile_size']
-
+        self.tile_size = tile_size
         if self.num_bases is not None:
-            self.weight_types = TensorSlice(self.num_bases)
+            self.weight_type = TensorSlice(self.num_bases)
         elif self.num_blocks is not None:
-            self.weight_types = TensorSlice(self.num_relations)
+            self.weight_type = TensorSlice(self.num_relations)
 
-    def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]], edge_index, edge_types: TensorSlice):
+    def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]], edge_index, edge_type: TensorSlice):
         # Convert input features to a pair of node features or node indices.
         x_l: OptTensor = None
         if isinstance(x, tuple):
@@ -65,8 +71,8 @@ class FastenRGCNConv(RGCNConv):
                 start_relation = i
                 end_relation = self.num_relations - 1 if start_relation + \
                     self.tile_size >= self.num_relations else start_relation + self.tile_size - 1
-                start_index = edge_types[start_relation, 0].item()
-                end_index = edge_types[end_relation - 1, 1].item()
+                start_index = edge_type[start_relation, 0]
+                end_index = edge_type[end_relation - 1, 1]
                 weight_indices = slice(start_relation, end_relation)
                 edge_indices = slice(start_index, end_index)
                 tmp = edge_index[:, edge_indices]
@@ -76,11 +82,11 @@ class FastenRGCNConv(RGCNConv):
                                           x=weight[weight_indices, x_l], size=size)
                 else:
                     h_slice = self.propagate(tmp, x=x_l, size=size)
-                    h_types = edge_types.extract(weight_indices)
+                    h_type = edge_type.extract(weight_indices)
                     weight_slice = weight[weight_indices, :]
-                    weight_types = self.weight_types.extract(weight_indices)
-                    out = out + ops.bmm(h_slice, h_types,
-                                        weight_slice, weight_types)
+                    weight_type = self.weight_type.extract(weight_indices)
+                    out = out + ops.bmm(h_slice, h_type,
+                                        weight_slice, weight_type)
 
         root = self.root
         if root is not None:
