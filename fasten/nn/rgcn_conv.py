@@ -67,11 +67,10 @@ class FastenRGCNConv(RGCNConv):
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
             for h_type in TensorSliceTile(edge_type, self.tile_size):
-                edge_slice = slice(h_type.start, h_type.stop)
                 # Compute relative offset
-                h_type.slices[:, 1:3] -= h_type.start
+                edge_slice = slice(h_type.start, h_type.stop)
                 out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
-                                           edge_type=h_type, weight=weight)
+                                           edge_type=h_type.extract(), weight=weight)
 
         root = self.root
         if root is not None:
@@ -91,20 +90,20 @@ class FastenRGCNConv(RGCNConv):
                 weight_index = edge_type * weight.size(1) + index
                 return weight.view(-1, self.out_channels)[weight_index]
 
-            print('edge_type')
-            print(edge_type.slices)
             return ops.bmm(x_j, edge_type, weight, self.weight_type)
 
-    def aggregate(self, inputs: Tensor, edge_type: Tensor, index: Tensor,
+    def aggregate(self, inputs: Tensor, edge_type: TensorSlice, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
 
         # Compute normalization in separation for each `edge_type`.
-        # if self.aggr == 'mean':
-        #    norm = F.one_hot(edge_type, self.num_relations).to(torch.float)
-        #    norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
-        #    norm = torch.gather(norm, 1, edge_type.view(-1, 1))
-        #    norm = 1. / norm.clamp_(1.)
-        #    inputs = norm * inputs
+        if self.aggr == 'mean':
+            # TODO(keren): two dimensional histogram
+            for type in edge_type.types():
+                edge_type_slice = edge_type.get(type)
+                norm = torch.histogram(
+                    index[edge_type_slice], bins=dim_size).to(torch.float)
+                norm = 1. / norm.clamp_(1.)
+                inputs[edge_type_slice] = norm * inputs[edge_type_slice]
 
         return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)
 

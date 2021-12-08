@@ -53,7 +53,7 @@ class TensorSlice:
                 self._slices[i][1] = i
                 self._slices[i][2] = i + 1
         elif type(slices) is list:
-            self._slices = torch.as_tensor(slices)
+            self._slices = torch.as_tensor(slices, dtype=torch.long)
         else:
             self._slices = slices
         # Don't backpropagate on slice tensors
@@ -86,7 +86,7 @@ class TensorSlice:
 
     @property
     def stop(self):
-        return self._slices[0, 2].item()
+        return self._slices[-1, 2].item()
 
     @property
     def slices(self):
@@ -101,6 +101,9 @@ class TensorSlice:
 
             Args:
                 slice_type: The type we want to get from the original slices
+
+            Returns:
+                slice: The slice of the given slice_type
         '''
         if slice_type not in self._type_slice_dict:
             raise RuntimeError(
@@ -114,8 +117,35 @@ class TensorSlice:
 
             Args:
                 indices: The indices we want to extract from the original slices
+
+            Returns:
+                tensor_slice: A new TensorSlice object which has original offsets
         '''
         slices = self._slices[indices, :]
+        return TensorSlice(slices)
+
+    def extract(self, slice_types: list = None):
+        '''
+            Construct subslices of specific types from the original slices.
+
+            Args:
+                slice_types: The types we want to extract from the original slices
+
+            Returns:
+                tensor_slice: A new TensorSlice object which has relative offsets to the original tensor slice 
+        '''
+        if slice_types is None:
+            slice_types = self.types()
+        num_slice_types = len(slice_types)
+        slices = torch.zeros((num_slice_types, 3), dtype=torch.long)
+        offset = 0
+        for i in range(num_slice_types):
+            slice_type = slice_types[i]
+            slices[i, 0] = slice_type
+            if i == 0:
+                offset = self._slices[i, 1]
+            slices[i, 1] = self._slices[i, 1] - offset
+            slices[i, 2] = self._slices[i, 2] - offset
         return TensorSlice(slices)
 
 
@@ -138,7 +168,7 @@ class TensorSliceTile:
         else:
             start = self._cur
             end = self._cur + self._step if self._cur + \
-                self._step < len(self._tensor_slice) else len(self._tensor_slice) - 1
+                self._step <= len(self._tensor_slice) else len(self._tensor_slice)
             self._cur += self._step
             return self._tensor_slice.subslices(slice(start, end))
 
