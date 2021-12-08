@@ -81,19 +81,21 @@ class TensorSlice:
         return key in self._type_slice_dict
 
     @property
+    def start(self):
+        return self._slices[0, 1].item()
+
+    @property
+    def stop(self):
+        return self._slices[0, 2].item()
+
+    @property
     def slices(self):
         return self._slices
-
-    def start(self):
-        return self._slices[0].start
-
-    def stop(self):
-        return self._slices[-1].stop
 
     def types(self):
         return list(self._type_slice_dict.keys())
 
-    def get_slice(self, slice_type: int) -> slice:
+    def get(self, slice_type: int) -> slice:
         '''
             Get the slice of a specific type
 
@@ -106,33 +108,39 @@ class TensorSlice:
         row = self._type_slice_dict[slice_type]
         return slice(self._slices[row, 1].item(), self._slices[row, 2].item())
 
-    def extract(self, slice_types: Union[slice, list], sorted: bool = True):
+    def subslices(self, indices: slice):
         '''
             Construct subslices from the original slices
 
             Args:
-                slice_types: The types we want to extract from the original slices
-                sorted: If the types are sorted
+                indices: The indices we want to extract from the original slices
         '''
-        if type(slice_types) is slice:
-            step = 1 if slice_types.step is None else slice_types.step
-            slice_types = list(
-                range(slice_types.start, slice_types.stop, step))
-        elif type(slice_types) is list and sorted is False:
-            slice_types.sort()
-
-        slices = torch.zeros([len(slice_types), 3], dtype=torch.long)
-        offset = 0
-        for i in range(len(slice_types)):
-            slice_type = slice_types[i]
-            row = self._type_slice_dict[slice_type]
-            length = self.slices[row][2].item() - self.slices[row][1].item()
-            slices[i][0] = slice_type
-            slices[i][1] = offset
-            slices[i][2] = offset + length
-            offset += length
-
+        slices = self._slices[indices, :]
         return TensorSlice(slices)
+
+
+class TensorSliceTile:
+    '''
+        A Tiled iterator for TensorSlice
+    '''
+
+    def __init__(self, tensor_slice: TensorSlice, step: int = 1) -> None:
+        self._tensor_slice = tensor_slice
+        self._step = step
+        self._cur = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._cur >= len(self._tensor_slice):
+            raise StopIteration
+        else:
+            start = self._cur
+            end = self._cur + self._step if self._cur + \
+                self._step < len(self._tensor_slice) else len(self._tensor_slice) - 1
+            self._cur += self._step
+            return self._tensor_slice.subslices(slice(start, end))
 
 
 class Backend(Enum):
@@ -239,8 +247,8 @@ class Ops:
             input_type = input_slices[i, 0]
             if input_type not in other_slices:
                 continue
-            input_slice = input_slices.get_slice(input_type)
-            other_slice = other_slices.get_slice(input_type)
+            input_slice = input_slices.get(input_type)
+            other_slice = other_slices.get(input_type)
             input_tensor = input[input_slice, :]
             if len(input_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 input_tensor = torch.squeeze(other_tensor, 0)

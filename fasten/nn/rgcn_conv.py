@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch_scatter import scatter
 from torch_geometric.nn import RGCNConv
 
-from fasten import TensorSlice
+from fasten import TensorSlice, TensorSliceTile
 from fasten import Ops as ops
 
 
@@ -66,33 +66,12 @@ class FastenRGCNConv(RGCNConv):
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
-            types = edge_type.types()
-            for i in range(0, len(types), self.tile_size):
-                start_i = i
-                end_i = len(types) - 1 if start_i + \
-                    self.tile_size >= len(types) else start_i + self.tile_size - 1
-                start_relation = types[start_i]
-                end_relation = types[end_i]
-                edge_start_index = edge_type.get_slice(
-                    start_relation).start
-                edge_end_index = edge_type.get_slice(
-                    end_relation).stop
-                weight_start_index = self.weight_type.get_slice(
-                    start_relation).start
-                weight_end_index = self.weight_type.get_slice(
-                    end_relation).stop
-                weight_slice = slice(weight_start_index, weight_end_index)
-                edge_slice = slice(edge_start_index, edge_end_index)
-                edge_index_slice = edge_index[:, edge_slice]
-                h_type = edge_type.extract(types[start_i:end_i + 1])
-                weight_type = self.weight_type.extract(
-                    types[start_i:end_i + 1])
-                if x_l.dtype == torch.long:
-                    out = out + self.propagate(edge_index_slice, x=weight[weight_slice, x_l],
-                                               size=size, edge_type=h_type, weight=weight, weight_type=weight_type)
-                else:
-                    out = out + self.propagate(edge_index_slice, x=x_l, size=size,
-                                               edge_type=h_type, weight=weight[weight_slice, :], weight_type=weight_type)
+            for h_type in TensorSliceTile(edge_type, self.tile_size):
+                edge_slice = slice(h_type.start, h_type.stop)
+                # Compute relative offset
+                h_type.slices[:, 1:3] -= h_type.start
+                out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
+                                           edge_type=h_type, weight=weight)
 
         root = self.root
         if root is not None:
@@ -103,7 +82,7 @@ class FastenRGCNConv(RGCNConv):
 
         return out
 
-    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, weight_type: TensorSlice, index: Tensor) -> Tensor:
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, index: Tensor) -> Tensor:
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
@@ -112,7 +91,9 @@ class FastenRGCNConv(RGCNConv):
                 weight_index = edge_type * weight.size(1) + index
                 return weight.view(-1, self.out_channels)[weight_index]
 
-            return ops.bmm(x_j, edge_type, weight, weight_type)
+            print('edge_type')
+            print(edge_type.slices)
+            return ops.bmm(x_j, edge_type, weight, self.weight_type)
 
     def aggregate(self, inputs: Tensor, edge_type: Tensor, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
