@@ -95,7 +95,7 @@ class TensorSlice:
     def types(self):
         return list(self._type_slice_dict.keys())
 
-    def get(self, slice_type: int) -> slice:
+    def get_slice(self, slice_type: int) -> slice:
         '''
             Get the slice of a specific type
 
@@ -277,8 +277,8 @@ class Ops:
             input_type = input_slices[i, 0]
             if input_type not in other_slices:
                 continue
-            input_slice = input_slices.get(input_type)
-            other_slice = other_slices.get(input_type)
+            input_slice = input_slices.get_slice(input_type)
+            other_slice = other_slices.get_slice(input_type)
             input_tensor = input[input_slice, :]
             if len(input_tensor.size()) == cls.MAX_TENSOR_DIMS:
                 input_tensor = torch.squeeze(other_tensor, 0)

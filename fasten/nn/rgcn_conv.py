@@ -1,4 +1,5 @@
 from typing import Union, Tuple, Optional
+from torch._C import device
 from torch_geometric.typing import OptTensor
 
 import torch
@@ -37,6 +38,7 @@ class FastenRGCNConv(RGCNConv):
 
         self.tile_size = tile_size
         self.weight_type = TensorSlice(self.num_relations)
+        self.trainable_weights = False
 
     def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]], edge_index, edge_type: TensorSlice):
         # Convert input features to a pair of node features or node indices.
@@ -46,6 +48,7 @@ class FastenRGCNConv(RGCNConv):
         else:
             x_l = x
         if x_l is None:
+            self.trainable_weights = True
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
         x_r: Tensor = x_l
         if isinstance(x, tuple):
@@ -67,10 +70,15 @@ class FastenRGCNConv(RGCNConv):
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
             for h_type in TensorSliceTile(edge_type, self.tile_size):
-                # Compute relative offset
                 edge_slice = slice(h_type.start, h_type.stop)
-                out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
-                                           edge_type=h_type.extract(), weight=weight)
+                if self.trainable_weights is True:
+                    # x=None can avoid an extra index_select
+                    out = out + self.propagate(edge_index[:, edge_slice], x=None, size=size,
+                                               edge_type=h_type.extract(), weight=weight)
+                else:
+                    # Compute relative offset
+                    out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
+                                               edge_type=h_type.extract(), weight=weight)
 
         root = self.root
         if root is not None:
@@ -81,14 +89,19 @@ class FastenRGCNConv(RGCNConv):
 
         return out
 
-    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, index: Tensor) -> Tensor:
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, edge_index_j: Tensor) -> Tensor:
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
-            if x_j.dtype == torch.long:
-                weight_index = edge_type * weight.size(1) + index
-                return weight.view(-1, self.out_channels)[weight_index]
+            if self.trainable_weights is True:
+                ret = torch.zeros((edge_index_j.size(0), self.out_channels),
+                                  device=weight.device)
+                for type in edge_type.types():
+                    edge_type_slice = edge_type.get_slice(type)
+                    ret[edge_type_slice, :] = weight[type,
+                                                     edge_index_j[edge_type_slice]].squeeze(0)
+                return ret
 
             return ops.bmm(x_j, edge_type, weight, self.weight_type)
 
@@ -99,7 +112,7 @@ class FastenRGCNConv(RGCNConv):
         if self.aggr == 'mean':
             # TODO(keren): two dimensional histogram
             for type in edge_type.types():
-                edge_type_slice = edge_type.get(type)
+                edge_type_slice = edge_type.get_slice(type)
                 norm = torch.histogram(
                     index[edge_type_slice], bins=dim_size).to(torch.float)
                 norm = 1. / norm.clamp_(1.)
