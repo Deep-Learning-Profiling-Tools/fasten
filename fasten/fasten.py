@@ -47,7 +47,7 @@ class TensorSlice:
 
     def __init__(self, slices: Union[torch.tensor, list, int] = None) -> None:
         if type(slices) is int:
-            self._slices = torch.zeros([slices, 3], dtype=torch.long)
+            self._slices = torch.zeros((slices, 3), dtype=torch.long)
             for i in range(0, slices):
                 self._slices[i][0] = i
                 self._slices[i][1] = i
@@ -55,7 +55,7 @@ class TensorSlice:
         elif type(slices) is list:
             self._slices = torch.as_tensor(slices, dtype=torch.long)
         else:
-            self._slices = slices
+            self._slices = slices.cpu()
         # Don't backpropagate on slice tensors
         self._slices.requires_grad = False
 

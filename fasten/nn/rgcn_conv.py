@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch_scatter import scatter
 from torch_geometric.nn import RGCNConv
 
-from fasten import TensorSlice, TensorSliceTile
+from fasten import TensorSlice, TensorSliceTile, Backend
 from fasten import Ops as ops
 
 
@@ -21,8 +21,9 @@ class FastenRGCNConv(RGCNConv):
            We trade memory consumption for potential performance gains.
            The larger the tile_size, the more memory consumed and the lower the execution
            time.
+           backend: fasten's execution engine
     '''
-    TILE_SIZE = 2
+    TILE_SIZE = 4
 
     def __init__(self, in_channels: Union[int, Tuple[int, int]],
                  out_channels: int,
@@ -32,11 +33,14 @@ class FastenRGCNConv(RGCNConv):
                  aggr: str = 'mean',
                  root_weight: bool = True,
                  bias: bool = True,
-                 tile_size: int = TILE_SIZE, **kwargs):
+                 tile_size: int = TILE_SIZE,
+                 backend: Backend = Backend.NATIVE,
+                 **kwargs):
         super(FastenRGCNConv, self).__init__(in_channels, out_channels, num_relations,
                                              num_bases, num_blocks, aggr, root_weight, bias, **kwargs)
 
         self.tile_size = tile_size
+        self.backend = backend
         self.weight_type = TensorSlice(self.num_relations)
         self.trainable_weights = False
 
@@ -103,20 +107,23 @@ class FastenRGCNConv(RGCNConv):
                                                      edge_index_j[edge_type_slice]].squeeze(0)
                 return ret
 
-            return ops.bmm(x_j, edge_type, weight, self.weight_type)
+            return ops.bmm(x_j, edge_type, weight, self.weight_type, backend=self.backend)
 
     def aggregate(self, inputs: Tensor, edge_type: TensorSlice, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
 
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
-            # TODO(keren): two dimensional histogram
+            # TODO(Keren): Create a tensor in Python and pass it to c++
+            # Avoid backward propagate problem caused by custom pytorch function
+            inputs = inputs.clone()
             for type in edge_type.types():
                 edge_type_slice = edge_type.get_slice(type)
-                norm = torch.histogram(
-                    index[edge_type_slice], bins=dim_size).to(torch.float)
+                norm = torch.histc(index[edge_type_slice].to(
+                    torch.float), min=0, max=dim_size - 1, bins=dim_size)
                 norm = 1. / norm.clamp_(1.)
-                inputs[edge_type_slice] = norm * inputs[edge_type_slice]
+                inputs[edge_type_slice] = norm[index[edge_type_slice]
+                                               ].unsqueeze(-1) * inputs[edge_type_slice]
 
         return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)
 
