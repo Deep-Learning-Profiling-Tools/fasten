@@ -13,8 +13,8 @@ from torch_geometric.nn.inits import glorot, zeros
 
 from timemory.util import marker
 
-from fasten import Ops as fasten_ops
-from fasten import TensorSlice
+from fasten import Ops as ops
+from fasten import TensorSlice, TensorSliceTile, Backend
 
 
 @torch.jit._overload
@@ -40,14 +40,17 @@ class RGCNConv(MessagePassing):
     r"""The relational graph convolutional operator from the `"Modeling
     Relational Data with Graph Convolutional Networks"
     <https://arxiv.org/abs/1703.06103>`_ paper
+
     .. math::
         \mathbf{x}^{\prime}_i = \mathbf{\Theta}_{\textrm{root}} \cdot
         \mathbf{x}_i + \sum_{r \in \mathcal{R}} \sum_{j \in \mathcal{N}_r(i)}
         \frac{1}{|\mathcal{N}_r(i)|} \mathbf{\Theta}_r \cdot \mathbf{x}_j,
+
     where :math:`\mathcal{R}` denotes the set of relations, *i.e.* edge types.
     Edge type needs to be a one-dimensional :obj:`torch.long` tensor which
     stores a relation identifier
     :math:`\in \{ 0, \ldots, |\mathcal{R}| - 1\}` for each edge.
+
     .. note::
         This implementation is as memory-efficient as possible by iterating
         over each individual relation type.
@@ -58,6 +61,7 @@ class RGCNConv(MessagePassing):
         compensate.
         We advise to check out both implementations to see which one fits your
         needs.
+
     Args:
         in_channels (int or tuple): Size of each input sample. A tuple
             corresponds to the sizes of source and target dimensionalities.
@@ -113,7 +117,6 @@ class RGCNConv(MessagePassing):
         if num_bases is not None:
             self.weight = Parameter(
                 torch.Tensor(num_bases, in_channels[0], out_channels))
-            self.weight_slice = TensorSlice(self.weight, num_bases)
             self.comp = Parameter(torch.Tensor(num_relations, num_bases))
 
         elif num_blocks is not None:
@@ -123,13 +126,11 @@ class RGCNConv(MessagePassing):
                 torch.Tensor(num_relations, num_blocks,
                              in_channels[0] // num_blocks,
                              out_channels // num_blocks))
-            self.weight_slice = TensorSlice(self.weight, num_relations)
             self.register_parameter('comp', None)
 
         else:
             self.weight = Parameter(
                 torch.Tensor(num_relations, in_channels[0], out_channels))
-            self.weight_slice = TensorSlice(self.weight, num_relations)
             self.register_parameter('comp', None)
 
         if root_weight:
@@ -175,6 +176,7 @@ class RGCNConv(MessagePassing):
             x_l = x
         if x_l is None:
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
+
         x_r: Tensor = x_l
         if isinstance(x, tuple):
             x_r = x[1]
@@ -242,6 +244,7 @@ class RGCNConv(MessagePassing):
 class FastRGCNConv(RGCNConv):
     r"""See :class:`RGCNConv`."""
 
+    @marker(['wall_clock'], 'forward')
     def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]],
                 edge_index: Adj, edge_type: OptTensor = None):
         """"""
@@ -264,9 +267,7 @@ class FastRGCNConv(RGCNConv):
         size = (x_l.size(0), x_r.size(0))
 
         # propagate_type: (x: Tensor, edge_type: OptTensor)
-        with marker(["wall_clock"], key="propagate"):
-            out = self.propagate(
-                edge_index, x=x_l, edge_type=edge_type, size=size)
+        out = self.propagate(edge_index, x=x_l, edge_type=edge_type, size=size)
 
         root = self.root
         if root is not None:
@@ -280,55 +281,85 @@ class FastRGCNConv(RGCNConv):
     @marker(['wall_clock'], 'message')
     def message(self, x_j: Tensor, edge_type: Tensor, index: Tensor) -> Tensor:
         weight = self.weight
-        with marker(["wall_clock"], key="decompose"):
-            if self.num_bases is not None:  # Basis-decomposition =================
+        if self.num_bases is not None:  # Basis-decomposition =================
+            with marker(["wall_clock"], key="decomposition"):
                 weight = (self.comp @ weight.view(self.num_bases, -1)).view(
                     self.num_relations, self.in_channels_l, self.out_channels)
-                torch.cuda.synchronize()
 
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
             if x_j.dtype == torch.long:
                 raise ValueError('Block-diagonal decomposition not supported '
                                  'for non-continuous input features.')
+
             weight = weight[edge_type].view(-1, weight.size(2), weight.size(3))
             x_j = x_j.view(-1, 1, weight.size(1))
-            ret = torch.bmm(x_j, weight).view(-1, self.out_channels)
-            return ret
+            return torch.bmm(x_j, weight).view(-1, self.out_channels)
+
         else:  # No regularization/Basis-decomposition ========================
             if x_j.dtype == torch.long:
-                weight_index = edge_type * weight.size(1) + index
-                return weight.view(-1, self.out_channels)[weight_index]
+                with marker(["wall_clock"], key="long"):
+                    weight_index = edge_type * weight.size(1) + index
+                    ret = weight.view(-1, self.out_channels)[weight_index]
+                    torch.cuda.synchronize()
+                    return ret
 
-            with marker(["wall_clock"], key="indexing"):
-                weight = weight[edge_type]
-                torch.cuda.synchronize()
             with marker(["wall_clock"], key="bmm"):
-                ret = torch.bmm(x_j.unsqueeze(-2), weight).squeeze(-2)
+                ret = torch.bmm(x_j.unsqueeze(-2),
+                                weight[edge_type]).squeeze(-2)
                 torch.cuda.synchronize()
-            return ret
+                return ret
 
+    @marker(['wall_clock'], 'aggregate')
     def aggregate(self, inputs: Tensor, edge_type: Tensor, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
 
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
-            norm = F.one_hot(edge_type, self.num_relations).to(torch.float)
-            norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
-            norm = torch.gather(norm, 1, edge_type.view(-1, 1))
-            norm = 1. / norm.clamp_(1.)
-            inputs = norm * inputs
+            with marker(["wall_clock"], key="mean"):
+                norm = F.one_hot(edge_type, self.num_relations).to(torch.float)
+                norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
+                norm = torch.gather(norm, 1, edge_type.view(-1, 1))
+                norm = 1. / norm.clamp_(1.)
+                inputs = norm * inputs
+                torch.cuda.synchronize()
 
         return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)
 
 
-class FastenFastRGCNConv(RGCNConv):
-    r"""See :class:`RGCNConv`."""
+class FastenRGCNConv(RGCNConv):
+    '''
+       fasten's RGCNConv implementation
 
-    def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]],
-                edges: TensorSlice):
-        self.fuse = False
-        assert self.aggr in ['add', 'sum', 'mean']
+       Args:
+           tile_size: number of relation types to be computed for each iteration.
+           We trade memory consumption for potential performance gains.
+           The larger the tile_size, the more memory consumed and the lower the execution
+           time.
+           backend: fasten's execution engine
+    '''
+    TILE_SIZE = 4
 
+    def __init__(self, in_channels: Union[int, Tuple[int, int]],
+                 out_channels: int,
+                 num_relations: int,
+                 num_bases: Optional[int] = None,
+                 num_blocks: Optional[int] = None,
+                 aggr: str = 'mean',
+                 root_weight: bool = True,
+                 bias: bool = True,
+                 tile_size: int = TILE_SIZE,
+                 backend: Backend = Backend.NATIVE,
+                 **kwargs):
+        super(FastenRGCNConv, self).__init__(in_channels, out_channels, num_relations,
+                                             num_bases, num_blocks, aggr, root_weight, bias, **kwargs)
+
+        self.tile_size = tile_size
+        self.backend = backend
+        self.weight_type = TensorSlice(self.num_relations)
+        self.trainable_weights = False
+
+    @marker(['wall_clock'], 'forward')
+    def forward(self, x: Union[OptTensor, Tuple[OptTensor, Tensor]], edge_index, edge_type: TensorSlice):
         # Convert input features to a pair of node features or node indices.
         x_l: OptTensor = None
         if isinstance(x, tuple):
@@ -336,18 +367,39 @@ class FastenFastRGCNConv(RGCNConv):
         else:
             x_l = x
         if x_l is None:
+            self.trainable_weights = True
             x_l = torch.arange(self.in_channels_l, device=self.weight.device)
-
         x_r: Tensor = x_l
         if isinstance(x, tuple):
             x_r = x[1]
 
         size = (x_l.size(0), x_r.size(0))
 
-        # propagate_type: (x: Tensor, edge_type: OptTensor)
-        with marker(["wall_clock"], key="propagate"):
-            out = self.propagate(
-                edges.tensor, x=x_l, size=size, edge_type=edges.slices)
+        # propagate_type: (x: Tensor)
+        out = torch.zeros(x_r.size(0), self.out_channels, device=x_r.device)
+
+        weight = self.weight
+
+        if self.num_bases is not None:  # Basis-decomposition =================
+            with marker(["wall_clock"], key="decomposition"):
+                weight = (self.comp @ weight.view(self.num_bases, -1)).view(
+                    self.num_relations, self.in_channels_l, self.out_channels)
+                torch.cuda.synchronize()
+
+        if self.num_blocks is not None:  # Block-diagonal-decomposition =====
+            raise RuntimeError(
+                'Block-decomposition is not supported by fasten yet')
+        else:  # No regularization/Basis-decomposition ========================
+            for h_type in TensorSliceTile(edge_type, self.tile_size):
+                edge_slice = slice(h_type.start, h_type.stop)
+                if self.trainable_weights is True:
+                    # x=None can avoid an extra index_select
+                    out = out + self.propagate(edge_index[:, edge_slice], x=None, size=size,
+                                               edge_type=h_type.extract(), weight=weight)
+                else:
+                    # Compute relative offset
+                    out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
+                                               edge_type=h_type.extract(), weight=weight)
 
         root = self.root
         if root is not None:
@@ -359,44 +411,51 @@ class FastenFastRGCNConv(RGCNConv):
         return out
 
     @marker(['wall_clock'], 'message')
-    def message(self, x_j: Tensor, edge_type: Tensor, index: Tensor) -> Tensor:
-        weight = self.weight
-        weight_slice = self.weight_slice
-        with marker(["wall_clock"], key="decompose"):
-            if self.num_bases is not None:  # Basis-decomposition =================
-                weight = (self.comp @ weight.view(self.num_bases, -1)).view(
-                    self.num_relations, self.in_channels_l, self.out_channels)
-                weight_slice = TensorSlice(weight, self.num_relations)
-                torch.cuda.synchronize()
-
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, edge_index_j: Tensor) -> Tensor:
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
-            if x_j.dtype == torch.long:
-                raise ValueError('Block-diagonal decomposition not supported '
-                                 'for non-continuous input features.')
-            with marker(["wall_clock"], key="fasten"):
-                x_j_slice = TensorSlice(x_j, edge_type)
-                ret = fasten_ops.bmm(
-                    x_j_slice, weight_slice).view(-1, self.out_channels)
-            return ret
+            raise RuntimeError(
+                'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
-            if x_j.dtype == torch.long:
-                weight_index = edge_type * weight.size(1) + index
-                return weight.view(-1, self.out_channels)[weight_index]
+            if self.trainable_weights is True:
+                with marker(["wall_clock"], key="long"):
+                    ret = torch.zeros((edge_index_j.size(0), self.out_channels),
+                                      device=weight.device)
+                    for type in edge_type.types():
+                        edge_type_slice = edge_type.get_slice(type)
+                        ret[edge_type_slice, :] = weight[type,
+                                                         edge_index_j[edge_type_slice]].squeeze(0)
+                    torch.cuda.synchronize()
+                    return ret
 
-            with marker(["wall_clock"], key="fasten"):
-                x_j_slice = TensorSlice(x_j, edge_type)
-                ret = fasten_ops.bmm(x_j_slice, weight_slice).squeeze(-2)
-            return ret
+            with marker(["wall_clock"], key="bmm"):
+                ret = ops.bmm(x_j, edge_type, weight,
+                              self.weight_type, backend=self.backend)
+                torch.cuda.synchronize()
+                return ret
 
-    def aggregate(self, inputs: Tensor, edge_type: Tensor, index: Tensor,
+    @marker(['wall_clock'], 'aggregate')
+    def aggregate(self, inputs: Tensor, edge_type: TensorSlice, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
 
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
-            norm = F.one_hot(edge_type, self.num_relations).to(torch.float)
-            norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
-            norm = torch.gather(norm, 1, edge_type.view(-1, 1))
-            norm = 1. / norm.clamp_(1.)
-            inputs = norm * inputs
+            # TODO(Keren): Create a tensor in Python and pass it to c++
+            # Avoid backward propagate problem caused by custom pytorch function
+            with marker(["wall_clock"], key="mean"):
+                inputs = inputs.clone()
+                for type in edge_type.types():
+                    edge_type_slice = edge_type.get_slice(type)
+                    norm = torch.histc(index[edge_type_slice].to(
+                        torch.float), min=0, max=dim_size - 1, bins=dim_size)
+                    norm = 1. / norm.clamp_(1.)
+                    inputs[edge_type_slice] = norm[index[edge_type_slice]
+                                                   ].unsqueeze(-1) * inputs[edge_type_slice]
+                torch.cuda.synchronize()
 
         return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)
+
+    def __repr__(self):
+        return '{}({}, {}, num_relations={})'.format(self.__class__.__name__,
+                                                     self.in_channels,
+                                                     self.out_channels,
+                                                     self.num_relations)

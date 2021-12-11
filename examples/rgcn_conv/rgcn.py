@@ -5,11 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import Entities
 from torch_geometric.utils import k_hop_subgraph
-from .rgcn_conv import RGCNConv, FastRGCNConv
-
-from fasten import Ops as fasten_ops
-from fasten import TensorSlice
-from fasten.nn import FastenRGCNConv
+from fasten import Ops as ops
 
 import timemory
 from timemory.util import marker
@@ -22,13 +18,23 @@ timemory.settings.cout_output = False
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str,
                     choices=['AIFB', 'MUTAG', 'BGS', 'AM'])
-parser.add_argument('--fasten', action='store_true', default=False)
+parser.add_argument('--mode', type=str, default='fast',
+                    choices=['origin', 'fast', 'fasten'])
+parser.add_argument('--profile', action='store_true', default=False)
 args = parser.parse_args()
 
-if args.fasten:
+if args.profile is True:
+    from rgcn_conv import RGCNConv, FastRGCNConv, FastenRGCNConv
+else:
+    from fasten.nn import FastenRGCNConv
+    from torch_geometric.nn.conv import RGCNConv, FastRGCNConv
+
+if args.mode == 'fast':
+    RGCNConv = FastRGCNConv
+elif args.mode == 'fasten':
     RGCNConv = FastenRGCNConv
 else:
-    RGCNConv = FastRGCNConv
+    RGCNConv = RGCNConv
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Entities')
 dataset = Entities(path, args.dataset)
@@ -57,9 +63,9 @@ class Net(torch.nn.Module):
         self.conv2 = RGCNConv(16, dataset.num_classes, dataset.num_relations,
                               num_bases=30)
 
-    def forward(self, *args):
-        x = F.relu(self.conv1(None, args))
-        x = self.conv2(x, args)
+    def forward(self, edge_index, edge_type):
+        x = F.relu(self.conv1(None, edge_index, edge_type))
+        x = self.conv2(x, edge_index, edge_type)
         return F.log_softmax(x, dim=1)
 
 
@@ -71,41 +77,50 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 def train():
     model.train()
     optimizer.zero_grad()
-    if args.fasten:
-        with torch.no_grad():
-            edges = fasten_ops.compact(data.edge_index, data.edge_type)
-    with marker(["wall_clock", "cuda_event"], key="forward"):
-        #print(torch.histc(data.edge_type, bins=46))
-        if args.fasten:
-            out = model(edges)
-        else:
-            out = model(data.edge_index, data.edge_type)
+    if args.mode == 'fasten':
+        with marker(["wall_clock"], key="compact"):
+            with torch.no_grad():
+                edge_index, edge_type = ops.compact(
+                    data.edge_index, data.edge_type, type_dim=1)
+    else:
+        edge_index, edge_type = data.edge_index, data.edge_type
+    with marker(["wall_clock"], key="forward"):
+        # print(torch.histc(data.edge_type, bins=46))
+        out = model(edge_index, edge_type)
         torch.cuda.synchronize()
-    with marker(["wall_clock", "cuda_event"], key="loss"):
+    with marker(["wall_clock"], key="loss"):
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         torch.cuda.synchronize()
-    with marker(["wall_clock", "cuda_event"], key="backward"):
+    with marker(["wall_clock"], key="backward"):
         loss.backward()
         torch.cuda.synchronize()
-    with marker(["wall_clock", "cuda_event"], key="optimize"):
+    with marker(["wall_clock"], key="optimize"):
         optimizer.step()
         torch.cuda.synchronize()
     return loss.item()
 
 
-@torch.no_grad()
+@ torch.no_grad()
 def test():
+    if args.mode == 'fasten':
+        with marker(["wall_clock"], key="compact"):
+            with torch.no_grad():
+                edge_index, edge_type = ops.compact(
+                    data.edge_index, data.edge_type, type_dim=1)
+    else:
+        edge_index, edge_type = data.edge_index, data.edge_type
     model.eval()
-    pred = model(data.edge_index, data.edge_type).argmax(dim=-1)
+    pred = model(edge_index, edge_type).argmax(dim=-1)
     train_acc = pred[data.train_idx].eq(data.train_y).to(torch.float).mean()
     test_acc = pred[data.test_idx].eq(data.test_y).to(torch.float).mean()
     return train_acc.item(), test_acc.item()
 
 
 for epoch in range(1, 10):
-    with marker(["wall_clock", "cuda_event"], key="train"):
+    with marker(["wall_clock"], key="train"):
         loss = train()
-    train_acc, test_acc = test()
+    with marker(["wall_clock"], key="test"):
+        train_acc, test_acc = test()
     print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
           f'Test: {test_acc:.4f}')
 
