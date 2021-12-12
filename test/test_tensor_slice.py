@@ -32,3 +32,12 @@ def test_extract():
     assert(sub_tensor_slice[0, 2] == 1)
     tensor_slice[2, 0] = 1
     assert(sub_tensor_slice[0, 0] == 3)
+
+
+def test_expand():
+    data = torch.tensor([[1, 2], [3, 4], [5, 6], [7, 8]])
+    types = torch.tensor([2, 1, 2, 3])
+    _, tensor_slice = ops.compact(data, types)
+    tensor = tensor_slice.expand()
+    truth = torch.tensor([1, 2, 2, 3])
+    assert(torch.all(tensor == truth).item() is True)

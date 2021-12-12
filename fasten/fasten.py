@@ -143,10 +143,29 @@ class TensorSlice:
             slice_type = slice_types[i]
             slices[i, 0] = slice_type
             if i == 0:
-                offset = self._slices[i, 1]
-            slices[i, 1] = self._slices[i, 1] - offset
-            slices[i, 2] = self._slices[i, 2] - offset
+                offset = self._slices[i, 1].item()
+            slices[i, 1] = self._slices[i, 1].item() - offset
+            slices[i, 2] = self._slices[i, 2].item() - offset
         return TensorSlice(slices)
+
+    def expand(self, device: torch.device = torch.device('cpu')):
+        '''
+            Expand tensor slice to real tensors
+
+            Args:
+                device: On which device the new tensor should be
+
+            Returns:
+                tensor: A new tensor
+        '''
+        size = self.stop - self.start
+        tensor = torch.zeros((size), device=device, dtype=torch.long)
+        for i in range(len(self._slices)):
+            type = self._slices[i, 0].item()
+            start = self._slices[i, 1].item()
+            end = self._slices[i, 2].item()
+            tensor[start:end] = type
+        return tensor
 
 
 class TensorSliceTile:

@@ -442,11 +442,15 @@ class FastenRGCNConv(RGCNConv):
             # TODO(Keren): Create a tensor in Python and pass it to c++
             # Avoid backward propagate problem caused by custom pytorch function
             with marker(["wall_clock"], key="mean"):
-                inputs = inputs.clone()
+                with marker(["wall_clock"], key="clone"):
+                    inputs = inputs.clone()
+                    torch.cuda.synchronize()
                 for type in edge_type.types():
                     edge_type_slice = edge_type.get_slice(type)
-                    norm = torch.histc(index[edge_type_slice].to(
-                        torch.float), min=0, max=dim_size - 1, bins=dim_size)
+                    with marker(["wall_clock"], key="histc"):
+                        norm = torch.histc(index[edge_type_slice].to(
+                            torch.float), min=0, max=dim_size - 1, bins=dim_size)
+                        torch.cuda.synchronize()
                     norm = 1. / norm.clamp_(1.)
                     inputs[edge_type_slice] = norm[index[edge_type_slice]
                                                    ].unsqueeze(-1) * inputs[edge_type_slice]
