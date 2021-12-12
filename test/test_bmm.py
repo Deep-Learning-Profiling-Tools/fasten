@@ -13,8 +13,8 @@ def correctness(backend: Backend):
     other_slice = [[1, 0, 2], [2, 2, 4]]
     other = torch.tensor([[7, 8], [1, 2], [3, 4], [5, 6]],
                          device=device, dtype=torch.float, requires_grad=True)
-    input_tensor_slice = TensorSlice(input_slice)
-    other_tensor_slice = TensorSlice(other_slice)
+    input_tensor_slice = TensorSlice(slices=input_slice)
+    other_tensor_slice = TensorSlice(slices=other_slice)
 
     # forward
     output = ops.bmm(input, input_tensor_slice, other,

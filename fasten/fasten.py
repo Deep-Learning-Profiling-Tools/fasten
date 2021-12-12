@@ -41,11 +41,15 @@ class TensorSlice:
         Construct a TensorSlice data structure
 
         Args:
+            tensor: The original type tensor, could be on either the CPU or the GPU
             slices: A 3-dim PyTorch Tensor, where each row represents [type, start, end].
-                    It can also be a int or a list, then internally we transform it to a tensor
+                    It can also be a int or a list, then internally we transform it to a tensor.
+                    It must be on the CPU.
     '''
 
-    def __init__(self, slices: Union[torch.tensor, list, int] = None) -> None:
+    def __init__(self, tensor: torch.tensor = None, slices: Union[torch.tensor, list, int] = None) -> None:
+        self._tensor = tensor
+
         if type(slices) is int:
             self._slices = torch.zeros((slices, 3), dtype=torch.long)
             for i in range(0, slices):
@@ -92,6 +96,10 @@ class TensorSlice:
     def slices(self):
         return self._slices
 
+    @property
+    def tensor(self):
+        return self._tensor
+
     def types(self):
         return list(self._type_slice_dict.keys())
 
@@ -122,14 +130,14 @@ class TensorSlice:
                 tensor_slice: A new TensorSlice object which has original offsets
         '''
         slices = self._slices[indices, :]
-        return TensorSlice(slices)
+        return TensorSlice(self._tensor, slices)
 
     def extract(self, slice_types: list = None):
         '''
             Construct subslices of specific types from the original slices.
 
             Args:
-                slice_types: The types we want to extract from the original slices
+                slice_types: The types we want to extract from the original slices.
 
             Returns:
                 tensor_slice: A new TensorSlice object which has relative offsets to the original tensor slice 
@@ -146,7 +154,13 @@ class TensorSlice:
                 offset = self._slices[i, 1].item()
             slices[i, 1] = self._slices[i, 1].item() - offset
             slices[i, 2] = self._slices[i, 2].item() - offset
-        return TensorSlice(slices)
+        if self._tensor is None:
+            tensor = None
+        else:
+            slice_start = slices[0, 1].item()+offset
+            slice_stop = slices[-1, 2].item()+offset
+            tensor = self._tensor[slice_start:slice_stop]
+        return TensorSlice(tensor, slices)
 
     def expand(self, device: torch.device = torch.device('cpu')):
         '''
@@ -158,6 +172,9 @@ class TensorSlice:
             Returns:
                 tensor: A new tensor
         '''
+        if self._tensor is not None:
+            return self._tensor
+
         size = self.stop - self.start
         tensor = torch.zeros((size), device=device, dtype=torch.long)
         for i in range(len(self._slices)):
@@ -272,7 +289,7 @@ class Ops:
                 unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
             cur_index += type_counts[i].item()
 
-        return sorted_tensor, TensorSlice(types)
+        return sorted_tensor, TensorSlice(sorted_types, types)
 
     @classmethod
     def _apply_streams(cls, op, input: torch.tensor, input_slices: TensorSlice, other: TensorSlice, other_slices: TensorSlice, output: torch.tensor, nstreams: int = 1) -> torch.tensor:
