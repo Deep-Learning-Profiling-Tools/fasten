@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union, Tuple
+from typing import Optional, Union, Tuple
 from collections import OrderedDict
 
 import torch
@@ -132,15 +132,16 @@ class TensorSlice:
         slices = self._slices[indices, :]
         return TensorSlice(self._tensor, slices)
 
-    def extract(self, slice_types: list = None):
+    def extract(self, slice_types: list = None, relative: bool = True):
         '''
             Construct subslices of specific types from the original slices.
 
             Args:
                 slice_types: The types we want to extract from the original slices.
+                relative: If true, the new TensorSlice object which has relative offsets to the original tensor slice 
 
             Returns:
-                tensor_slice: A new TensorSlice object which has relative offsets to the original tensor slice 
+                tensor_slice: A new TensorSlice object
         '''
         if slice_types is None:
             slice_types = self.types()
@@ -150,7 +151,7 @@ class TensorSlice:
         for i in range(num_slice_types):
             slice_type = slice_types[i]
             slices[i, 0] = slice_type
-            if i == 0:
+            if i == 0 and relative is True:
                 offset = self._slices[i, 1].item()
             slices[i, 1] = self._slices[i, 1].item() - offset
             slices[i, 2] = self._slices[i, 2].item() - offset
@@ -288,8 +289,27 @@ class Ops:
             types.append([
                 unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
             cur_index += type_counts[i].item()
-
         return sorted_tensor, TensorSlice(sorted_types, types)
+
+    @staticmethod
+    def typed_sort(tensor: torch.tensor, tensor_slice: TensorSlice, dim: int = 0, base: Optional[Tuple[int]] = None, descending: bool = False) -> torch.tensor:
+        '''
+            XXX(Keren): Not tested yet
+            Sort a tensor according to each dimension
+        '''
+        indices = tensor.select(dim, 0)
+
+        if base is not None:
+            for t in range(len(base)):
+                indices = indices * base[t] + tensor.select(dim, t+1)
+
+        base_max = torch.max(indices)
+        indices = base_max * tensor_slice.tensor + indices
+        _, sorted_indices = torch.sort(indices, descending=descending)
+        sorted_tensor = torch.index_select(
+            tensor, dim=dim, index=sorted_indices)
+
+        return sorted_tensor
 
     @classmethod
     def _apply_streams(cls, op, input: torch.tensor, input_slices: TensorSlice, other: TensorSlice, other_slices: TensorSlice, output: torch.tensor, nstreams: int = 1) -> torch.tensor:

@@ -355,6 +355,7 @@ class FastenRGCNConv(RGCNConv):
 
         self.tile_size = tile_size
         self.backend = backend
+        self.comp_type = TensorSlice(self.comp, self.num_relations)
         self.weight_type = TensorSlice(self.weight, self.num_relations)
         self.trainable_weights = False
 
@@ -411,7 +412,7 @@ class FastenRGCNConv(RGCNConv):
         return out
 
     @marker(['wall_clock'], 'message')
-    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, edge_index_i: Tensor) -> Tensor:
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, edge_index_j: Tensor) -> Tensor:
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
@@ -419,7 +420,7 @@ class FastenRGCNConv(RGCNConv):
             if self.trainable_weights is True:
                 with marker(["wall_clock"], key="long"):
                     weight_index = edge_type.tensor * \
-                        weight.size(1) + edge_index_i
+                        weight.size(1) + edge_index_j
                     ret = weight.view(-1,
                                       self.out_channels).index_select(0, weight_index)
                     torch.cuda.synchronize()
@@ -438,11 +439,11 @@ class FastenRGCNConv(RGCNConv):
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
             with marker(["wall_clock"], key="mean"):
-                norm = F.one_hot(edge_type.tensor,
-                                 self.num_relations).to(torch.float)
+                num_types = edge_type[-1, 0] - edge_type[0, 0] + 1
+                edge_type_offset = edge_type.tensor - edge_type[0, 0]
+                norm = F.one_hot(edge_type_offset, num_types).to(torch.float)
                 norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
-                norm = torch.gather(norm, 1, edge_type.tensor.view(-1, 1))
-                norm = 1. / norm.clamp_(1.)
+                norm = 1. / torch.gather(norm, 1, edge_type_offset.view(-1, 1))
                 inputs = norm * inputs
                 torch.cuda.synchronize()
 

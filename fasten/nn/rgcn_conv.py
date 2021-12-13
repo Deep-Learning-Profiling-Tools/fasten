@@ -100,21 +100,21 @@ class FastenRGCNConv(RGCNConv):
         else:  # No regularization/Basis-decomposition ========================
             if self.trainable_weights is True:
                 weight_index = edge_type.tensor * weight.size(1) + edge_index_j
-                ret = weight.view(-1, self.out_channels)[weight_index]
+                ret = weight.view(-1,
+                                  self.out_channels).index_select(0, weight_index)
                 return ret
 
             return ops.bmm(x_j, edge_type, weight, self.weight_type, backend=self.backend)
 
     def aggregate(self, inputs: Tensor, edge_type: TensorSlice, index: Tensor,
                   dim_size: Optional[int] = None) -> Tensor:
-
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
-            norm = F.one_hot(edge_type.tensor,
-                             self.num_relations).to(torch.float)
+            num_types = edge_type[-1, 0] - edge_type[0, 0] + 1
+            edge_type_offset = edge_type.tensor - edge_type[0, 0]
+            norm = F.one_hot(edge_type_offset, num_types).to(torch.float)
             norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
-            norm = torch.gather(norm, 1, edge_type.tensor.view(-1, 1))
-            norm = 1. / norm.clamp_(1.)
+            norm = 1. / torch.gather(norm, 1, edge_type_offset.view(-1, 1))
             inputs = norm * inputs
 
         return scatter(inputs, index, dim=self.node_dim, dim_size=dim_size)

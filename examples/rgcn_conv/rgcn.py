@@ -124,4 +124,7 @@ for epoch in range(1, 10):
     print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
           f'Test: {test_acc:.4f}')
 
+if args.profile is True:
+    print(torch.cuda.memory_summary())
+
 timemory.finalize()
