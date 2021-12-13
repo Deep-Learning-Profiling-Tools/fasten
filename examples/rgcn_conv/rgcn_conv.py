@@ -420,7 +420,8 @@ class FastenRGCNConv(RGCNConv):
                 with marker(["wall_clock"], key="long"):
                     weight_index = edge_type.tensor * \
                         weight.size(1) + edge_index_i
-                    ret = weight.view(-1, self.out_channels)[weight_index]
+                    ret = weight.view(-1,
+                                      self.out_channels).index_select(0, weight_index)
                     torch.cuda.synchronize()
                     return ret
 
