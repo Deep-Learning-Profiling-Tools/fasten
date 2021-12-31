@@ -379,28 +379,34 @@ class FastenRGCNConv(RGCNConv):
         # propagate_type: (x: Tensor)
         out = torch.zeros(x_r.size(0), self.out_channels, device=x_r.device)
 
-        weight = self.weight
-
-        if self.num_bases is not None:  # Basis-decomposition =================
-            with marker(["wall_clock"], key="decomposition"):
-                weight = (self.comp @ weight.view(self.num_bases, -1)).view(
-                    self.num_relations, self.in_channels_l, self.out_channels)
-                torch.cuda.synchronize()
+        # if self.num_bases is not None:  # Basis-decomposition =================
+        #    with marker(["wall_clock"], key="decomposition"):
+        #        weight = (self.comp @ weight.view(self.num_bases, -1)).view(
+        #            self.num_relations, self.in_channels_l, self.out_channels)
+        #        torch.cuda.synchronize()
 
         if self.num_blocks is not None:  # Block-diagonal-decomposition =====
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
             for h_type in TensorSliceTile(edge_type, self.tile_size):
+                with marker(["wall_clock"], key="decomposition"):
+                    comp_slice = slice(h_type.get_type(
+                        0), h_type.get_type(-1) + 1)
+                    num_types = comp_slice.stop - comp_slice.start
+                    weight = (self.comp[comp_slice, :] @ self.weight.view(self.num_bases, -1)).view(
+                        num_types, self.in_channels_l, self.out_channels)
+                    weight_type = self.weight_type.extract(h_type.types())
+                    torch.cuda.synchronize()
                 edge_slice = slice(h_type.start, h_type.stop)
                 if self.trainable_weights is True:
                     # x=None can avoid an extra index_select
                     out = out + self.propagate(edge_index[:, edge_slice], x=None, size=size,
-                                               edge_type=h_type.extract(), weight=weight)
+                                               edge_type=h_type.extract(), weight=weight, weight_type=None)
                 else:
                     # Compute relative offset
                     out = out + self.propagate(edge_index[:, edge_slice], x=x_l, size=size,
-                                               edge_type=h_type.extract(), weight=weight)
+                                               edge_type=h_type.extract(), weight=weight, weight_type=weight_type)
 
         root = self.root
         if root is not None:
@@ -412,15 +418,15 @@ class FastenRGCNConv(RGCNConv):
         return out
 
     @marker(['wall_clock'], 'message')
-    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, edge_index_j: Tensor) -> Tensor:
+    def message(self, x_j: Tensor, edge_type: TensorSlice, weight: Tensor, weight_type: TensorSlice, edge_index_j: Tensor) -> Tensor:
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
             raise RuntimeError(
                 'Block-decomposition is not supported by fasten yet')
         else:  # No regularization/Basis-decomposition ========================
             if self.trainable_weights is True:
                 with marker(["wall_clock"], key="long"):
-                    weight_index = edge_type.tensor * \
-                        weight.size(1) + edge_index_j
+                    weight_index = (
+                        edge_type.tensor - edge_type.get_type(0)) * weight.size(1) + edge_index_j
                     ret = weight.view(-1,
                                       self.out_channels).index_select(0, weight_index)
                     torch.cuda.synchronize()
@@ -428,7 +434,7 @@ class FastenRGCNConv(RGCNConv):
 
             with marker(["wall_clock"], key="bmm"):
                 ret = ops.bmm(x_j, edge_type, weight,
-                              self.weight_type, backend=self.backend)
+                              weight_type, backend=self.backend)
                 torch.cuda.synchronize()
                 return ret
 
@@ -439,8 +445,8 @@ class FastenRGCNConv(RGCNConv):
         # Compute normalization in separation for each `edge_type`.
         if self.aggr == 'mean':
             with marker(["wall_clock"], key="mean"):
-                num_types = edge_type[-1, 0] - edge_type[0, 0] + 1
-                edge_type_offset = edge_type.tensor - edge_type[0, 0]
+                num_types = edge_type.get_type(-1) - edge_type.get_type(0) + 1
+                edge_type_offset = edge_type.tensor - edge_type.get_type(0)
                 norm = F.one_hot(edge_type_offset, num_types).to(torch.float)
                 norm = scatter(norm, index, dim=0, dim_size=dim_size)[index]
                 norm = 1. / torch.gather(norm, 1, edge_type_offset.view(-1, 1))

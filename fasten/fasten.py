@@ -103,6 +103,18 @@ class TensorSlice:
     def types(self):
         return list(self._type_slice_dict.keys())
 
+    def get_type(self, index: int) -> int:
+        '''
+            Get a type based on the index
+
+            Args:
+                index: The index of the slices
+
+            Returns:
+                type: type on the given index 
+        '''
+        return self._slices[index, 0].item()
+
     def get_slice(self, slice_type: int) -> slice:
         '''
             Get the slice of a specific type
@@ -137,7 +149,7 @@ class TensorSlice:
             Construct subslices of specific types from the original slices.
 
             Args:
-                slice_types: The types we want to extract from the original slices.
+                slice_types: The types we want to extract from the original slices. This array must be sorted.
                 relative: If true, the new TensorSlice object which has relative offsets to the original tensor slice 
 
             Returns:

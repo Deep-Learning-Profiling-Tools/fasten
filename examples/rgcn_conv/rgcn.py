@@ -21,6 +21,7 @@ parser.add_argument('--dataset', type=str,
 parser.add_argument('--mode', type=str, default='fast',
                     choices=['origin', 'fast', 'fasten'])
 parser.add_argument('--profile', action='store_true', default=False)
+parser.add_argument('--tile-size', type=int, default=16)
 args = parser.parse_args()
 
 if args.profile is True:
@@ -62,6 +63,9 @@ class Net(torch.nn.Module):
                               num_bases=30)
         self.conv2 = RGCNConv(16, dataset.num_classes, dataset.num_relations,
                               num_bases=30)
+        if args.mode == 'fasten':
+            self.conv1.tile_size = args.tile_size
+            self.conv2.tile_size = args.tile_size
 
     def forward(self, edge_index, edge_type):
         x = F.relu(self.conv1(None, edge_index, edge_type))
@@ -78,23 +82,22 @@ def train():
     model.train()
     optimizer.zero_grad()
     if args.mode == 'fasten':
-        with marker(["wall_clock"], key="compact"):
+        with marker(["wall_clock", "cupti_activity"], key="compact"):
             with torch.no_grad():
                 edge_index, edge_type = ops.compact(
                     data.edge_index, data.edge_type, type_dim=1)
     else:
         edge_index, edge_type = data.edge_index, data.edge_type
-    with marker(["wall_clock"], key="forward"):
-        # print(torch.histc(data.edge_type, bins=46))
+    with marker(["wall_clock", "cupti_activity"], key="forward"):
         out = model(edge_index, edge_type)
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="loss"):
+    with marker(["wall_clock", "cupti_activity"], key="loss"):
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="backward"):
+    with marker(["wall_clock", "cupti_activity"], key="backward"):
         loss.backward()
         torch.cuda.synchronize()
-    with marker(["wall_clock"], key="optimize"):
+    with marker(["wall_clock", "cupti_activity"], key="optimize"):
         optimizer.step()
         torch.cuda.synchronize()
     return loss.item()
@@ -117,7 +120,7 @@ def test():
 
 
 for epoch in range(1, 10):
-    with marker(["wall_clock"], key="train"):
+    with marker(["wall_clock", "cupti_activity"], key="train"):
         loss = train()
     with marker(["wall_clock"], key="test"):
         train_acc, test_acc = test()
@@ -125,6 +128,7 @@ for epoch in range(1, 10):
           f'Test: {test_acc:.4f}')
 
 if args.profile is True:
+    torch.cuda.empty_cache()
     print(torch.cuda.memory_summary())
 
 timemory.finalize()
