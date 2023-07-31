@@ -1,4 +1,4 @@
-# FASTEN: A *Fast* Library for Heterog*en*eous Graphs
+# FASTEN: A Library of *Fast* S*e*gme*n*t Operators
 
 ## Introduction
 
