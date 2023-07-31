@@ -55,8 +55,8 @@ def segment_matmul_kernel(
 
     c = accumulator.to(tl.float32)
 
-    offs_cm = (start_offs_input_m + tl.arange(0, BLOCK_SIZE_M)) % M
-    offs_cn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
+    offs_cm = start_offs_input_m + tl.arange(0, BLOCK_SIZE_M)
+    offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     c_ptrs = c_ptr + stride_output_m * \
         offs_cm[:, None] + stride_output_n * offs_cn[None, :]
     c_mask = (offs_cm[:, None] < end_offs_input_m) & (offs_cn[None, :] < N)
