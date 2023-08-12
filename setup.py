@@ -38,7 +38,7 @@ setup(
 
     author='Keren Zhou',  # Optional
 
-    author_email='keren.zhou@rice.edu',  # Optional
+    author_email='kerenzhou@outlook.com',  # Optional
 
     classifiers=[  # Optional
         # How mature is this project? Common values are
