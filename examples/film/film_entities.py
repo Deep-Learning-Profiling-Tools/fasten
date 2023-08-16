@@ -1,18 +1,16 @@
-import os.path as osp
 import argparse
-
-import torch
-import torch.nn.functional as F
-from torch.nn import BatchNorm1d
-from sklearn.metrics import f1_score
-from torch_geometric.datasets import Entities
-from torch_geometric.utils import k_hop_subgraph
-from torch_geometric.loader import DataLoader
-
-from film_conv import FiLMConv
+import os.path as osp
 
 import timemory
+import torch
+import torch.nn.functional as F
+from film_conv import FiLMConv
+from sklearn.metrics import f1_score
 from timemory.util import marker
+from torch.nn import BatchNorm1d
+from torch_geometric.datasets import Entities
+from torch_geometric.loader import DataLoader
+from torch_geometric.utils import k_hop_subgraph
 
 timemory.settings.scientific = False
 timemory.settings.flat_profile = False

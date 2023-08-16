@@ -1,20 +1,20 @@
-from typing import Optional, Union, Tuple
-from torch_geometric.typing import OptTensor, Adj
+from typing import Optional, Tuple, Union
 
 import torch
-from torch import Tensor
 import torch.nn.functional as F
-from torch.nn import Parameter as Param
+from timemory.util import marker
+from torch import Tensor
 from torch.nn import Parameter
-from torch_scatter import scatter
-from torch_sparse import SparseTensor, matmul, masked_select_nnz
+from torch.nn import Parameter as Param
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.inits import glorot, zeros
+from torch_geometric.typing import Adj, OptTensor
+from torch_scatter import scatter
+from torch_sparse import SparseTensor, masked_select_nnz, matmul
 
-from timemory.util import marker
-
+from fasten import Backend
 from fasten import Ops as ops
-from fasten import TensorSlice, TensorSliceTile, Backend
+from fasten import TensorSlice, TensorSliceTile
 
 
 @torch.jit._overload

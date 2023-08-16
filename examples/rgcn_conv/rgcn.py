@@ -1,14 +1,14 @@
 import argparse
 import os.path as osp
 
+import timemory
 import torch
 import torch.nn.functional as F
+from timemory.util import marker
 from torch_geometric.datasets import Entities
 from torch_geometric.utils import k_hop_subgraph
-from fasten import Ops as ops
 
-import timemory
-from timemory.util import marker
+from fasten import Ops as ops
 
 timemory.settings.scientific = False
 timemory.settings.flat_profile = False
@@ -25,10 +25,11 @@ parser.add_argument('--tile-size', type=int, default=16)
 args = parser.parse_args()
 
 if args.profile is True:
-    from rgcn_conv import RGCNConv, FastRGCNConv, FastenRGCNConv
+    from rgcn_conv import FastenRGCNConv, FastRGCNConv, RGCNConv
 else:
+    from torch_geometric.nn.conv import FastRGCNConv, RGCNConv
+
     from fasten.nn import FastenRGCNConv
-    from torch_geometric.nn.conv import RGCNConv, FastRGCNConv
 
 if args.mode == 'fast':
     RGCNConv = FastRGCNConv

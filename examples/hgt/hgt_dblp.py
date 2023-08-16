@@ -1,15 +1,13 @@
-import os.path as osp
 import argparse
-
-import torch
-import torch.nn.functional as F
-from torch_geometric.datasets import DBLP
-from torch_geometric.datasets import Entities
-from torch_geometric.nn import Linear
-from hgt_conv import HGTConv
+import os.path as osp
 
 import timemory
+import torch
+import torch.nn.functional as F
+from hgt_conv import HGTConv
 from timemory.util import marker
+from torch_geometric.datasets import DBLP, Entities
+from torch_geometric.nn import Linear
 
 timemory.settings.scientific = False
 timemory.settings.flat_profile = False

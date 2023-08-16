@@ -1,16 +1,14 @@
 import os.path as osp
 
+import timemory
 import torch
 import torch.nn.functional as F
-from torch.nn import BatchNorm1d
+from film_conv import FiLMConv
 from sklearn.metrics import f1_score
+from timemory.util import marker
+from torch.nn import BatchNorm1d
 from torch_geometric.datasets import PPI
 from torch_geometric.loader import DataLoader
-
-from film_conv import FiLMConv
-
-import timemory
-from timemory.util import marker
 
 timemory.settings.scientific = False
 timemory.settings.flat_profile = False
