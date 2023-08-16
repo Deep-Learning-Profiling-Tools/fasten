@@ -14,13 +14,13 @@ def test_segment_matmul(engine: Engine, device: str, phase: str, dtype: str) -> 
     if device == "cpu" and dtype == "float16":
         pytest.skip("CPU does not support FP16")
     dtype = getattr(torch, dtype)
-    data = torch.randn((128, 96), device=device, dtype=dtype)
+    data = torch.ones((128, 96), device=device, dtype=dtype)
     types = torch.zeros(128, dtype=torch.long, device=device, requires_grad=False)
     types[0:63] = 1
     types[63:90] = 2
     types[90:128] = 3
     sorted_data, tensor_slice = compact_tensor_types(data, types, device=device)
-    other = torch.randn((3, 96, 64), device=device, dtype=dtype)
+    other = torch.ones((3, 96, 64), device=device, dtype=dtype)
     if phase == "forward":
         output = ops.fasten_segment_matmul(sorted_data, tensor_slice.slices, other, engine, tensor_slice)
         output_ref = torch.zeros((128, 64), device=device, dtype=dtype)

@@ -13,7 +13,7 @@ from ...utils import torch_dtype_to_triton_dtype
 )
 @triton.jit
 def segment_matmul_kernel(
-    input, input_slices, other, output,
+    input, input_tiles, other, output,
     K, N,
     stride_input_m, stride_input_k,
     stride_other_b, stride_other_k, stride_other_n,
@@ -32,12 +32,12 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
-    start_off = tl.load(input_slices + 4 * pid_m + 2)
-    end_off = tl.load(input_slices + 4 * pid_m + 3)
+    start_off = tl.load(input_tiles + 4 * pid_m + 2)
+    end_off = tl.load(input_tiles + 4 * pid_m + 3)
     if end_off <= start_off:
         return
 
-    bid_other = tl.load(input_slices + 4 * pid_m)
+    bid = tl.load(input_tiles + 4 * pid_m)
 
     offs_m = start_off + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -45,7 +45,7 @@ def segment_matmul_kernel(
 
     # [M, K] x [K, N] -> [M, N]
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + bid_other * stride_other_b + \
+    other_ptrs = other + bid * stride_other_b + \
         (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_SIZE_M, BLOCK_N), dtype=out_dtype)
@@ -53,15 +53,15 @@ def segment_matmul_kernel(
     mask_n = offs_n[None, :] < N
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & offs_k[None, :] < K - k * BLOCK_K, other=0.0)
-        b = tl.load(other_ptrs, mask=mask_n & offs_k[:, None] < K - k * BLOCK_K, other=0.0)
+        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] < K - k * BLOCK_K), other=0.0)
+        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] < K - k * BLOCK_K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
         other_ptrs += BLOCK_K * stride_other_k
 
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
-    c_mask = mask_m & (offs_n[None, :] < N)
+    c_mask = mask_m & mask_n
     tl.store(c_ptrs, acc, mask=c_mask)
 
 # TODO(Keren): split_matmul_kernel
@@ -123,7 +123,7 @@ def batch_matmul_kernel(
 
     c_ptrs = grad_other + bid * stride_grad_other_b + \
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-    c_mask = (offs_k[:, None] < K) & (offs_n[None, :] < N)
+    c_mask = mask_k & mask_n
     tl.store(c_ptrs, acc, mask=c_mask)
 
 
