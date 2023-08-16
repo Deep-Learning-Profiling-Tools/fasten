@@ -1,17 +1,15 @@
 import copy
-from typing import Union, Tuple, Optional, Callable
-import torch
-from torch_geometric.typing import PairTensor, Adj, OptTensor
+from typing import Callable, Optional, Tuple, Union
 
+import torch
+from timemory.util import marker
 from torch import Tensor
 from torch.nn import ModuleList, ReLU
-from torch_sparse import SparseTensor, masked_select_nnz
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
-
 from torch_geometric.nn.inits import reset
-
-from timemory.util import marker
+from torch_geometric.typing import Adj, OptTensor, PairTensor
+from torch_sparse import SparseTensor, masked_select_nnz
 
 
 class FiLMConv(MessagePassing):

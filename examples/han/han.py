@@ -1,16 +1,14 @@
-from typing import Union, Dict, List
 import os.path as osp
-
-import torch
-from torch import nn
-import torch.nn.functional as F
-
-from torch_geometric.datasets import IMDB
-from han_conv import HANConv
-import torch_geometric.transforms as T
+from typing import Dict, List, Union
 
 import timemory
+import torch
+import torch.nn.functional as F
+import torch_geometric.transforms as T
+from han_conv import HANConv
 from timemory.util import marker
+from torch import nn
+from torch_geometric.datasets import IMDB
 
 timemory.settings.scientific = False
 timemory.settings.flat_profile = False

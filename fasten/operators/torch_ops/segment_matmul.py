@@ -1,0 +1,38 @@
+import torch
+
+
+def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, other: torch.Tensor,
+                           output: torch.Tensor = None):
+    assert input.device == other.device, 'input, other and output must be on the same device'
+    input_slices = input_slices.to('cpu')
+    if output is None:
+        output = torch.empty(input.shape[0], other.shape[2], device=input.device, dtype=input.dtype)
+    for i in range(input_slices.shape[0]):
+        a = input[input_slices[i, 2]:input_slices[i, 3]]
+        b = other[i]
+        c = output[input_slices[i, 2]:input_slices[i, 3]]
+        torch.matmul(a, b, out=c)
+    return output
+
+
+def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor,
+                            grad_output: torch.Tensor, other: torch.Tensor,
+                            grad_other: torch.Tensor = None, grad_input: torch.Tensor = None):
+    assert input.device == other.device, 'input, other and output must be on the same device'
+    input_slices = input_slices.to('cpu')
+    grad_output = grad_output.contiguous()
+    if grad_input is None:
+        grad_input = torch.empty_like(input)
+    for i in range(input_slices.shape[0]):
+        a = grad_output[input_slices[i, 2]:input_slices[i, 3]]
+        b = other[i]
+        c = grad_input[input_slices[i, 2]:input_slices[i, 3]]
+        torch.matmul(a, b.t(), out=c)
+    if grad_other is None:
+        grad_other = torch.empty_like(other)
+    for i in range(input_slices.shape[0]):
+        a = input[input_slices[i, 2]:input_slices[i, 3]]
+        b = grad_output[input_slices[i, 2]:input_slices[i, 3]]
+        c = grad_other[i]
+        torch.matmul(a.t(), b, out=c)
+    return grad_input, grad_other

@@ -170,7 +170,7 @@ static void compute() {
   float ms = 0.0;
   RUNTIME_API_CALL(cudaEventElapsedTime(&ms, start_event, end_event));
   std::cout << "Elapsed time: " << ms << "ms" << std::endl;
-  
+
   RUNTIME_API_CALL(cudaEventDestroy(start_event));
   RUNTIME_API_CALL(cudaEventDestroy(end_event));
 }
