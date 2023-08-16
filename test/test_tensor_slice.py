@@ -33,3 +33,8 @@ def test_tiling(tile_size: int, device: str):
     tensor_tile = tensor_slice.tiling(tile_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
+
+
+def test_schedule():
+    # TODO(Keren): validate if the cache mechanism works
+    pass
