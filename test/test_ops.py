@@ -3,15 +3,15 @@ import torch
 
 from fasten import Engine, compact_tensor_types, ops
 
-slice0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
-slice1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
+slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
+slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32", "float16"])
-@pytest.mark.parametrize("slices", [slice0, slice1])
+@pytest.mark.parametrize("slices", [slices0, slices1])
 def test_segment_matmul(slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
     if engine == Engine.TRITON and device == "cpu":
         pytest.skip("Triton does not support CPU inference")
