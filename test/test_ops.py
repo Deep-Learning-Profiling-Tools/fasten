@@ -1,5 +1,6 @@
 import pytest
 import torch
+import csv
 
 from fasten import Engine, compact_tensor_types, ops
 
