@@ -194,7 +194,8 @@ def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor, gra
     def dw(grad_other):
         #  [M, K]^T x [M, N]-> [K, N]
         if grad_other is None:
-            grad_other = torch.empty_like(other)
+            # grad_other might be sparse
+            grad_other = torch.zeros_like(other)
 
         def grid(meta):
             return (triton.cdiv(K, meta['BLOCK_SIZE_K']), triton.cdiv(N, meta['BLOCK_SIZE_N']), B)

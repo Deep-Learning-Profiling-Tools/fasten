@@ -55,13 +55,23 @@ class TensorSlice:
     def __len__(self):
         return self._slices.size(0)
 
-    @property
-    def start(self):
-        return self._slices[0, 2]
+    def start(self, is_tensor: bool = True):
+        '''
+            Get the start index of the original tensor.
 
-    @property
-    def stop(self):
-        return self._slices[-1, 3]
+            Args:
+                is_tensor: If true, return a tensor. Otherwise, return a python int.
+        '''
+        return self._slices[0, 2] if is_tensor else self._slices[0, 2].item()
+
+    def stop(self, is_tensor: bool = True):
+        '''
+            Get the stop index of the original tensor.
+
+            Args:
+                is_tensor: If true, return a tensor. Otherwise, return a python int.
+        '''
+        return self._slices[-1, 3] if is_tensor else self._slices[-1, 3].item()
 
     @property
     def slices(self):
@@ -71,20 +81,43 @@ class TensorSlice:
     def tensor(self):
         return self._tensor
 
-    def get_slice_from_type(self, type: int):
-        self._init_mappings()
-        return self._slices[self._type_slice_dict[type]]
+    def get_slice_from_type(self, type: int, is_tensor: bool = True):
+        '''
+            Get the slice of the original tensor from the type.
 
-    def get_slice_from_index(self, index: int):
+            Args:
+                type: The type
+                is_tensor: If true, return a tensor. Otherwise, return a python slice.
+        '''
         self._init_mappings()
-        return self._slices[index]
+        entry = self._slices[self._type_slice_dict[type]][2:4]
+        return entry if is_tensor else slice(entry[0].item(), entry[1].item())
 
-    def get_type_from_index(self, index: int) -> int:
+    def get_slice_from_index(self, index: int, is_tensor: bool = True):
+        '''
+            Get the slice of the original tensor from the slice index.
+
+            Args:
+                index: The slice index
+                is_tensor: If true, return a tensor. Otherwise, return a python slice.
+        '''
         self._init_mappings()
-        return self._slice_type_dict[index]
+        entry = self._slices[index][2:4]
+        return entry if is_tensor else slice(entry[0].item(), entry[1].item())
+
+    def get_type_from_index(self, index: int, is_tensor: bool = True) -> int:
+        '''
+            Get the type from the slice index.
+
+            Args:
+                index: The slice index
+                is_tensor: If true, return a tensor. Otherwise, return a python int.
+        '''
+        self._init_mappings()
+        return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
     def get_num_types(self) -> int:
-        return len(self._type_slice_dict)
+        return self.__len__()
 
     def tiling(self, tile_size: int, method: TilingMethod = TilingMethod.DEFAULT):
         assert tile_size > 0
@@ -158,4 +191,4 @@ def compact_tensor_types(tensor: torch.Tensor, types: torch.Tensor, type_dim: in
         types.append([
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
-    return sorted_tensor, TensorSlice(sorted_types, types, device=device)
+    return sorted_tensor, TensorSlice(unique_types, types, device=device)

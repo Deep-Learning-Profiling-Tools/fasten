@@ -8,8 +8,9 @@ def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, othe
     if output is None:
         output = torch.empty(input.shape[0], other.shape[2], device=input.device, dtype=input.dtype)
     for i in range(input_slices.shape[0]):
+        t = input_slices[i, 1]
         a = input[input_slices[i, 2]:input_slices[i, 3]]
-        b = other[i]
+        b = other[t]
         c = output[input_slices[i, 2]:input_slices[i, 3]]
         torch.matmul(a, b, out=c)
     return output
@@ -24,15 +25,18 @@ def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor,
     if grad_input is None:
         grad_input = torch.empty_like(input)
     for i in range(input_slices.shape[0]):
+        t = input_slices[i, 1]
         a = grad_output[input_slices[i, 2]:input_slices[i, 3]]
-        b = other[i]
+        b = other[t]
         c = grad_input[input_slices[i, 2]:input_slices[i, 3]]
         torch.matmul(a, b.t(), out=c)
     if grad_other is None:
-        grad_other = torch.empty_like(other)
+        # grad_other might be sparse
+        grad_other = torch.zeros_like(other)
     for i in range(input_slices.shape[0]):
+        t = input_slices[i, 1]
         a = input[input_slices[i, 2]:input_slices[i, 3]]
         b = grad_output[input_slices[i, 2]:input_slices[i, 3]]
-        c = grad_other[i]
+        c = grad_other[t]
         torch.matmul(a.t(), b, out=c)
     return grad_input, grad_other
