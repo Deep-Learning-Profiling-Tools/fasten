@@ -37,7 +37,7 @@ def segment_matmul_kernel(
     if end_off <= start_off:
         return
 
-    bid = tl.load(input_tiles + 4 * pid_m)
+    type_id = tl.load(input_tiles + 4 * pid_m + 1)
 
     offs_m = start_off + tl.arange(0, BLOCK_SIZE_M)
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -45,7 +45,7 @@ def segment_matmul_kernel(
 
     # [M, K] x [K, N] -> [M, N]
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + bid * stride_other_b + \
+    other_ptrs = other + type_id * stride_other_b + \
         (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_SIZE_M, BLOCK_N), dtype=out_dtype)
@@ -53,12 +53,13 @@ def segment_matmul_kernel(
     mask_n = offs_n[None, :] < N
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] < K - k * BLOCK_K), other=0.0)
-        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] < K - k * BLOCK_K), other=0.0)
+        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] + k * BLOCK_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
         other_ptrs += BLOCK_K * stride_other_k
 
+    acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
     c_mask = mask_m & mask_n
@@ -100,6 +101,7 @@ def batch_matmul_kernel(
     if end_off <= start_off:
         return
 
+    type_id = tl.load(input_slices + 4 * bid + 1)
     offs_k = pid_k * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_m = tl.arange(0, BLOCK_SIZE_M)
@@ -115,13 +117,14 @@ def batch_matmul_kernel(
     M = end_off - start_off
 
     for m in range(0, tl.cdiv(M, BLOCK_SIZE_M)):
-        a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] < M - m * BLOCK_SIZE_M), other=0.0)
-        b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] < M - m * BLOCK_SIZE_M), other=0.0)
+        a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * BLOCK_SIZE_M < M), other=0.0)
+        b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * BLOCK_SIZE_M < M), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_SIZE_M * stride_input_m
         grad_output_ptrs += BLOCK_SIZE_M * stride_grad_output_m
 
-    c_ptrs = grad_other + bid * stride_grad_other_b + \
+    acc = acc.to(grad_other.dtype.element_ty)
+    c_ptrs = grad_other + type_id * stride_grad_other_b + \
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
     c_mask = mask_k & mask_n
     tl.store(c_ptrs, acc, mask=c_mask)
@@ -166,7 +169,7 @@ def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor, gra
     assert other.dim() == 3
     K: int = input.size(1)
     N: int = other.size(2)
-    B: int = other.size(0)
+    B: int = input_slices.size(0)
     NUM_BLOCKS_M: int = input_tiles.size(0)
     grad_output = grad_output.contiguous()
 
@@ -199,7 +202,7 @@ def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor, gra
 
         def grid(meta):
             return (triton.cdiv(K, meta['BLOCK_SIZE_K']), triton.cdiv(N, meta['BLOCK_SIZE_N']), B)
-        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
+        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
         batch_matmul_kernel[grid](
             input, input_slices, grad_output, grad_other,
             K, N,

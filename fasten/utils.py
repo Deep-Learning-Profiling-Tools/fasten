@@ -29,13 +29,22 @@ engine_ops = {
 }
 
 
-def torch_dtype_to_triton_dtype(dtype):
+def torch_dtype_to_triton_dtype(dtype, grad: bool = False):
     type_dict = {
         torch.float32: tl.float32,
         torch.float16: tl.float16,
         torch.int32: tl.int32,
         torch.int64: tl.int64,
     }
-    if dtype not in type_dict:
-        raise ValueError(f'Unsupported dtype {dtype}')
-    return type_dict[dtype]
+    promo_type_dict = {
+        torch.float16: tl.float32,
+        torch.float32: tl.float32,
+    }
+    if grad:
+        if dtype not in promo_type_dict:
+            raise ValueError(f'Unsupported dtype {dtype}')
+        return promo_type_dict[dtype]
+    else:
+        if dtype not in type_dict:
+            raise ValueError(f'Unsupported dtype {dtype}')
+        return type_dict[dtype]
