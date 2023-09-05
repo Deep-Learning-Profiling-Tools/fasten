@@ -11,12 +11,11 @@ def test_compact_tensor_types(device: str):
     types = torch.tensor([2, 1, 2], dtype=torch.long, device=device)
     data_sorted, tensor_slice = compact_tensor_types(data, types, device=device)
     assert data_sorted[0].tolist() == [3, 4]
-    type_slice = tensor_slice.get_slice_from_type(2)
-    assert type_slice[1] == 2
-    assert type_slice[2] == 1
-    assert type_slice[3] == 3
+    slice = tensor_slice.get_slice_from_type(2)
+    assert slice[0] == 1
+    assert slice[1] == 3
     index_slice = tensor_slice.get_slice_from_index(1)
-    assert torch.equal(index_slice, type_slice)
+    assert torch.equal(index_slice, slice)
     type = tensor_slice.get_type_from_index(1)
     assert type == 2
 
@@ -33,8 +32,3 @@ def test_tiling(tile_size: int, device: str):
     tensor_tile = tensor_slice.tiling(tile_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
-
-
-def test_schedule():
-    # TODO(Keren): validate if the cache mechanism works
-    pass
