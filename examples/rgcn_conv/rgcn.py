@@ -1,135 +1,78 @@
 import argparse
 import os.path as osp
 
-import timemory
 import torch
 import torch.nn.functional as F
-from timemory.util import marker
+import torch_geometric.transforms as T
 from torch_geometric.datasets import Entities
-from torch_geometric.utils import k_hop_subgraph
+from torch_geometric.nn import Linear, RGCNConv
+from torch_geometric.utils import index_sort, k_hop_subgraph
+from torch_geometric.utils.sparse import index2ptr
 
-from fasten import Ops as ops
+from fasten import Engine, TensorSlice, compact_tensor_types, ops
+from fasten.nn import FastenRGCNConv
 
-timemory.settings.scientific = False
-timemory.settings.flat_profile = False
-timemory.settings.timeline_profile = False
-timemory.settings.cout_output = False
+torch.manual_seed(12345)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str,
-                    choices=['AIFB', 'MUTAG', 'BGS', 'AM'])
-parser.add_argument('--mode', type=str, default='fast',
-                    choices=['origin', 'fast', 'fasten'])
-parser.add_argument('--profile', action='store_true', default=False)
-parser.add_argument('--tile-size', type=int, default=16)
-args = parser.parse_args()
+device = torch.device('cuda')
 
-if args.profile is True:
-    from rgcn_conv import FastenRGCNConv, FastRGCNConv, RGCNConv
-else:
-    from torch_geometric.nn.conv import FastRGCNConv, RGCNConv
-
-    from fasten.nn import FastenRGCNConv
-
-if args.mode == 'fast':
-    RGCNConv = FastRGCNConv
-elif args.mode == 'fasten':
-    RGCNConv = FastenRGCNConv
-else:
-    RGCNConv = RGCNConv
-
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Entities')
-dataset = Entities(path, args.dataset)
-data = dataset[0]
-
-# BGS and AM graphs are too big to process them in a full-batch fashion.
-# Since our model does only make use of a rather small receptive field, we
-# filter the graph to only contain the nodes that are at most 2-hop neighbors
-# away from any training/test node.
-node_idx = torch.cat([data.train_idx, data.test_idx], dim=0)
-node_idx, edge_index, mapping, edge_mask = k_hop_subgraph(
+def data_prep_rgcn(dataset_arg):
+    path =osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Entities')
+    dataset = Entities(path, dataset_arg)
+    data = dataset[0]
+    node_idx = torch.cat([data.train_idx, data.test_idx], dim=0)
+    node_idx, edge_index, mapping, edge_mask = k_hop_subgraph(
     node_idx, 2, data.edge_index, relabel_nodes=True)
 
-data.num_nodes = node_idx.size(0)
-data.edge_index = edge_index
-data.edge_type = data.edge_type[edge_mask]
-data.train_idx = mapping[:data.train_idx.size(0)]
-data.test_idx = mapping[data.train_idx.size(0):]
+    data.num_nodes = node_idx.size(0)
+    data.edge_index = edge_index
+    data.edge_type = data.edge_type[edge_mask]
+    data.train_idx = mapping[:data.train_idx.size(0)]
+    data.test_idx = mapping[data.train_idx.size(0):]
+    return data, dataset.num_relations, dataset.num_classes
+
+def tensor_slice_gen(data, num_relations):
+    edge_type = data.edge_type
+    edge_index= data.edge_index
+    if (edge_type[1:] < edge_type[:-1]).any():
+        edge_type, perm = index_sort(
+            edge_type, max_value=num_relations)
+        edge_index = edge_index[:, perm]
+    edge_type_ptr = index2ptr(edge_type, num_relations)
+    edge_ptr= [slice(edge_type_ptr[i], edge_type_ptr[i + 1]) for i in range(len(edge_type_ptr) - 1)]
+    M = sum([s.stop - s.start for s in edge_ptr])
+    fake_data = torch.randn((M, 1)).to(device)
+    types = torch.zeros(M, dtype=torch.long, device=device, requires_grad=False)
+    for i, s in enumerate(edge_ptr):
+        types[s] = i
+    sorted_data, tensor_slice = compact_tensor_types(fake_data, types, device=device)
+    return tensor_slice
 
 
-class Net(torch.nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = RGCNConv(data.num_nodes, 16, dataset.num_relations,
-                              num_bases=30)
-        self.conv2 = RGCNConv(16, dataset.num_classes, dataset.num_relations,
-                              num_bases=30)
-        if args.mode == 'fasten':
-            self.conv1.tile_size = args.tile_size
-            self.conv2.tile_size = args.tile_size
-
-    def forward(self, edge_index, edge_type):
-        x = F.relu(self.conv1(None, edge_index, edge_type))
-        x = self.conv2(x, edge_index, edge_type)
-        return F.log_softmax(x, dim=1)
-
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model, data = Net().to(device), data.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
-
-
-def train():
-    model.train()
-    optimizer.zero_grad()
-    if args.mode == 'fasten':
-        with marker(["wall_clock", "cupti_activity"], key="compact"):
-            with torch.no_grad():
-                edge_index, edge_type = ops.compact(
-                    data.edge_index, data.edge_type, type_dim=1)
-    else:
-        edge_index, edge_type = data.edge_index, data.edge_type
-    with marker(["wall_clock", "cupti_activity"], key="forward"):
-        out = model(edge_index, edge_type)
-        torch.cuda.synchronize()
-    with marker(["wall_clock", "cupti_activity"], key="loss"):
-        loss = F.nll_loss(out[data.train_idx], data.train_y)
-        torch.cuda.synchronize()
-    with marker(["wall_clock", "cupti_activity"], key="backward"):
-        loss.backward()
-        torch.cuda.synchronize()
-    with marker(["wall_clock", "cupti_activity"], key="optimize"):
-        optimizer.step()
-        torch.cuda.synchronize()
-    return loss.item()
-
-
-@ torch.no_grad()
-def test():
-    if args.mode == 'fasten':
-        with marker(["wall_clock"], key="compact"):
-            with torch.no_grad():
-                edge_index, edge_type = ops.compact(
-                    data.edge_index, data.edge_type, type_dim=1)
-    else:
-        edge_index, edge_type = data.edge_index, data.edge_type
-    model.eval()
-    pred = model(edge_index, edge_type).argmax(dim=-1)
-    train_acc = pred[data.train_idx].eq(data.train_y).to(torch.float).mean()
-    test_acc = pred[data.test_idx].eq(data.test_y).to(torch.float).mean()
-    return train_acc.item(), test_acc.item()
-
-
-for epoch in range(1, 10):
-    with marker(["wall_clock", "cupti_activity"], key="train"):
-        loss = train()
-    with marker(["wall_clock"], key="test"):
-        train_acc, test_acc = test()
-    print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
-          f'Test: {test_acc:.4f}')
-
-if args.profile is True:
+def test_rgcn(data, num_relations, num_classes):
     torch.cuda.empty_cache()
-    print(torch.cuda.memory_summary())
+    tensor_slice = tensor_slice_gen(data, num_relations)
 
-timemory.finalize()
+    data = data.to(device)
+    rgcn_conv1 = RGCNConv(data.num_nodes, 32, num_relations).to(device)
+    rgcn_conv2= RGCNConv(32, num_classes, num_relations).to(device)
+
+    x = torch.randn((data.num_nodes, 32), device="cuda")
+    rgcn_conv_out = rgcn_conv2(x, data.edge_index, data.edge_type)
+
+    fasten_rgcn_conv1 = FastenRGCNConv(data.num_nodes, 32, num_relations).to(device)
+    fasten_rgcn_conv2 = FastenRGCNConv(32, num_classes, num_relations).to(device)
+    fasten_rgcn_conv_out = fasten_rgcn_conv2(x= x, edge_index= data.edge_index, edge_type= data.edge_type, edge_tensor_slice=tensor_slice)
+
+    assert(fasten_rgcn_conv_out.shape == rgcn_conv_out.shape)
+    print("Max Difference:",torch.max(torch.abs(fasten_rgcn_conv_out- rgcn_conv_out)))
+
+
+def rgcn_test_loop():
+    datasets= ['AIFB', 'MUTAG', 'BGS', 'AM']
+    for data_args in datasets:
+        print("Testing on:", data_args)
+        data, num_relations, num_classes = data_prep_rgcn(data_args)
+        test_rgcn(data, num_relations, num_classes)
+
+rgcn_test_loop()
