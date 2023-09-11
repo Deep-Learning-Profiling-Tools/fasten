@@ -3,10 +3,11 @@ from torch_geometric.nn import RGCNConv
 from torch_geometric.utils import index_sort
 from torch_geometric.utils.sparse import index2ptr
 
-from fasten import Engine, TensorSlice, compact_tensor_types
+from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
 
 device = torch.device("cuda")
+
 
 def tensor_slice_gen(edge_type, edge_index, num_relations) -> TensorSlice:
 
@@ -15,7 +16,7 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> TensorSlice:
             edge_type, max_value=num_relations)
         edge_index = edge_index[:, perm]
     edge_type_ptr = index2ptr(edge_type, num_relations)
-    edge_ptr= [slice(edge_type_ptr[i], edge_type_ptr[i + 1]) for i in range(len(edge_type_ptr) - 1)]
+    edge_ptr = [slice(edge_type_ptr[i], edge_type_ptr[i + 1]) for i in range(len(edge_type_ptr) - 1)]
     M = sum([s.stop - s.start for s in edge_ptr])
     fake_data = torch.randn((M, 1)).to(device)
     types = torch.zeros(M, dtype=torch.long, device=device, requires_grad=False)
@@ -27,10 +28,10 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> TensorSlice:
 
 def correctness():
 
-    x = torch.randn(4,4).to(device)
+    x = torch.randn(4, 4).to(device)
     edge_index = torch.tensor([
-    [0, 1, 1, 2, 2, 3, 0, 1, 1, 2, 2, 3],
-    [1, 1, 1, 2, 1, 1, 1, 0, 1, 3, 1, 3],
+        [0, 1, 1, 2, 2, 3, 0, 1, 1, 2, 2, 3],
+        [1, 1, 1, 2, 1, 1, 1, 0, 1, 3, 1, 3],
     ]).to(device)
     edge_type = torch.tensor([0, 1, 1, 0, 7, 6, 4, 3, 3, 2, 2, 3]).to(device)
     num_types = 8
@@ -40,11 +41,12 @@ def correctness():
     rgcn_conv_out = rgcn_conv(x, edge_index, edge_type)
 
     tensor_slice = tensor_slice_gen(edge_type, edge_index, num_types)
-    fasten_rgcn_conv = FastenRGCNConv(4,32,8).to(device)
+    fasten_rgcn_conv = FastenRGCNConv(4, 32, 8).to(device)
     fasten_rgcn_conv_out = fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)
 
     assert fasten_rgcn_conv_out.shape == rgcn_conv_out.shape
     torch.testing.assert_close(fasten_rgcn_conv_out, rgcn_conv_out, atol=1e-1, rtol=1e-2)
+
 
 def benchmark_gpu():
 
@@ -66,7 +68,7 @@ def benchmark_gpu():
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    out = rgcn_conv(x, edge_index, edge_type)  # warmup
+    rgcn_conv(x, edge_index, edge_type)  # warmup
     start_event.record()
     for _ in range(100):
         rgcn_conv(x, edge_index, edge_type)
@@ -76,7 +78,7 @@ def benchmark_gpu():
 
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    out = fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)  # warmup
+    fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)  # warmup
     start_event.record()
     for _ in range(100):
         fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)

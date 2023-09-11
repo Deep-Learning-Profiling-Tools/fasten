@@ -7,24 +7,10 @@ from torch.nn import Parameter
 from torch.nn import Parameter as Param
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.inits import glorot, zeros
-from torch_geometric.typing import Adj, OptTensor, SparseTensor, pyg_lib, torch_sparse
-from torch_geometric.utils import index_sort, one_hot, scatter, spmm
-from torch_geometric.utils.hetero import segmatmul_heuristic
-from torch_geometric.utils.sparse import index2ptr
+from torch_geometric.typing import Adj, OptTensor, SparseTensor, torch_sparse
+from torch_geometric.utils import index_sort, spmm
 
-from fasten import Engine, TensorSlice, compact_tensor_types, ops
-
-
-@torch.jit._overload
-def masked_edge_index(edge_index, edge_mask):
-    # type: (Tensor, Tensor) -> Tensor
-    pass
-
-
-@torch.jit._overload
-def masked_edge_index(edge_index, edge_mask):
-    # type: (SparseTensor, Tensor) -> SparseTensor
-    pass
+from fasten import Engine, TensorSlice, ops
 
 
 def masked_edge_index(edge_index, edge_mask):
