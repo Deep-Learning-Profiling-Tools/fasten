@@ -8,7 +8,7 @@ from torch.nn import Parameter as Param
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.inits import glorot, zeros
 from torch_geometric.typing import Adj, OptTensor, SparseTensor, torch_sparse
-from torch_geometric.utils import index_sort, spmm
+from torch_geometric.utils import spmm
 
 from fasten import Engine, TensorSlice, ops
 
@@ -215,19 +215,8 @@ class FastenRGCNConv(MessagePassing):
                     and x_l.is_floating_point() and isinstance(
                         edge_index, Tensor)) and (self.use_segmm == -1
                                                   or bool(self.use_segmm)):
-                if not self.is_sorted:
-                    if (edge_type[1:] < edge_type[:-1]).any():
-                        edge_type, perm = index_sort(
-                            edge_type, max_value=self.num_relations)
-                        edge_index = edge_index[:, perm]
-                # edge_type_ptr = index2ptr(edge_type, self.num_relations)
-                # if self.use_segmm == -1:
-                #     self.use_segmm = segmatmul_heuristic(
-                #         x_l, edge_type_ptr, self.weight)
-                # out = self.propagate(edge_index, x=x_l,
-                        #  edge_type_ptr=edge_type_ptr, size=size)
-                # print("Edge Tensor Slice:", edge_tensor_slice)
-                out = self.propagate(edge_index, x=x_l, size=size, edge_type_ptr=torch.randn((1, 1)), edge_tensor_slice=edge_tensor_slice)
+
+                out = self.propagate(edge_index, x=x_l, size=size, edge_type_ptr=None, edge_tensor_slice=edge_tensor_slice)
             else:
                 for i in range(self.num_relations):
                     tmp = masked_edge_index(edge_index, edge_type == i)
@@ -256,9 +245,9 @@ class FastenRGCNConv(MessagePassing):
         return out
 
     def message(self, x_j: Tensor, edge_type_ptr: OptTensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
-        if torch_geometric.typing.WITH_PYG_LIB and edge_tensor_slice is not None and edge_type_ptr is not None:
-            # return pyg_lib.ops.segment_matmul(x_j, edge_type_ptr, self.weight
+        if torch_geometric.typing.WITH_PYG_LIB and edge_tensor_slice is not None:
             return ops.fasten_segment_matmul(x_j, edge_tensor_slice.slices, self.weight, Engine.TRITON, edge_tensor_slice)
+
         return x_j
 
     def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:

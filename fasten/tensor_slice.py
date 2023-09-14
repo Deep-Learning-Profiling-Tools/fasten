@@ -192,3 +192,18 @@ def compact_tensor_types(tensor: torch.Tensor, types: torch.Tensor, type_dim: in
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
     return sorted_tensor, TensorSlice(unique_types, types, device=device)
+
+
+def compact_tensor_slice(types: torch.Tensor, descending: bool = False, device: str = 'cpu') -> TensorSlice:
+
+    # Assumes the type tensor is already sorted
+    unique_types, type_counts = torch.unique_consecutive(
+        types, return_inverse=False, return_counts=True)
+
+    types = []
+    cur_index = 0
+    for i in range(len(unique_types)):
+        types.append([
+            i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
+        cur_index += type_counts[i].item()
+    return TensorSlice(unique_types, types, device=device)
