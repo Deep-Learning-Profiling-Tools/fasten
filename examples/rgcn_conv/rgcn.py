@@ -18,8 +18,7 @@ parser.add_argument('--dataset', type=str, default='AIFB',
 args = parser.parse_args()
 
 
-# path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Entities')
-path = "/home/kganapa/data/Entities"
+path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Entities')
 dataset = Entities(path, args.dataset)
 data = dataset[0]
 
