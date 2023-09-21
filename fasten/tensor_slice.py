@@ -159,7 +159,7 @@ class TensorSlice:
         return best_ms, best_config, best_op
 
 
-def compact_tensor_types(tensor: torch.Tensor, types: torch.Tensor, type_dim: int = 0, descending: bool = False, device: str = 'cpu') -> Tuple[torch.Tensor, TensorSlice]:
+def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_dim: int = 0, descending: bool = False, return_data: bool = False, is_sorted: bool = False, device: str = 'cpu') -> Union[TensorSlice, Tuple[torch.Tensor, TensorSlice]]:
     '''
         Sort a tensor (node or edge) according to their types.
 
@@ -175,13 +175,12 @@ def compact_tensor_types(tensor: torch.Tensor, types: torch.Tensor, type_dim: in
             TensorSlice: The tensor's TensorSlice
             index: The original row indices in the sorted tensor
     '''
-    # Must be stable sort
-    sorted_types, type_indices = torch.sort(types, descending=descending, stable=True)
-    sorted_tensor = torch.index_select(
-        tensor, dim=type_dim, index=type_indices)
-    # This function is different from torch.unique() in the sense that this function only eliminates
-    # consecutive duplicate values. This semantics is similar to std::unique in C++.
-    # torch.unique() may sort elements even if sorted is specified.
+
+    if (is_sorted):
+        sorted_types = types
+    else:
+        sorted_types, type_indices = torch.sort(types, descending=descending, stable=True)
+
     unique_types, type_counts = torch.unique_consecutive(
         sorted_types, return_inverse=False, return_counts=True)
 
@@ -191,19 +190,16 @@ def compact_tensor_types(tensor: torch.Tensor, types: torch.Tensor, type_dim: in
         types.append([
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
-    return sorted_tensor, TensorSlice(unique_types, types, device=device)
 
+    if (return_data):
+        if is_sorted:
+            _, type_indices = torch.sort(types, descending=descending, stable=True)
+        sorted_tensor = torch.index_select(
+            tensor, dim=type_dim, index=type_indices)
+        # This function is different from torch.unique() in the sense that this function only eliminates
+        # consecutive duplicate values. This semantics is similar to std::unique in C++.
+        # torch.unique() may sort elements even if sorted is specified.
+        return sorted_tensor, TensorSlice(unique_types, types, device=device)
 
-def compact_tensor_slice(types: torch.Tensor, descending: bool = False, device: str = 'cpu') -> TensorSlice:
-
-    # Assumes the type tensor is already sorted
-    unique_types, type_counts = torch.unique_consecutive(
-        types, return_inverse=False, return_counts=True)
-
-    types = []
-    cur_index = 0
-    for i in range(len(unique_types)):
-        types.append([
-            i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
-        cur_index += type_counts[i].item()
-    return TensorSlice(unique_types, types, device=device)
+    else:
+        return TensorSlice(unique_types, types, device=device)

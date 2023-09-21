@@ -5,7 +5,7 @@ import triton
 from torch_geometric.nn import RGCNConv
 from torch_geometric.utils import index_sort
 
-from fasten import TensorSlice, compact_tensor_slice
+from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
 
 device = torch.device("cuda")
@@ -17,7 +17,7 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice,
         edge_type, perm = index_sort(
             edge_type, max_value=num_relations)
         edge_index = edge_index[:, perm]
-    tensor_slice = compact_tensor_slice(edge_type, device=device)
+    tensor_slice = compact_tensor_types(types=edge_type, is_sorted=True, device=device)
     return tensor_slice, edge_index, edge_type
 
 
