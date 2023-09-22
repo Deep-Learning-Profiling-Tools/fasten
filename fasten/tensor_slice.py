@@ -164,19 +164,21 @@ def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_
         Sort a tensor (node or edge) according to their types.
 
         Args:
-            tensor: The input tensor
             types: The type of each row
+            tensor: The input tensor
             type_dim: Which dimension of the tensor represents types
             descending: If true, sort the tensor in the descending order
+            return_data: If true, sorts the input tensor data as well
+            is_sorted: If set to True , edge_type is not sorted
             device: The device to put the slices. Note that tensor and sorted_types are still on the original device.
 
         Returns:
             tensor: A sorted tensor
-            TensorSlice: The tensor's TensorSlice
+            TensorSlice: The tensor's sorted TensorSlice
             index: The original row indices in the sorted tensor
     '''
 
-    if (is_sorted):
+    if is_sorted:
         sorted_types = types
     else:
         sorted_types, type_indices = torch.sort(types, descending=descending, stable=True)
@@ -191,7 +193,8 @@ def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
 
-    if (return_data):
+    if return_data:
+        # If the sorted tensor is to be returned
         if is_sorted:
             _, type_indices = torch.sort(types, descending=descending, stable=True)
         sorted_tensor = torch.index_select(

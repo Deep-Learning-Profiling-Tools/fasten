@@ -21,7 +21,7 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice,
     return tensor_slice, edge_index, edge_type
 
 
-def correctness():
+def test_correctness():
 
     x = torch.randn(4, 4).to(device)
     edge_index = torch.tensor([
@@ -35,7 +35,9 @@ def correctness():
     rgcn_conv = RGCNConv(4, 32, 8).to(device)
     rgcn_conv_out = rgcn_conv(x, edge_index, edge_type)
 
+    
     tensor_slice, edge_index, edge_type = tensor_slice_gen(edge_type, edge_index, num_types)
+    torch.manual_seed(12345)
     fasten_rgcn_conv = FastenRGCNConv(4, 32, 8).to(device)
     fasten_rgcn_conv_out = fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)
 
@@ -43,10 +45,10 @@ def correctness():
     torch.testing.assert_close(fasten_rgcn_conv_out, rgcn_conv_out)
 
 
-def benchmark_gpu():
+def test_benchmark():
 
-    num_nodes = 1000
-    num_features = 32
+    num_nodes = 10000
+    num_features = 320
     num_edges = 20000
     num_types = 32
 
@@ -54,13 +56,14 @@ def benchmark_gpu():
     edge_index = torch.randint(0, num_nodes, (2, num_edges), device=device)
     edge_type = torch.randint(0, num_types, (num_edges,), device=device)
 
-    torch.manual_seed(12345)
 
-    rgcn_conv = RGCNConv(num_features, num_features, num_types).to(device)
+    tensor_slice, edge_index, edge_type = tensor_slice_gen(edge_type, edge_index, num_types)
+    torch.manual_seed(12345)
+    rgcn_conv = RGCNConv(num_features, num_features, num_types, is_sorted = True).to(device)
     ms = triton.testing.do_bench(lambda: rgcn_conv(x, edge_index, edge_type))
     print("Torch time:", ms)
 
-    tensor_slice, edge_index, edge_type = tensor_slice_gen(edge_type, edge_index, num_types)
+    torch.manual_seed(12345)
     fasten_rgcn_conv = FastenRGCNConv(num_features, num_features, num_types).to(device)
     ms = triton.testing.do_bench(lambda: fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice))
-    print("Triton time:", ms)
+    print("Fasten time:", ms)
