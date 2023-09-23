@@ -41,7 +41,7 @@ def test_correctness():
     fasten_rgcn_conv_out = fasten_rgcn_conv(x, edge_index, edge_type, tensor_slice)
 
     assert fasten_rgcn_conv_out.shape == rgcn_conv_out.shape
-    torch.testing.assert_close(fasten_rgcn_conv_out, rgcn_conv_out, atol = 1e-3, rtol = 1e-2)
+    torch.testing.assert_close(fasten_rgcn_conv_out, rgcn_conv_out, atol=1e-3, rtol=1e-2)
 
 
 def test_benchmark():

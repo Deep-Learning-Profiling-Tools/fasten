@@ -159,29 +159,27 @@ class TensorSlice:
         return best_ms, best_config, best_op
 
 
-def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_dim: int = 0, descending: bool = False, return_data: bool = False, is_sorted: bool = False, device: str = 'cpu') -> Union[TensorSlice, Tuple[torch.Tensor, TensorSlice]]:
-    '''
-        Sort a tensor (node or edge) according to their types.
+def compact_tensor_types(types: torch.Tensor, data: torch.Tensor = None,
+                         type_dim: int = 0, descending: bool = False,
+                         is_sorted: bool = False, device: str = 'cpu') -> Tuple[torch.Tensor, TensorSlice]:
+    """
+    Sort the types and its corresponding tensor, if given
 
-        Args:
-            types: The type of each row
-            tensor: The input tensor
-            type_dim: Which dimension of the tensor represents types
-            descending: If true, sort the tensor in the descending order
-            return_data: If true, sorts the input tensor data as well
-            is_sorted: If set to True , edge_type is not sorted
-            device: The device to put the slices. Note that tensor and sorted_types are still on the original device.
+    Args:
+        types (torch.Tensor): The type of each row.
+        data (torch.Tensor, optional): The input data to be sorted.
+        type_dim (int, optional): Which dimension of the tensor represents types. Defaults to 0.
+        descending (bool, optional): If true, sort the tensor in descending order. Defaults to False.
+        is_sorted (bool, optional): If true, assumes types is already sorted. Defaults to False.
+        device (str, optional): The device to put the slices. Note that tensor and sorted_types remain on the original device. Defaults to 'cpu'.
 
-        Returns:
-            tensor: A sorted tensor
-            TensorSlice: The tensor's sorted TensorSlice
-            index: The original row indices in the sorted tensor
-    '''
-
-    if is_sorted:
-        sorted_types = types
-    else:
+    Returns:
+        Tuple[TensorSlice, torch.Tensor]: The sorted tensor (if tensor is provided) and its corresponding TensorSlice.
+    """
+    if not is_sorted:
         sorted_types, type_indices = torch.sort(types, descending=descending, stable=True)
+    else:
+        sorted_types = types
 
     unique_types, type_counts = torch.unique_consecutive(
         sorted_types, return_inverse=False, return_counts=True)
@@ -193,16 +191,8 @@ def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
 
-    if return_data:
-        # If the sorted tensor is to be returned
-        if is_sorted:
-            _, type_indices = torch.sort(types, descending=descending, stable=True)
-        sorted_tensor = torch.index_select(
-            tensor, dim=type_dim, index=type_indices)
-        # This function is different from torch.unique() in the sense that this function only eliminates
-        # consecutive duplicate values. This semantics is similar to std::unique in C++.
-        # torch.unique() may sort elements even if sorted is specified.
-        return sorted_tensor, TensorSlice(unique_types, types, device=device)
-
+    if data is not None:
+        sorted_tensor = torch.index_select(data, dim=type_dim, index=type_indices) if not is_sorted else data
+        return TensorSlice(unique_types, types, device=device), sorted_tensor
     else:
-        return TensorSlice(unique_types, types, device=device)
+        return TensorSlice(unique_types, types, device=device), None

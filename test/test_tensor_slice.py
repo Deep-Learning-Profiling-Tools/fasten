@@ -9,7 +9,7 @@ from fasten import compact_tensor_types
 def test_compact_tensor_types(device: str):
     data = torch.tensor([[1, 2], [3, 4], [5, 6]], device=device)
     types = torch.tensor([2, 1, 2], dtype=torch.long, device=device)
-    data_sorted, tensor_slice = compact_tensor_types(data, types, device=device)
+    tensor_slice, data_sorted = compact_tensor_types(types, data, device=device)
     assert data_sorted[0].tolist() == [3, 4]
     slice = tensor_slice.get_slice_from_type(2)
     assert slice[0] == 1
@@ -28,7 +28,7 @@ def test_tiling(tile_size: int, device: str):
     types[63:90] = 2
     types[90:128] = 3
     types[0:63] = 1
-    _, tensor_slice = compact_tensor_types(data, types, device=device)
+    tensor_slice, _ = compact_tensor_types(types, data, device=device)
     tensor_tile = tensor_slice.tiling(tile_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
