@@ -130,7 +130,8 @@ def batch_matmul_kernel(
     tl.store(c_ptrs, acc, mask=c_mask)
 
 
-def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, other: torch.Tensor, input_tiles: torch.Tensor,
+def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
+                           input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None, tile_size: int = 64, out_dtype: torch.dtype = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
@@ -160,8 +161,9 @@ def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, othe
     return output
 
 
-def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
-                            input_tiles: torch.Tensor, grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
+def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
+                            grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
                             tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device

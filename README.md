@@ -4,12 +4,6 @@
 
 ## Installation
 
-### Optional packages
-
-```bash
-spack install magma
-```
-
 ### Build instructions
 
 ```bash
