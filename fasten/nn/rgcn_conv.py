@@ -240,7 +240,7 @@ class FastenRGCNConv(MessagePassing):
     def message(self, x_j: Tensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
         if edge_tensor_slice is not None:
             # XXX(Keren): Engine.TRITON is used for testing, it should be Engine.AUTO in the future
-            return ops.fasten_segment_matmul(x_j, edge_tensor_slice.slices, self.weight, Engine.TRITON, edge_tensor_slice)
+            return ops.fasten_segment_matmul(x_j, self.weight, edge_tensor_slice, Engine.TRITON)
         return x_j
 
     def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:

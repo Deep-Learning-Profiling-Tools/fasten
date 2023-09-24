@@ -1,7 +1,7 @@
 import torch
 
 
-def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, other: torch.Tensor,
+def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None):
     assert input.device == other.device, 'input, other and output must be on the same device'
     input_slices = input_slices.to('cpu')
@@ -16,9 +16,8 @@ def segment_matmul_forward(input: torch.Tensor, input_slices: torch.Tensor, othe
     return output
 
 
-def segment_matmul_backward(input: torch.Tensor, input_slices: torch.Tensor,
-                            grad_output: torch.Tensor, other: torch.Tensor,
-                            grad_other: torch.Tensor = None, grad_input: torch.Tensor = None):
+def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                            input_slices: torch.Tensor, grad_other: torch.Tensor = None, grad_input: torch.Tensor = None):
     assert input.device == other.device, 'input, other and output must be on the same device'
     input_slices = input_slices.to('cpu')
     grad_output = grad_output.contiguous()

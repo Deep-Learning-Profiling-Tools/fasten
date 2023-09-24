@@ -20,7 +20,7 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
     other = torch.randn((T, K, K), device=device, dtype=dtype)
     if phase == "forward":
         input_tiles = tensor_slice.tiling(tile_size)
-        output = triton_ops.segment_matmul_forward(tensor_slice.data, tensor_slice.slices, other, input_tiles.slices, tile_size=tile_size, out_dtype=torch.float32)
+        output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, out_dtype=torch.float32)
         output_ref = torch.zeros((M, K), dtype=dtype, device="cuda")
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
@@ -29,9 +29,9 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         torch.testing.assert_close(output, output_ref, atol=1e-1, rtol=1e-2)
     elif phase == "backward":
         input_tiles = tensor_slice.tiling(tile_size)
-        output = triton_ops.segment_matmul_forward(tensor_slice.data, tensor_slice.slices, other, input_tiles.slices, tile_size=tile_size)
+        output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size)
         output_grad = torch.randn_like(output)
-        grad_input, grad_other = triton_ops.segment_matmul_backward(tensor_slice.data, tensor_slice.slices, output_grad, other, input_tiles.slices, tile_size=tile_size)
+        grad_input, grad_other = triton_ops.segment_matmul_backward(tensor_slice.data, output_grad, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)
         for i in range(len(tensor_slice)):

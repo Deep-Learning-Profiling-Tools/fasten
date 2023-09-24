@@ -14,13 +14,13 @@ class Scheduler:
 
 
 def _init_segment_matmul_forward_scheduler():
-    def get_key(input: torch.Tensor, input_slices: torch.Tensor, other: torch.Tensor):
+    def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128])
 
 
 def _init_segment_matmul_backward_scheduler():
-    def get_key(input: torch.Tensor, input_slices: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
+    def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128])
 

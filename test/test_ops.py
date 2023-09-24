@@ -36,7 +36,7 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
     tensor_slice = compact_tensor_types(data, types, device=device)
     other = torch.randn((T, K, K), device=device, dtype=dtype)
     if phase == "forward":
-        output = ops.fasten_segment_matmul(tensor_slice.data, tensor_slice.slices, other, engine, tensor_slice)
+        output = ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, engine)
         output_ref = torch.zeros((M, K), device=device, dtype=dtype)
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
@@ -46,7 +46,7 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
     elif phase == "backward":
         tensor_slice.data.requires_grad = True
         other.requires_grad = True
-        output = ops.fasten_segment_matmul(tensor_slice.data, tensor_slice.slices, other, engine, tensor_slice)
+        output = ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, engine)
         output_grad = torch.randn_like(output)
         output.backward(output_grad)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)

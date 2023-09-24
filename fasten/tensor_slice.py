@@ -140,14 +140,16 @@ class TensorSlice:
         if op_name in self._cache and key in self._cache[op_name]:
             return self._cache[op_name][key]
         if autotune:
+            # Bench torch op
             best_op = getattr(torch_ops, op_name)
-            best_ms = do_bench(lambda: best_op(*args), warmup=5, rep=10)
+            best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
             best_config = {'tile_size': None, 'input_tiles': None}
+            # Bench triton ops
             triton_op = getattr(triton_ops, op_name)
             for tile_size in scheduler.tile_sizes:
                 for tiling_method in scheduler.tiling_methods:
                     input_tiles = self.tiling(tile_size, method=tiling_method)
-                    ms = do_bench(lambda: triton_op(*args, input_tiles=input_tiles.slices, tile_size=tile_size), warmup=5, rep=10)
+                    ms = do_bench(lambda: triton_op(*args, input_slices=self.slices, input_tiles=input_tiles.slices, tile_size=tile_size), warmup=5, rep=10)
                     if ms < best_ms:
                         best_ms = ms
                         best_op = triton_op
