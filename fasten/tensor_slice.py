@@ -151,7 +151,7 @@ class TensorSlice:
         cache_entry = self._lookup_cache(op_name, key)
 
         if cache_entry is not None:
-            return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
+            return cache_entry
 
         if autotune:
             best_ms, best_config, best_op = self.autotune(op_name, *args, scheduler=scheduler)
