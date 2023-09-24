@@ -147,7 +147,8 @@ class TensorSlice:
     def schedule(self, op_name: str, *args, autotune: bool = False) -> Tuple[float, dict, callable]:
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
-        if cache_entry := self._lookup_cache(op_name, key) is not None:
+        cache_entry = self._lookup_cache(op_name, key)
+        if cache_entry is not None:
             return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
         if autotune:
             # Bench torch op
