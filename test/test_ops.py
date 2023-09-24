@@ -124,8 +124,8 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    fasten_ms = triton.testing.do_bench(fasten_fn)
-    pyg_ms = triton.testing.do_bench(pyg_fn)
+    fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
+    pyg_ms = triton.testing.do_bench_cudagraph(pyg_fn)
     print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
 

@@ -153,6 +153,7 @@ class TensorSlice:
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
 <<<<<<< HEAD
+<<<<<<< HEAD
         cache_entry = self._lookup_cache(op_name, key)
 
         if cache_entry is not None:
@@ -190,6 +191,10 @@ class TensorSlice:
 
 =======
         if cache_entry := self._lookup_cache(op_name, key) is not None:
+=======
+        cache_entry = self._lookup_cache(op_name, key)
+        if cache_entry is not None:
+>>>>>>> 35dc19a (Update)
             return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
         if autotune:
             # Bench torch op
