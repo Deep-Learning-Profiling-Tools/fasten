@@ -1,7 +1,23 @@
 import torch
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from .utils import TilingMethod
+
+
+@dataclass
+class BestConfig:
+    tile_size: int = None
+    input_tiles: torch.Tensor = None
+
+    def asdict(self):
+        return asdict(self)
+
+
+@dataclass
+class CacheEntry:
+    best_ms: float
+    best_config: tuple
+    best_op: callable
 
 
 @dataclass

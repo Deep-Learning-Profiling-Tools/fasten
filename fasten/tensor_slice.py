@@ -5,7 +5,7 @@ import torch
 from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
-from .scheduler import schedulers
+from .scheduler import BestConfig, CacheEntry, schedulers
 from .utils import TilingMethod
 
 
@@ -120,6 +120,16 @@ class TensorSlice:
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
+    def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
+        if op_name in self._cache and key in self._cache[op_name]:
+            return self._cache[op_name][key]
+        return None
+
+    def _update_cache(self, op_name: str, key: tuple, entry: CacheEntry):
+        if op_name not in self._cache:
+            self._cache[op_name] = dict()
+        self._cache[op_name][key] = entry
+
     def tiling(self, tile_size: int, method: TilingMethod = TilingMethod.DEFAULT):
         assert tile_size > 0
         assert method == TilingMethod.DEFAULT, 'Only default tiling method is supported now.'
@@ -137,13 +147,13 @@ class TensorSlice:
     def schedule(self, op_name: str, *args, autotune: bool = False) -> Tuple[float, dict, callable]:
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
-        if op_name in self._cache and key in self._cache[op_name]:
-            return self._cache[op_name][key]
+        if cache_entry := self._lookup_cache(op_name, key) is not None:
+            return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
         if autotune:
             # Bench torch op
             best_op = getattr(torch_ops, op_name)
             best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
-            best_config = {'tile_size': None, 'input_tiles': None}
+            best_config = BestConfig()
             # Bench triton ops
             triton_op = getattr(triton_ops, op_name)
             for tile_size in scheduler.tile_sizes:
@@ -153,12 +163,14 @@ class TensorSlice:
                     if ms < best_ms:
                         best_ms = ms
                         best_op = triton_op
-                        best_config = {'tile_size': tile_size, 'input_tiles': input_tiles.slices}
+                        best_config = BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices)
         else:
             input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method)
             best_ms = 0.0  # not tuned
             best_op = getattr(triton_ops, op_name)
-            best_config = {'tile_size': scheduler.default_tile_size, 'input_tiles': input_tiles.slices}
+            best_config = BestConfig(tile_size=scheduler.default_tile_size, input_tiles=input_tiles.slices)
+        cache_entry = CacheEntry(best_ms, best_config, best_op)
+        self._update_cache(op_name, key, cache_entry)
         return best_ms, best_config, best_op
 
 

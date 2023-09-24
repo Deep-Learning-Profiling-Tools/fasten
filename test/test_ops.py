@@ -96,3 +96,20 @@ def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
     fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
     print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+
+
+def test_cache():
+    M = 128
+    K = 16
+    T = 16
+    data = torch.randn((M, K), device='cuda', dtype=torch.float32)
+    types = torch.zeros((M,), device='cuda', dtype=torch.int)
+    slices = [slice(0, 63), slice(63, 90), slice(90, 128)]
+    for s in slices:
+        if s.stop > s.start:
+            types[s] = torch.randint(0, T, (s.stop - s.start,), device='cuda', dtype=torch.int)
+    tensor_slice = compact_tensor_types(data, types, device='cuda')
+    other = torch.randn((T, K, K), device='cuda', dtype=torch.float32)
+    ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, Engine.TRITON)
+    assert len(tensor_slice._cache) == 1
+    assert len(tensor_slice._cache['segment_matmul_forward']) == 1
