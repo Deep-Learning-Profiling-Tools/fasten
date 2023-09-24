@@ -72,8 +72,6 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
 @pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
 @pytest.mark.parametrize("K", [16, 32, 64])
 def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
-    stream = torch.cuda.Stream()
-    torch.cuda.set_stream(stream)
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
@@ -93,8 +91,8 @@ def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
     def pyg_fn():
         pyg_lib.ops.segment_matmul(data, ptr, other)
 
-    fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
-    pyg_ms = triton.testing.do_bench_cudagraph(pyg_fn)
+    fasten_ms = triton.testing.do_bench(fasten_fn)
+    pyg_ms = triton.testing.do_bench(pyg_fn)
     print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
 
