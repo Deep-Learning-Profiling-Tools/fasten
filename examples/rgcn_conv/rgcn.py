@@ -9,7 +9,7 @@ from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import Entities
 from torch_geometric.utils import index_sort, k_hop_subgraph
 
-from fasten import Engine, TensorSlice, compact_tensor_types
+from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
 
 parser = argparse.ArgumentParser()
@@ -34,7 +34,6 @@ data.test_idx = mapping[data.train_idx.size(0):]
 
 
 def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice, torch.Tensor, torch.Tensor]:
-
     if (edge_type[1:] < edge_type[:-1]).any():
         edge_type, perm = index_sort(
             edge_type, max_value=num_relations)

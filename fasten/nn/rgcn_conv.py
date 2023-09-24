@@ -1,7 +1,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-import torch_geometric.typing
 from torch import Tensor
 from torch.nn import Parameter
 from torch.nn import Parameter as Param
@@ -185,7 +184,6 @@ class FastenRGCNConv(MessagePassing):
         size = (x_l.size(0), x_r.size(0))
         if isinstance(edge_index, SparseTensor):
             edge_type = edge_index.storage.value()
-        assert edge_type is not None
 
         # propagate_type: (x: Tensor, edge_type_ptr: OptTensor)
         out = torch.zeros(x_r.size(0), self.out_channels, device=x_r.device)
@@ -210,7 +208,8 @@ class FastenRGCNConv(MessagePassing):
                 out = out + h.contiguous().view(-1, self.out_channels)
 
         else:  # No regularization/Basis-decomposition ========================
-            if (torch_geometric.typing.WITH_PYG_LIB and self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and (self.use_segmm == -1 or bool(self.use_segmm)):
+            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and (self.use_segmm == -1 or bool(self.use_segmm)) and edge_tensor_slice:
+                assert self.is_sorted, "edge_tensor_slice is only supported when is_sorted=True"
                 out = self.propagate(edge_index, x=x_l, size=size, edge_type_ptr=None, edge_tensor_slice=edge_tensor_slice)
             else:
                 for i in range(self.num_relations):
@@ -240,7 +239,8 @@ class FastenRGCNConv(MessagePassing):
         return out
 
     def message(self, x_j: Tensor, edge_type_ptr: OptTensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
-        if torch_geometric.typing.WITH_PYG_LIB and edge_tensor_slice is not None:
+        if edge_tensor_slice is not None:
+            # XXX(Keren): Engine.TRITON is used for testing, it should be Engine.AUTO in the future
             return ops.fasten_segment_matmul(x_j, edge_tensor_slice.slices, self.weight, Engine.TRITON, edge_tensor_slice)
 
         return x_j

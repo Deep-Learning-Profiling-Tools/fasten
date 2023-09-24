@@ -33,20 +33,20 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
     for s in slices:
         if s.stop > s.start:
             types[s] = torch.randint(0, T, (s.stop - s.start,), device=device, dtype=torch.int)
-    sorted_data, tensor_slice = compact_tensor_types(data, types, device=device)
+    tensor_slice = compact_tensor_types(data, types, device=device)
     other = torch.randn((T, K, K), device=device, dtype=dtype)
     if phase == "forward":
-        output = ops.fasten_segment_matmul(sorted_data, tensor_slice.slices, other, engine, tensor_slice)
+        output = ops.fasten_segment_matmul(tensor_slice.data, tensor_slice.slices, other, engine, tensor_slice)
         output_ref = torch.zeros((M, K), device=device, dtype=dtype)
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
             t = tensor_slice.get_type_from_index(i, is_tensor=False)
-            output_ref[s] = torch.matmul(sorted_data[s], other[t])
+            output_ref[s] = torch.matmul(tensor_slice.data[s], other[t])
         torch.testing.assert_close(output, output_ref, atol=1e-1, rtol=1e-2)
     elif phase == "backward":
-        sorted_data.requires_grad = True
+        tensor_slice.data.requires_grad = True
         other.requires_grad = True
-        output = ops.fasten_segment_matmul(sorted_data, tensor_slice.slices, other, engine, tensor_slice)
+        output = ops.fasten_segment_matmul(tensor_slice.data, tensor_slice.slices, other, engine, tensor_slice)
         output_grad = torch.randn_like(output)
         output.backward(output_grad)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
@@ -55,10 +55,12 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
             t = tensor_slice.get_type_from_index(i, is_tensor=False)
             sorted_data_grad_ref[s] = torch.matmul(output_grad[s], other[t].t())
-            other_grad_ref[t] = torch.matmul(sorted_data[s].t(), output_grad[s])
-        torch.testing.assert_close(sorted_data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
+            other_grad_ref[t] = torch.matmul(tensor_slice.data[s].t(), output_grad[s])
+        torch.testing.assert_close(tensor_slice.data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
         if M // T >= 8192:
             # gradient accumlation starts to be significantly different with large samples
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1.0, rtol=1e-2)
         else:
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1e-1, rtol=1e-2)
+    if device == "cuda":
+        torch.cuda.empty_cache()

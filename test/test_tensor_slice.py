@@ -6,11 +6,15 @@ from fasten import compact_tensor_types
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
-def test_compact_tensor_types(device: str):
-    data = torch.tensor([[1, 2], [3, 4], [5, 6]], device=device)
+@pytest.mark.parametrize('dim', [0, 1])
+def test_compact_tensor_types(device: str, dim: int):
+    data = torch.tensor([[1, 2, 3], [3, 4, 5], [5, 6, 7]], device=device)
     types = torch.tensor([2, 1, 2], dtype=torch.long, device=device)
-    tensor_slice, data_sorted = compact_tensor_types(types, data, device=device)
-    assert data_sorted[0].tolist() == [3, 4]
+    tensor_slice = compact_tensor_types(data, types, dim=dim, device=device)
+    if dim == 0:
+        assert tensor_slice.data[0].tolist() == [3, 4, 5]
+    else:
+        assert tensor_slice.data[:, 0].tolist() == [2, 4, 6]
     slice = tensor_slice.get_slice_from_type(2)
     assert slice[0] == 1
     assert slice[1] == 3
@@ -28,7 +32,7 @@ def test_tiling(tile_size: int, device: str):
     types[63:90] = 2
     types[90:128] = 3
     types[0:63] = 1
-    tensor_slice, _ = compact_tensor_types(types, data, device=device)
+    tensor_slice = compact_tensor_types(data, types, device=device)
     tensor_tile = tensor_slice.tiling(tile_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
