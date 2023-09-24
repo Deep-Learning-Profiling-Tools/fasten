@@ -6,11 +6,7 @@ import torch
 from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
-<<<<<<< HEAD
 from .scheduler import BestConfig, CacheEntry, Scheduler, schedulers
-=======
-from .scheduler import BestConfig, CacheEntry, schedulers
->>>>>>> 9973a1c (Update)
 from .utils import TilingMethod
 
 
@@ -149,11 +145,7 @@ class TensorSlice:
                 subslices.append([index, type, off, min(off + tile_size, end)])
         return TensorSlice(self.data, subslices, self._slices.device)
 
-<<<<<<< HEAD
     def schedule(self, op_name: str, *args, autotune: bool = False) -> CacheEntry:
-=======
-    def schedule(self, op_name: str, *args, autotune: bool = False) -> Tuple[float, BestConfig, callable]:
->>>>>>> 780f990 (Update)
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
 <<<<<<< HEAD
@@ -203,24 +195,13 @@ class TensorSlice:
             return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
 
         if autotune:
-            best_ms, best_config, best_op = self.autotune(op_name, *args, scheduler)
+            best_ms, best_config, best_op = self.autotune(op_name, *args, scheduler=scheduler)
         else:
-<<<<<<< HEAD
-            input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method)
-            best_ms = 0.0  # not tuned
-            best_op = getattr(triton_ops, op_name)
-            best_config = BestConfig(tile_size=scheduler.default_tile_size, input_tiles=input_tiles.slices)
+            best_ms, best_config, best_op = self.use_defaults(op_name, scheduler=scheduler)
+
         cache_entry = CacheEntry(best_ms, best_config, best_op)
         self._update_cache(op_name, key, cache_entry)
->>>>>>> 9973a1c (Update)
-        return best_ms, best_config, best_op
-
-    def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
-=======
-            best_ms, best_config, best_op = self.use_defaults(op_name, scheduler)
-
-        self._update_cache(op_name, key, CacheEntry(best_ms, best_config, best_op))
-        return best_ms, best_config, best_op
+        return cache_entry
 
     def autotune(self, op_name: str, *args, scheduler) -> Tuple[float, BestConfig, callable]:
         best_op = getattr(torch_ops, op_name)
@@ -245,8 +226,7 @@ class TensorSlice:
 
         return best_ms, best_config, best_op
 
-    def use_defaults(self, op_name: str, scheduler) -> Tuple[float, BestConfig, callable]:
->>>>>>> 780f990 (Update)
+    def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, input_tiles=input_tiles.slices), getattr(triton_ops, op_name)
 

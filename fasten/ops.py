@@ -8,6 +8,9 @@ def execute_engine(*args, engine: Engine, tensor_slice: TensorSlice = None, op_n
     if engine == Engine.AUTO or engine == Engine.TRITON:
         assert tensor_slice is not None, 'tensor_slice must be provided when using AUTO or TRITON engine'
         autotune = engine == Engine.AUTO
+        cache_entry = tensor_slice.schedule(op_name, *args, autotune=autotune)
+        if cache_entry.best_config.input_tiles is None:
+            return cache_entry.best_op(*args, input_slices=tensor_slice.slices)
 <<<<<<< HEAD
         cache_entry = tensor_slice.schedule(op_name, *args, autotune=autotune)
         if cache_entry.best_config.input_tiles is None:
@@ -19,8 +22,7 @@ def execute_engine(*args, engine: Engine, tensor_slice: TensorSlice = None, op_n
         if best_config.input_tiles is None:
             return best_op(*args, input_slices=tensor_slice.slices)
         else:
-            return best_op(*args, input_slices=tensor_slice.slices, **(best_config.asdict()))
->>>>>>> 9973a1c (Update)
+            return cache_entry.best_op(*args, input_slices=tensor_slice.slices, **(cache_entry.best_config.asdict()))
     elif engine == Engine.TORCH:
         engine_op = getattr(engine_ops[engine], op_name)
         return engine_op(*args, input_slices=tensor_slice.slices)
