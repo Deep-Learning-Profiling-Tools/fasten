@@ -8,6 +8,13 @@ from ...utils import torch_dtype_to_triton_dtype
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
