@@ -82,7 +82,11 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
 @pytest.mark.parametrize("K", [16, 32, 64])
+<<<<<<< HEAD
 def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
+=======
+def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
+>>>>>>> 780f990 (Update)
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
@@ -124,8 +128,8 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
-    pyg_ms = triton.testing.do_bench_cudagraph(pyg_fn)
+    fasten_ms = triton.testing.do_bench(fasten_fn)
+    pyg_ms = triton.testing.do_bench(pyg_fn)
     print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
 
