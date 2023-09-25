@@ -14,15 +14,15 @@ class TensorSlice:
         Construct a TensorSlice data structure
 
         Args:
-            tensor: The original type tensor, could be on either the CPU or the GPU.
+            data: The original data tensor, could be on either the CPU or the GPU.
                     It must have been sorted by types.
             slices: A 3-dim PyTorch Tensor, where each row represents [type_index, type, start, end].
                     It can also be a int or a list, then internally we transform it to a tensor.
             device: The device to put the slices on, default is 'cpu'
     '''
 
-    def __init__(self, tensor: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu') -> None:
-        self._tensor = tensor
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu') -> None:
+        self._data = data
 
         if type(slices) is int:
             # each slice is a single type
@@ -52,8 +52,12 @@ class TensorSlice:
             for i in range(self._slices.size(0)):
                 self._slice_type_dict[i] = self._slices[i, 1].item()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._slices.size(0)
+
+    @property
+    def data_size(self) -> int:
+        return self.stop(is_tensor=False) - self.start(is_tensor=False)
 
     def start(self, is_tensor: bool = True):
         '''
@@ -78,8 +82,8 @@ class TensorSlice:
         return self._slices
 
     @property
-    def tensor(self):
-        return self._tensor
+    def data(self):
+        return self._data
 
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
@@ -116,9 +120,6 @@ class TensorSlice:
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
-    def get_num_types(self) -> int:
-        return self.__len__()
-
     def tiling(self, tile_size: int, method: TilingMethod = TilingMethod.DEFAULT):
         assert tile_size > 0
         assert method == TilingMethod.DEFAULT, 'Only default tiling method is supported now.'
@@ -131,7 +132,7 @@ class TensorSlice:
             end = slice[3]
             for off in range(start, end, tile_size):
                 subslices.append([index, type, off, min(off + tile_size, end)])
-        return TensorSlice(self._tensor, subslices, self._slices.device)
+        return TensorSlice(self.data, subslices, self._slices.device)
 
     def schedule(self, op_name: str, *args, autotune: bool = False) -> Tuple[float, dict, callable]:
         scheduler = schedulers[op_name]
@@ -139,14 +140,16 @@ class TensorSlice:
         if op_name in self._cache and key in self._cache[op_name]:
             return self._cache[op_name][key]
         if autotune:
+            # Bench torch op
             best_op = getattr(torch_ops, op_name)
-            best_ms = do_bench(lambda: best_op(*args), warmup=5, rep=10)
+            best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
             best_config = {'tile_size': None, 'input_tiles': None}
+            # Bench triton ops
             triton_op = getattr(triton_ops, op_name)
             for tile_size in scheduler.tile_sizes:
                 for tiling_method in scheduler.tiling_methods:
                     input_tiles = self.tiling(tile_size, method=tiling_method)
-                    ms = do_bench(lambda: triton_op(*args, input_tiles=input_tiles.slices, tile_size=tile_size), warmup=5, rep=10)
+                    ms = do_bench(lambda: triton_op(*args, input_slices=self.slices, input_tiles=input_tiles.slices, tile_size=tile_size), warmup=5, rep=10)
                     if ms < best_ms:
                         best_ms = ms
                         best_op = triton_op
@@ -159,50 +162,37 @@ class TensorSlice:
         return best_ms, best_config, best_op
 
 
-def compact_tensor_types(types: torch.Tensor, tensor: torch.Tensor = None, type_dim: int = 0, descending: bool = False, return_data: bool = False, is_sorted: bool = False, device: str = 'cpu') -> Union[TensorSlice, Tuple[torch.Tensor, TensorSlice]]:
-    '''
-        Sort a tensor (node or edge) according to their types.
+def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,
+                         dim: int = 0, descending: bool = False,
+                         is_sorted: bool = False, device: str = 'cpu') -> TensorSlice:
+    """
+    Sort the types and its corresponding tensor, if given
 
-        Args:
-            types: The type of each row
-            tensor: The input tensor
-            type_dim: Which dimension of the tensor represents types
-            descending: If true, sort the tensor in the descending order
-            return_data: If true, sorts the input tensor data as well
-            is_sorted: If set to True , edge_type is not sorted
-            device: The device to put the slices. Note that tensor and sorted_types are still on the original device.
+    Args:
+        data (torch.Tensor): The input data to be sorted.
+        types (torch.Tensor): The type of each record.
+        dim (int, optional): Which dimension of the tensor represents types. Defaults to 0.
+        descending (bool, optional): If true, sort the tensor in descending order. Defaults to False.
+        is_sorted (bool, optional): If true, assumes types is already sorted. Defaults to False.
+        device (str, optional): The device to put the slices. Note that tensor and sorted_types remain on the original device. Defaults to 'cpu'.
 
-        Returns:
-            tensor: A sorted tensor
-            TensorSlice: The tensor's sorted TensorSlice
-            index: The original row indices in the sorted tensor
-    '''
-
-    if is_sorted:
-        sorted_types = types
-    else:
+    Returns:
+        TensorSlice: The sorted tensor and its corresponding TensorSlice.
+    """
+    if not is_sorted:
         sorted_types, type_indices = torch.sort(types, descending=descending, stable=True)
+    else:
+        sorted_types = types
 
     unique_types, type_counts = torch.unique_consecutive(
         sorted_types, return_inverse=False, return_counts=True)
 
-    types = []
+    type_list = []
     cur_index = 0
     for i in range(len(unique_types)):
-        types.append([
+        type_list.append([
             i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
         cur_index += type_counts[i].item()
 
-    if return_data:
-        # If the sorted tensor is to be returned
-        if is_sorted:
-            _, type_indices = torch.sort(types, descending=descending, stable=True)
-        sorted_tensor = torch.index_select(
-            tensor, dim=type_dim, index=type_indices)
-        # This function is different from torch.unique() in the sense that this function only eliminates
-        # consecutive duplicate values. This semantics is similar to std::unique in C++.
-        # torch.unique() may sort elements even if sorted is specified.
-        return sorted_tensor, TensorSlice(unique_types, types, device=device)
-
-    else:
-        return TensorSlice(unique_types, types, device=device)
+    sorted_data = torch.index_select(data, dim=dim, index=type_indices) if not is_sorted else data
+    return TensorSlice(sorted_data, type_list, device=device)

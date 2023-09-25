@@ -1,7 +1,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-import torch_geometric.typing
 from torch import Tensor
 from torch.nn import Parameter
 from torch.nn import Parameter as Param
@@ -120,8 +119,7 @@ class FastenRGCNConv(MessagePassing):
             self.comp = Parameter(torch.empty(num_relations, num_bases))
 
         elif num_blocks is not None:
-            assert (in_channels[0] % num_blocks == 0
-                    and out_channels % num_blocks == 0)
+            assert (in_channels[0] % num_blocks == 0 and out_channels % num_blocks == 0)
             self.weight = Parameter(
                 torch.empty(num_relations, num_blocks,
                             in_channels[0] // num_blocks,
@@ -186,7 +184,6 @@ class FastenRGCNConv(MessagePassing):
         size = (x_l.size(0), x_r.size(0))
         if isinstance(edge_index, SparseTensor):
             edge_type = edge_index.storage.value()
-        assert edge_type is not None
 
         # propagate_type: (x: Tensor, edge_type_ptr: OptTensor)
         out = torch.zeros(x_r.size(0), self.out_channels, device=x_r.device)
@@ -205,18 +202,16 @@ class FastenRGCNConv(MessagePassing):
 
             for i in range(self.num_relations):
                 tmp = masked_edge_index(edge_index, edge_type == i)
-                h = self.propagate(tmp, x=x_l, edge_type_ptr=None, size=size)
+                h = self.propagate(tmp, x=x_l, size=size)
                 h = h.view(-1, weight.size(1), weight.size(2))
                 h = torch.einsum('abc,bcd->abd', h, weight[i])
                 out = out + h.contiguous().view(-1, self.out_channels)
 
         else:  # No regularization/Basis-decomposition ========================
-            if (torch_geometric.typing.WITH_PYG_LIB and self.num_bases is None
-                    and x_l.is_floating_point() and isinstance(
-                        edge_index, Tensor)) and (self.use_segmm == -1
-                                                  or bool(self.use_segmm)):
-
-                out = self.propagate(edge_index, x=x_l, size=size, edge_type_ptr=None, edge_tensor_slice=edge_tensor_slice)
+            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and (self.use_segmm == -1 or bool(self.use_segmm)) and edge_tensor_slice:
+                assert self.is_sorted, "edge_tensor_slice is only supported when is_sorted=True"
+                assert self.aggr == "add", "edge_tensor_slice is only supported when aggr=add if you want to get equivalent results as the base implementation"
+                out = self.propagate(edge_index, x=x_l, size=size, edge_tensor_slice=edge_tensor_slice)
             else:
                 for i in range(self.num_relations):
                     tmp = masked_edge_index(edge_index, edge_type == i)
@@ -225,12 +220,10 @@ class FastenRGCNConv(MessagePassing):
                         out = out + self.propagate(
                             tmp,
                             x=weight[i, x_l],
-                            edge_type_ptr=None,
                             size=size,
                         )
                     else:
-                        h = self.propagate(tmp, x=x_l, edge_type_ptr=None,
-                                           size=size)
+                        h = self.propagate(tmp, x=x_l, size=size)
                         out = out + (h @ weight[i])
 
         root = self.root
@@ -244,10 +237,10 @@ class FastenRGCNConv(MessagePassing):
             out = out + self.bias
         return out
 
-    def message(self, x_j: Tensor, edge_type_ptr: OptTensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
-        if torch_geometric.typing.WITH_PYG_LIB and edge_tensor_slice is not None:
-            return ops.fasten_segment_matmul(x_j, edge_tensor_slice.slices, self.weight, Engine.TRITON, edge_tensor_slice)
-
+    def message(self, x_j: Tensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
+        if edge_tensor_slice is not None:
+            # XXX(Keren): Engine.TRITON is used for testing, it should be Engine.AUTO in the future
+            return ops.fasten_segment_matmul(x_j, self.weight, edge_tensor_slice, Engine.TRITON)
         return x_j
 
     def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:
