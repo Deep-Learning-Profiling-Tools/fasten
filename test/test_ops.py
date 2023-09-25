@@ -1,12 +1,13 @@
+import pyg_lib
 import pytest
 import torch
+import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
 slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
-
 AIFB = read_slices_from_csv('AIFB.csv')
 AM = read_slices_from_csv('AM.csv')
 BGS = read_slices_from_csv('BGS.csv')
@@ -64,3 +65,49 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1e-1, rtol=1e-2)
     if device == "cuda":
         torch.cuda.empty_cache()
+
+
+@pytest.mark.parametrize("phase", ["forward"])
+@pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
+@pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
+@pytest.mark.parametrize("K", [16, 32, 64])
+def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
+    T = len(slices)
+    M = sum([s.stop - s.start for s in slices])
+    dtype = getattr(torch, dtype)
+    data = torch.randn((M, K), device="cuda", dtype=dtype)
+    types = torch.zeros((M,), device="cuda", dtype=torch.int)
+    for s in slices:
+        if s.stop > s.start:
+            types[s] = torch.randint(0, T, (s.stop - s.start,), device="cuda", dtype=torch.int)
+    tensor_slice = compact_tensor_types(data, types, device="cuda")
+    other = torch.randn((T, K, K), device="cuda", dtype=dtype)
+    # ptr should be on CPU
+    ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
+
+    def fasten_fn():
+        ops.fasten_segment_matmul(data, other, tensor_slice)
+
+    def pyg_fn():
+        pyg_lib.ops.segment_matmul(data, ptr, other)
+
+    fasten_ms = triton.testing.do_bench(fasten_fn)
+    pyg_ms = triton.testing.do_bench(pyg_fn)
+    print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+
+
+def test_cache():
+    M = 128
+    K = 16
+    T = 16
+    data = torch.randn((M, K), device='cuda', dtype=torch.float32)
+    types = torch.zeros((M,), device='cuda', dtype=torch.int)
+    slices = [slice(0, 63), slice(63, 90), slice(90, 128)]
+    for s in slices:
+        if s.stop > s.start:
+            types[s] = torch.randint(0, T, (s.stop - s.start,), device='cuda', dtype=torch.int)
+    tensor_slice = compact_tensor_types(data, types, device='cuda')
+    other = torch.randn((T, K, K), device='cuda', dtype=torch.float32)
+    ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, Engine.TRITON)
+    assert len(tensor_slice._cache) == 1
+    assert len(tensor_slice._cache['segment_matmul_forward']) == 1
