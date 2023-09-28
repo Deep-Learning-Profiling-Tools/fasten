@@ -24,6 +24,8 @@ BGS = read_slices_from_csv('BGS.csv')
 DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
 
+slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
+
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
@@ -80,7 +82,7 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
 
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
-@pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
+@pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [16, 32, 64])
 <<<<<<< HEAD
 def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
@@ -130,7 +132,15 @@ def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
 
     fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
-    print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+    print(f"phase: {phase} fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+    
+    benchmark_results.append({
+        "phase": phase,
+        "dataset": slices_name,
+        "K": K,
+        "fasten_ms": fasten_ms,
+        "pyg_ms": pyg_ms
+    })
 
 
 def test_cache():
