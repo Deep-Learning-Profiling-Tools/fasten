@@ -63,7 +63,7 @@ def test_rgcn_perf(slices: list, K: int):
     tensor_slice = compact_tensor_types(data=edge_index, types=types, dim=1, device="cuda")
     sorted_edge_type = slices_to_tensor(tensor_slice)
     rgcn_conv = RGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add').to("cuda")
-    fasten_rgcn_conv = FastenRGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add').to("cuda")
+    fasten_rgcn_conv = FastenRGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add', engine=Engine.AUTO).to("cuda")
 
     # warmup and and get grad
     output = rgcn_conv(x, tensor_slice.data, sorted_edge_type)

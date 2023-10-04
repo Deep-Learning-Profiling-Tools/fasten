@@ -109,7 +109,6 @@ class FastenRGCNConv(MessagePassing):
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
-        self.use_segmm: int = -1
         self.engine = engine
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -210,7 +209,7 @@ class FastenRGCNConv(MessagePassing):
                 out = out + h.contiguous().view(-1, self.out_channels)
 
         else:  # No regularization/Basis-decomposition ========================
-            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and (self.use_segmm == -1 or bool(self.use_segmm)) and edge_tensor_slice:
+            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and edge_tensor_slice:
                 assert self.is_sorted, "edge_tensor_slice is only supported when is_sorted=True"
                 assert self.aggr == "add", "edge_tensor_slice is only supported when aggr=add if you want to get equivalent results as the base implementation"
                 out = self.propagate(edge_index, x=x_l, size=size, edge_tensor_slice=edge_tensor_slice)
