@@ -31,9 +31,9 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
     M = sum([s.stop - s.start for s in slices])
     data = torch.randn((M, K), device=device, dtype=dtype)
     types = torch.zeros((M,), device=device, dtype=torch.int)
-    for s in slices:
-        if s.stop > s.start:
-            types[s] = torch.randint(0, T, (s.stop - s.start,), device=device, dtype=torch.int)
+    rand_types = torch.randperm(T, device=device, dtype=torch.int)
+    for i, s in enumerate(slices):
+        types[s] = rand_types[i]
     tensor_slice = compact_tensor_types(data, types, device=device)
     other = torch.randn((T, K, K), device=device, dtype=dtype)
     if phase == "forward":
@@ -67,29 +67,50 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
         torch.cuda.empty_cache()
 
 
-@pytest.mark.parametrize("phase", ["forward"])
+@pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
 @pytest.mark.parametrize("K", [16, 32, 64])
-def test_bench(phase: str, dtype: str, slices: list, K: int) -> None:
+def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), device="cuda", dtype=dtype)
     types = torch.zeros((M,), device="cuda", dtype=torch.int)
-    for s in slices:
-        if s.stop > s.start:
-            types[s] = torch.randint(0, T, (s.stop - s.start,), device="cuda", dtype=torch.int)
+    rand_types = torch.randperm(T, device="cuda", dtype=torch.int)
+    for i, s in enumerate(slices):
+        types[s] = rand_types[i]
     tensor_slice = compact_tensor_types(data, types, device="cuda")
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
+    # warmup and get output
+    output_fasten = ops.fasten_segment_matmul(data, other, tensor_slice)
+    output_pyg = pyg_lib.ops.segment_matmul(data, ptr, other)
+    grad_fasten = torch.empty_like(output_fasten)
+    grad_pyg = torch.empty_like(output_pyg)
+    if phase == "backward":
+        output_fasten.requires_grad = True
+        output_pyg.requires_grad = True
+
     def fasten_fn():
-        ops.fasten_segment_matmul(data, other, tensor_slice)
+        if phase == "full":
+            output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO).requires_grad_(True)
+            output.backward(grad_fasten)
+        elif phase == "forward":
+            ops.fasten_segment_matmul(data, other, tensor_slice)
+        else:  # phase == "backward"
+            output_fasten.backward(grad_fasten, retain_graph=True)
 
     def pyg_fn():
-        pyg_lib.ops.segment_matmul(data, ptr, other)
+        if phase == "full":
+            output = pyg_lib.ops.segment_matmul(data, ptr, other).requires_grad_(True)
+            output.backward(grad_pyg)
+        elif phase == "forward":
+            pyg_lib.ops.segment_matmul(data, ptr, other)
+        else:  # phase == "backward"
+            output_pyg.backward(grad_pyg, retain_graph=True)
 
     fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
