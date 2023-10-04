@@ -86,7 +86,7 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
     # warmup and get output
-    output_fasten = ops.fasten_segment_matmul(data, other, tensor_slice)
+    output_fasten = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
     output_pyg = pyg_lib.ops.segment_matmul(data, ptr, other)
     grad_fasten = torch.empty_like(output_fasten)
     grad_pyg = torch.empty_like(output_pyg)
