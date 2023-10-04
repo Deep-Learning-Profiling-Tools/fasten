@@ -73,8 +73,7 @@ def test_rgcn_perf(slices: list, K: int):
         output = rgcn_conv(x, tensor_slice.data, sorted_edge_type)
         output.backward(grad_rgcn_conv)
 
-    ms = triton.testing.do_bench(rgcn_conv_fn)
-    print("Torch time:", ms)
+    pyg_ms = triton.testing.do_bench(rgcn_conv_fn)
 
     fasten_output = fasten_rgcn_conv(x, tensor_slice.data, None, tensor_slice)
     grad_fasten_rgcn_conv = torch.randn_like(fasten_output)
@@ -83,5 +82,5 @@ def test_rgcn_perf(slices: list, K: int):
         output = fasten_rgcn_conv(x, tensor_slice.data, None, tensor_slice)
         output.backward(grad_fasten_rgcn_conv)
 
-    ms = triton.testing.do_bench(fasten_rgcn_conv_fn)
-    print("Fasten time:", ms)
+    fasten_ms = triton.testing.do_bench(fasten_rgcn_conv_fn)
+    print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
