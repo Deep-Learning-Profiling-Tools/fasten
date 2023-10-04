@@ -85,18 +85,19 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
+    if phase == "backward" or phase == "full":
+        data.requires_grad = True
+        other.requires_grad = True
+
     # warmup and get output
     output_fasten = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
     output_pyg = pyg_lib.ops.segment_matmul(data, ptr, other)
     grad_fasten = torch.empty_like(output_fasten)
     grad_pyg = torch.empty_like(output_pyg)
-    if phase == "backward":
-        output_fasten.requires_grad = True
-        output_pyg.requires_grad = True
 
     def fasten_fn():
         if phase == "full":
-            output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO).requires_grad_(True)
+            output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
             output.backward(grad_fasten)
         elif phase == "forward":
             ops.fasten_segment_matmul(data, other, tensor_slice)
@@ -105,7 +106,7 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
 
     def pyg_fn():
         if phase == "full":
-            output = pyg_lib.ops.segment_matmul(data, ptr, other).requires_grad_(True)
+            output = pyg_lib.ops.segment_matmul(data, ptr, other)
             output.backward(grad_pyg)
         elif phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)

@@ -54,7 +54,7 @@ def test_rgcn_perf(slices: list, K: int):
     num_features = K
     num_types = len(slices)
     num_edges = sum([s.stop - s.start for s in slices])
-    x = torch.randn(num_nodes, num_features, device="cuda")
+    x = torch.randn(num_nodes, num_features, device="cuda").requires_grad_(True)
     edge_index = torch.randint(0, num_nodes, (2, num_edges), device="cuda")
     types = torch.zeros((num_edges,), device="cuda", dtype=torch.int)
     rand_types = torch.randperm(num_types, device="cuda", dtype=torch.int)
@@ -63,9 +63,25 @@ def test_rgcn_perf(slices: list, K: int):
     tensor_slice = compact_tensor_types(data=edge_index, types=types, dim=1, device="cuda")
     sorted_edge_type = slices_to_tensor(tensor_slice)
     rgcn_conv = RGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add').to("cuda")
-    ms = triton.testing.do_bench(lambda: rgcn_conv(x, tensor_slice.data, sorted_edge_type))
+    fasten_rgcn_conv = FastenRGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add').to("cuda")
+
+    # warmup and and get grad
+    output = rgcn_conv(x, tensor_slice.data, sorted_edge_type)
+    grad_rgcn_conv = torch.randn_like(output)
+
+    def rgcn_conv_fn():
+        output = rgcn_conv(x, tensor_slice.data, sorted_edge_type)
+        output.backward(grad_rgcn_conv)
+
+    ms = triton.testing.do_bench(rgcn_conv_fn)
     print("Torch time:", ms)
 
-    fasten_rgcn_conv = FastenRGCNConv(num_features, num_features, num_types, is_sorted=True, aggr='add').to("cuda")
-    ms = triton.testing.do_bench(lambda: fasten_rgcn_conv(x, tensor_slice.data, None, tensor_slice))
+    fasten_output = fasten_rgcn_conv(x, tensor_slice.data, None, tensor_slice)
+    grad_fasten_rgcn_conv = torch.randn_like(fasten_output)
+
+    def fasten_rgcn_conv_fn():
+        output = fasten_rgcn_conv(x, tensor_slice.data, None, tensor_slice)
+        output.backward(grad_fasten_rgcn_conv)
+
+    ms = triton.testing.do_bench(fasten_rgcn_conv_fn)
     print("Fasten time:", ms)
