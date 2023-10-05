@@ -16,7 +16,7 @@ class BestConfig:
 @dataclass
 class CacheEntry:
     best_ms: float
-    best_config: tuple
+    best_config: BestConfig
     best_op: callable
 
 
