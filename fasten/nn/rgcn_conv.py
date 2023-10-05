@@ -93,6 +93,7 @@ class FastenRGCNConv(MessagePassing):
         root_weight: bool = True,
         is_sorted: bool = False,
         bias: bool = True,
+        engine: Engine = Engine.AUTO,
         **kwargs,
     ):
         kwargs.setdefault('aggr', aggr)
@@ -108,7 +109,7 @@ class FastenRGCNConv(MessagePassing):
         self.num_bases = num_bases
         self.num_blocks = num_blocks
         self.is_sorted = is_sorted
-        self.use_segmm: int = -1
+        self.engine = engine
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
         self.in_channels_l = in_channels[0]
@@ -208,7 +209,7 @@ class FastenRGCNConv(MessagePassing):
                 out = out + h.contiguous().view(-1, self.out_channels)
 
         else:  # No regularization/Basis-decomposition ========================
-            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and (self.use_segmm == -1 or bool(self.use_segmm)) and edge_tensor_slice:
+            if (self.num_bases is None and x_l.is_floating_point() and isinstance(edge_index, Tensor)) and edge_tensor_slice:
                 assert self.is_sorted, "edge_tensor_slice is only supported when is_sorted=True"
                 assert self.aggr == "add", "edge_tensor_slice is only supported when aggr=add if you want to get equivalent results as the base implementation"
                 out = self.propagate(edge_index, x=x_l, size=size, edge_tensor_slice=edge_tensor_slice)
@@ -239,8 +240,7 @@ class FastenRGCNConv(MessagePassing):
 
     def message(self, x_j: Tensor, edge_tensor_slice: TensorSlice = None) -> Tensor:
         if edge_tensor_slice is not None:
-            # XXX(Keren): Engine.TRITON is used for testing, it should be Engine.AUTO in the future
-            return ops.fasten_segment_matmul(x_j, self.weight, edge_tensor_slice, Engine.TRITON)
+            return ops.fasten_segment_matmul(x_j, self.weight, edge_tensor_slice, self.engine)
         return x_j
 
     def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:
