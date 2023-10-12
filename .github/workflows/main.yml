@@ -16,11 +16,11 @@ jobs:
     - name: install dependencies
       run: |
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
-        git clone https://github.com/openai/triton.git;
-        cd triton/python;
-        pip install cmake;
-        pip install -e .;
-        cd ../..;
+        git clone https://github.com/openai/triton.git;  
+        cd triton;
+        pip install ninja cmake wheel; # build-time dependencies
+        pip install -e python
+        cd ..;
         cd ./fasten;
         pip install .;
     
