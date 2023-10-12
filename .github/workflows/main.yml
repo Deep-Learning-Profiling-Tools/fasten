@@ -8,6 +8,8 @@ on:
   pull_request:
     branches:
       - main
+permissions:
+  packages: read|write|none
 jobs:
   build:
     runs-on: ubuntu-latest
