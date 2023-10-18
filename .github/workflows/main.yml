@@ -20,7 +20,7 @@ jobs:
         git clone https://github.com/openai/triton.git;  
         cd triton;
         pip install ninja cmake wheel; # build-time dependencies
-        pip install -e python
+        sudo pip install -e python
         cd ..;
         cd ./fasten;
         pip install .;
