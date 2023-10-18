@@ -18,7 +18,7 @@ jobs:
       run: |
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
         pip install git+https://github.com/pyg-team/pytorch_geometric.git
-        pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+${CUDA}.html
+        pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+${CUDA}.html
         git clone https://github.com/openai/triton.git;  
         cd triton;
         sudo pip install ninja cmake wheel; # build-time dependencies
