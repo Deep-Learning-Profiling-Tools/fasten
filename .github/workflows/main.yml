@@ -21,7 +21,7 @@ jobs:
         cd triton;
         sudo pip install ninja cmake wheel; # build-time dependencies
         sudo pip install -e python
-        cd ..;
+        cd ~;
         cd ./fasten;
         pip install .;
     
