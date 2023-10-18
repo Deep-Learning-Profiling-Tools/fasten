@@ -18,11 +18,11 @@ jobs:
       run: |
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
         pip install git+https://github.com/pyg-team/pytorch_geometric.git
-        pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cu118.html
+        pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
         git clone https://github.com/openai/triton.git;  
         cd triton;
-        sudo pip install ninja cmake wheel; # build-time dependencies
-        sudo pip install -e python
+        # sudo pip install ninja cmake wheel; # build-time dependencies
+        # sudo pip install -e python
         cd ..;
         pip install .;
     
