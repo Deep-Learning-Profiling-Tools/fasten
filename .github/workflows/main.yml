@@ -22,7 +22,6 @@ jobs:
         sudo pip install ninja cmake wheel; # build-time dependencies
         sudo pip install -e python
         cd ~;
-        cd ./fasten;
         pip install .;
     
     - name: run test cases
