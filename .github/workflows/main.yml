@@ -14,6 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
+    - name: Setup python
+      uses: actions/setup-python@v4
+
+    - name: Caching dependencies
+      uses: actions/cache@v3
+      with:
+        path: ${{env.pythonLocation}}
+        key: ${{env.pythonLocation}}
+        
     - name: install dependencies
       run: |
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
@@ -21,8 +31,8 @@ jobs:
         pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
         git clone https://github.com/openai/triton.git;  
         cd triton;
-        sudo pip install ninja cmake wheel; # build-time dependencies
-        sudo pip install -e python
+        pip install ninja cmake wheel; # build-time dependencies
+        pip install -e python
         cd ..;
         pip install .;
     
