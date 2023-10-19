@@ -38,7 +38,7 @@ jobs:
         cd ..;
         pip install .;
     
-    # - name: run test cases
-    #   run: | 
-    #     cd ./test;
-    #     pytest -q
+    - name: run test cases
+      run: | 
+        cd ./test;
+        pytest -q
