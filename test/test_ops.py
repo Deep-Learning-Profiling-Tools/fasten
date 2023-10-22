@@ -160,3 +160,4 @@ def test_cache():
     ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, Engine.TRITON)
     assert len(tensor_slice._cache) == 1
     assert len(tensor_slice._cache['segment_matmul_forward']) == 1
+    
