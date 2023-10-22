@@ -148,8 +148,6 @@ class TensorSlice:
     def schedule(self, op_name: str, *args, autotune: bool = False) -> CacheEntry:
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
-<<<<<<< HEAD
-<<<<<<< HEAD
         cache_entry = self._lookup_cache(op_name, key)
 
         if cache_entry is not None:
@@ -165,45 +163,6 @@ class TensorSlice:
         return cache_entry
 
     def autotune(self, op_name: str, *args, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
-        best_op = getattr(torch_ops, op_name)
-        best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
-        best_config = BestConfig()
-
-        triton_op = getattr(triton_ops, op_name)
-        for tile_size, tiling_method in product(scheduler.tile_sizes, scheduler.tiling_methods):
-            input_tiles = self.tiling(tile_size, method=tiling_method)
-            ms = do_bench(
-                lambda: triton_op(
-                    *args,
-                    input_slices=self.slices,
-                    input_tiles=input_tiles.slices,
-                    tile_size=tile_size
-                ),
-                warmup=5,
-                rep=10
-            )
-            if ms < best_ms:
-                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices)
-
-=======
-        if cache_entry := self._lookup_cache(op_name, key) is not None:
-=======
-        cache_entry = self._lookup_cache(op_name, key)
-
-        if cache_entry is not None:
->>>>>>> 35dc19a (Update)
-            return cache_entry.best_ms, cache_entry.best_config, cache_entry.best_op
-
-        if autotune:
-            best_ms, best_config, best_op = self.autotune(op_name, *args, scheduler=scheduler)
-        else:
-            best_ms, best_config, best_op = self.use_defaults(op_name, scheduler=scheduler)
-
-        cache_entry = CacheEntry(best_ms, best_config, best_op)
-        self._update_cache(op_name, key, cache_entry)
-        return cache_entry
-
-    def autotune(self, op_name: str, *args, scheduler) -> Tuple[float, BestConfig, callable]:
         best_op = getattr(torch_ops, op_name)
         best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
         best_config = BestConfig()

@@ -11,16 +11,6 @@ def execute_engine(*args, engine: Engine, tensor_slice: TensorSlice = None, op_n
         cache_entry = tensor_slice.schedule(op_name, *args, autotune=autotune)
         if cache_entry.best_config.input_tiles is None:
             return cache_entry.best_op(*args, input_slices=tensor_slice.slices)
-<<<<<<< HEAD
-        cache_entry = tensor_slice.schedule(op_name, *args, autotune=autotune)
-        if cache_entry.best_config.input_tiles is None:
-            return cache_entry.best_op(*args, input_slices=tensor_slice.slices)
-        else:
-            return cache_entry.best_op(*args, input_slices=tensor_slice.slices, **(cache_entry.best_config.asdict()))
-=======
-        _, best_config, best_op = tensor_slice.schedule(op_name, *args, autotune=autotune)
-        if best_config.input_tiles is None:
-            return best_op(*args, input_slices=tensor_slice.slices)
         else:
             return cache_entry.best_op(*args, input_slices=tensor_slice.slices, **(cache_entry.best_config.asdict()))
     elif engine == Engine.TORCH:
