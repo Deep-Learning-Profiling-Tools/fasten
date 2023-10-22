@@ -2,6 +2,9 @@ import pyg_lib
 import pytest
 import torch
 import triton
+import json
+import csv
+from typing import Callable
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
@@ -13,7 +16,7 @@ AM = read_slices_from_csv('AM.csv')
 BGS = read_slices_from_csv('BGS.csv')
 DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
-
+slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
@@ -67,11 +70,27 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
         torch.cuda.empty_cache()
 
 
+@pytest.fixture(scope="session")
+def benchmark_results():
+    results = []
+    yield results
+
+    with open("benchmark_results.json", "w") as json_file:
+        json.dump(results, json_file, indent=4)
+    
+    header = results[0].keys()
+    with open("benchmark_results.csv", "w") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=header)
+        writer.writeheader()
+        for row in results:
+            writer.writerow(row)
+
+
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
-@pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
+@pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [16, 32, 64])
-def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
+def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
@@ -115,7 +134,15 @@ def test_perf(phase: str, dtype: str, slices: list, K: int) -> None:
 
     fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
-    print(f"fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+    print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+
+    benchmark_results.append({
+        "phase": phase,
+        "dataset": slices_name,
+        "K": K,
+        "fasten_ms": fasten_ms,
+        "pyg_ms": pyg_ms
+    })
 
 
 def test_cache():
@@ -133,3 +160,4 @@ def test_cache():
     ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, Engine.TRITON)
     assert len(tensor_slice._cache) == 1
     assert len(tensor_slice._cache['segment_matmul_forward']) == 1
+    
