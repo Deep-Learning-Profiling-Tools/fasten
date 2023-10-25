@@ -25,7 +25,6 @@ slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG"
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32", "float16"])
 @pytest.mark.parametrize("slices", [slices0, slices1, AIFB, AM, BGS, DBLP, MUTAG])
-@pytest.mark.parametrize("T", [16, 33])
 @pytest.mark.parametrize("K", [16, 32, 64, 80])
 def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
     if engine == Engine.TRITON and device == "cpu":
