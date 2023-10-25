@@ -73,19 +73,20 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
 
 
 @pytest.fixture(scope="session")
-def benchmark_results():
+def benchmark_results(format: str = "csv"):
     results = []
     yield results
 
-    with open("benchmark_results.json", "w") as json_file:
-        json.dump(results, json_file, indent=4)
-
-    header = results[0].keys()
-    with open("benchmark_results.csv", "w") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=header)
-        writer.writeheader()
-        for row in results:
-            writer.writerow(row)
+    if format == "json":
+        with open("benchmark_results.json", "w") as json_file:
+            json.dump(results, json_file, indent=4)
+    elif format == "csv":
+        header = results[0].keys()
+        with open("benchmark_results.csv", "w") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=header)
+            writer.writeheader()
+            for row in results:
+                writer.writerow(row)
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
