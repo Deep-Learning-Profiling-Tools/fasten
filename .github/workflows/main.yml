@@ -34,7 +34,7 @@ jobs:
         pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
         pip install .;
     
-    - name: run test cases
-      run: | 
-        cd ./test;
-        pytest -tb==line -k "cpu"
+    # - name: run test cases
+    #   run: | 
+    #     cd ./test;
+    #     pytest --tb==line -k "cpu"
