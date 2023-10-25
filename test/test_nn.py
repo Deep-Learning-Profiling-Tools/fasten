@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch_geometric.backend
 import triton
 from torch_geometric.nn import RGCNConv
 from utils import read_slices_from_csv
@@ -50,6 +51,7 @@ def test_rgcn(engine: Engine, device: str):
 @pytest.mark.parametrize("K", [16, 32, 64])
 def test_rgcn_perf(slices: list, K: int):
     torch.manual_seed(12345)
+    torch_geometric.backend.use_segment_matmul = True
     num_nodes = 10000
     num_features = K
     num_types = len(slices)
