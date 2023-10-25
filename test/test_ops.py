@@ -92,7 +92,7 @@ def benchmark_results(format: str = "csv"):
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
-@pytest.mark.parametrize("K", [16, 32, 64])
+@pytest.mark.parametrize("K", [32, 64, 256])
 def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
