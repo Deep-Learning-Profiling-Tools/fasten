@@ -68,6 +68,7 @@ def segment_matmul_kernel(
     stride_output_m, stride_output_n,
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr,
     NUM_BLOCKS_M: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
@@ -90,7 +91,7 @@ def segment_matmul_kernel(
     BLOCK_M_32: tl.constexpr = 32
     BLOCK_M_64: tl.constexpr = 64
 
-    if end_off - start_off <= BLOCK_M_16:
+    if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
         _dynamic_tiling(
             pid_n, type_id,
             start_off, end_off,
@@ -104,7 +105,7 @@ def segment_matmul_kernel(
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
         )
-    elif end_off - start_off <= BLOCK_M_32:
+    elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
         _dynamic_tiling(
             pid_n, type_id,
             start_off, end_off,
@@ -118,7 +119,7 @@ def segment_matmul_kernel(
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
         )
-    elif end_off - start_off <= BLOCK_M_64:
+    elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
         _dynamic_tiling(
             pid_n, type_id,
             start_off, end_off,
@@ -236,6 +237,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
+        DYNAMIC_TILING=False,
         other_transposed=False,
         out_dtype=out_dtype,
         NUM_BLOCKS_M=NUM_BLOCKS_M,
