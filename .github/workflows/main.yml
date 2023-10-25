@@ -32,7 +32,6 @@ jobs:
         pip install git+https://github.com/pyg-team/pytorch_geometric.git
         pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
         pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
-        cd ..;
         pip install .;
     
     - name: run test cases
