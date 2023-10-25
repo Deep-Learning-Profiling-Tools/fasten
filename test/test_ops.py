@@ -1,10 +1,11 @@
+import csv
+import json
+from typing import Callable
+
 import pyg_lib
 import pytest
 import torch
 import triton
-import json
-import csv
-from typing import Callable
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
@@ -18,18 +19,19 @@ DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
 slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
 
+
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32", "float16"])
 @pytest.mark.parametrize("slices", [slices0, slices1, AIFB, AM, BGS, DBLP, MUTAG])
-@pytest.mark.parametrize("T", [16, 33])
 @pytest.mark.parametrize("K", [16, 32, 64, 80])
-def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
+def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
     if engine == Engine.TRITON and device == "cpu":
         pytest.skip("Triton does not support CPU inference")
     if device == "cpu" and dtype == "float16":
         pytest.skip("CPU does not support FP16")
+    T = len(slices)
     dtype = getattr(torch, dtype)
     M = sum([s.stop - s.start for s in slices])
     data = torch.randn((M, K), device=device, dtype=dtype)
@@ -71,19 +73,20 @@ def test_segment_matmul(K: int, T: int, slices: list, engine: Engine, device: st
 
 
 @pytest.fixture(scope="session")
-def benchmark_results():
+def benchmark_results(format: str = "csv"):
     results = []
     yield results
 
-    with open("benchmark_results.json", "w") as json_file:
-        json.dump(results, json_file, indent=4)
-    
-    header = results[0].keys()
-    with open("benchmark_results.csv", "w") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=header)
-        writer.writeheader()
-        for row in results:
-            writer.writerow(row)
+    if format == "json":
+        with open("benchmark_results.json", "w") as json_file:
+            json.dump(results, json_file, indent=4)
+    elif format == "csv":
+        header = results[0].keys()
+        with open("benchmark_results.csv", "w") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=header)
+            writer.writeheader()
+            for row in results:
+                writer.writerow(row)
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
@@ -119,7 +122,7 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
             output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
             output.backward(grad_fasten)
         elif phase == "forward":
-            ops.fasten_segment_matmul(data, other, tensor_slice)
+            ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
             output_fasten.backward(grad_fasten, retain_graph=True)
 
@@ -160,4 +163,3 @@ def test_cache():
     ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, Engine.TRITON)
     assert len(tensor_slice._cache) == 1
     assert len(tensor_slice._cache['segment_matmul_forward']) == 1
-    

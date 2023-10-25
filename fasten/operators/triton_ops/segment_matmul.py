@@ -5,6 +5,47 @@ import triton.language as tl
 from ...utils import torch_dtype_to_triton_dtype
 
 
+@triton.jit
+def _dynamic_tiling(
+    pid_n, type_id,
+    start_off, end_off,
+    input, other, output,
+    K, N,
+    stride_input_m, stride_input_k,
+    stride_other_b, stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr
+):
+    offs_m = start_off + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+
+    # [M, K] x [K, N] -> [M, N]
+    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
+    other_ptrs = other + type_id * stride_other_b + \
+        (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
+    mask_m = offs_m[:, None] < end_off
+    mask_n = offs_n[None, :] < N
+
+    for k in range(0, tl.cdiv(K, BLOCK_K)):
+        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] + k * BLOCK_K < K), other=0.0)
+        acc += tl.dot(a, b, out_dtype=out_dtype)
+        input_ptrs += BLOCK_K * stride_input_k
+        other_ptrs += BLOCK_K * stride_other_k
+
+    acc = acc.to(output.dtype.element_ty)
+    c_ptrs = output + stride_output_m * \
+        offs_m[:, None] + stride_output_n * offs_n[None, :]
+    c_mask = mask_m & mask_n
+    tl.store(c_ptrs, acc, mask=c_mask)
+
+
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -27,6 +68,7 @@ def segment_matmul_kernel(
     stride_output_m, stride_output_n,
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr,
     NUM_BLOCKS_M: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
@@ -45,32 +87,67 @@ def segment_matmul_kernel(
         return
 
     type_id = tl.load(input_tiles + 4 * pid_m + 1)
+    BLOCK_M_16: tl.constexpr = 16
+    BLOCK_M_32: tl.constexpr = 32
+    BLOCK_M_64: tl.constexpr = 64
 
-    offs_m = start_off + tl.arange(0, BLOCK_SIZE_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
+    if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
+        _dynamic_tiling(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_M=BLOCK_M_16,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
+        _dynamic_tiling(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_M=BLOCK_M_32,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
+        _dynamic_tiling(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_M=BLOCK_M_64,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    else:
+        _dynamic_tiling(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_M=BLOCK_SIZE_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
 
-    # [M, K] x [K, N] -> [M, N]
-    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + type_id * stride_other_b + \
-        (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
-
-    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_N), dtype=out_dtype)
-    mask_m = offs_m[:, None] < end_off
-    mask_n = offs_n[None, :] < N
-
-    for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
-        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] + k * BLOCK_K < K), other=0.0)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_K * stride_input_k
-        other_ptrs += BLOCK_K * stride_other_k
-
-    acc = acc.to(output.dtype.element_ty)
-    c_ptrs = output + stride_output_m * \
-        offs_m[:, None] + stride_output_n * offs_n[None, :]
-    c_mask = mask_m & mask_n
-    tl.store(c_ptrs, acc, mask=c_mask)
 
 # TODO(Keren): split_matmul_kernel
 # We should be able to autotune between split matmul and batch matmul
@@ -160,6 +237,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
+        DYNAMIC_TILING=False,
         other_transposed=False,
         out_dtype=out_dtype,
         NUM_BLOCKS_M=NUM_BLOCKS_M,
