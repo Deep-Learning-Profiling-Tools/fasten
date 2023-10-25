@@ -31,14 +31,11 @@ jobs:
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
         pip install git+https://github.com/pyg-team/pytorch_geometric.git
         pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
-        git clone https://github.com/openai/triton.git;  
-        cd triton;
-        pip install ninja cmake wheel; # build-time dependencies
-        pip install -e python
+        pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
         cd ..;
         pip install .;
     
     - name: run test cases
       run: | 
         cd ./test;
-        pytest -q
+        pytest -q -k "cpu"
