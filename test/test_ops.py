@@ -122,7 +122,7 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
             output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
             output.backward(grad_fasten)
         elif phase == "forward":
-            ops.fasten_segment_matmul(data, other, tensor_slice)
+            ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
             output_fasten.backward(grad_fasten, retain_graph=True)
 
