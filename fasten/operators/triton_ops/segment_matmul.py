@@ -35,7 +35,8 @@ def _dynamic_tiling(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
     mask_m = offs_m[:, None] < end_off
 
-    for k in range(0, tl.cdiv(K, BLOCK_K)):
+    k_iter = K // BLOCK_K if EVEN_K else tl.cdiv(K, BLOCK_K)
+    for k in range(0, k_iter):
         if EVEN_K:
             a = tl.load(input_ptrs, mask=mask_m, other=0.0)
             b = tl.load(other_ptrs)
@@ -67,6 +68,9 @@ def _dynamic_tiling(
     ],
     key=['N', 'K'],
 )
+@triton.heuristics({
+    'EVEN_K': lambda args: args['K'] % args['BLOCK_K'] == 0
+})
 @triton.jit
 def segment_matmul_kernel(
     input, input_tiles, other, output,
@@ -78,6 +82,7 @@ def segment_matmul_kernel(
     out_dtype: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
+    EVEN_K: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr
@@ -115,7 +120,7 @@ def segment_matmul_kernel(
                             stride_other_b, stride_other_k, stride_other_n,
                             stride_output_m, stride_output_n,
                             out_dtype=out_dtype,
-                            EVEN_K=K % BLOCK_K == 0,
+                            EVEN_K=EVEN_K,
                             BLOCK_M=BLOCK_M_16,
                             BLOCK_N=BLOCK_N,
                             BLOCK_K=BLOCK_K
@@ -130,7 +135,7 @@ def segment_matmul_kernel(
                             stride_other_b, stride_other_k, stride_other_n,
                             stride_output_m, stride_output_n,
                             out_dtype=out_dtype,
-                            EVEN_K=K % BLOCK_K == 0,
+                            EVEN_K=EVEN_K,
                             BLOCK_M=BLOCK_M_32,
                             BLOCK_N=BLOCK_N,
                             BLOCK_K=BLOCK_K
@@ -145,7 +150,7 @@ def segment_matmul_kernel(
                             stride_other_b, stride_other_k, stride_other_n,
                             stride_output_m, stride_output_n,
                             out_dtype=out_dtype,
-                            EVEN_K=K % BLOCK_K == 0,
+                            EVEN_K=EVEN_K,
                             BLOCK_M=BLOCK_M_64,
                             BLOCK_N=BLOCK_N,
                             BLOCK_K=BLOCK_K
@@ -160,7 +165,7 @@ def segment_matmul_kernel(
                             stride_other_b, stride_other_k, stride_other_n,
                             stride_output_m, stride_output_n,
                             out_dtype=out_dtype,
-                            EVEN_K=K % BLOCK_K == 0,
+                            EVEN_K=EVEN_K,
                             BLOCK_M=BLOCK_SIZE_M,
                             BLOCK_N=BLOCK_N,
                             BLOCK_K=BLOCK_K
