@@ -66,7 +66,9 @@ def balance_tiling(slices: list, tile_size: int, large_tile_size: int, subslices
         least_space_left = float('inf')
 
         for i, bin in enumerate(bins):
-            if bin[1] >= slice_length and bin[1] - slice_length < least_space_left:
+            bin_size = len(bin[0])
+            # At maximum large_tile_size
+            if bin_size < large_tile_size and bin[1] >= slice_length and bin[1] - slice_length < least_space_left:
                 least_space_left = bin[1] - slice_length
                 best_fit_bin_idx = i
 
