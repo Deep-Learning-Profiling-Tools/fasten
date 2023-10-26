@@ -69,7 +69,7 @@ def _dynamic_tiling(
     key=['N', 'K'],
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['BLOCK_K'] == 0
+    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0
 })
 @triton.jit
 def segment_matmul_kernel(
