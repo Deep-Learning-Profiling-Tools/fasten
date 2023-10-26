@@ -35,8 +35,8 @@ def _dynamic_tiling(
     mask_m = offs_m[:, None] < end_off
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & offs_k[None, :] + k * BLOCK_K < K, other=0.0)
-        b = tl.load(other_ptrs, mask=offs_k[:, None] + k * BLOCK_K < K, other=0.0)
+        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+        b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
         other_ptrs += BLOCK_K * stride_other_k
