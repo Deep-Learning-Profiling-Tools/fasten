@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 from dataclasses import asdict, dataclass, field
 
@@ -7,6 +9,7 @@ from .utils import TilingMethod
 @dataclass
 class BestConfig:
     tile_size: int = None
+    num_blocks: int = None
     input_tiles: torch.Tensor = None
 
     def asdict(self):
@@ -27,6 +30,76 @@ class Scheduler:
     tile_sizes: list[int] = field(default_factory=lambda: [32])
     default_tiling_method = TilingMethod.DEFAULT
     tiling_methods: list[TilingMethod] = field(default_factory=lambda: [TilingMethod.DEFAULT])
+
+
+def default_tiling(slices: list, tile_size: int) -> Tuple[list, int]:
+    subslices = []
+    for slice in slices:
+        index = slice[0]
+        type = slice[1]
+        start = slice[2]
+        end = slice[3]
+        for off in range(start, end, tile_size):
+            subslices.append([index, type, off, min(off + tile_size, end), -1])
+    return subslices, len(subslices)
+
+
+def balance_tiling(slices: list, tile_size: int, large_tile_size: int, subslices: list) -> Tuple[list, int]:
+    slice_pool = []
+    for slice in slices:
+        index = slice[0]
+        type = slice[1]
+        start = slice[2]
+        end = slice[3]
+        for off in range(start, end, large_tile_size):
+            if off + large_tile_size <= end:
+                subslices.append([index, type, off, off + large_tile_size, -1])
+            else:
+                slice_pool.append([index, type, off, end])
+
+    slice_pool = sorted(slice_pool, key=lambda s: s[3] - s[2], reverse=True)
+    # bin packing is np hard, so we use a greedy algorithm here
+    bins = []
+    for slice in slice_pool:
+        slice_length = slice[3] - slice[2]
+        best_fit_bin_idx = -1
+        least_space_left = float('inf')
+
+        for i, bin in enumerate(bins):
+            if bin[1] >= slice_length and bin[1] - slice_length < least_space_left:
+                least_space_left = bin[1] - slice_length
+                best_fit_bin_idx = i
+
+        if best_fit_bin_idx != -1:
+            bins[best_fit_bin_idx][0].append(slice)
+            bins[best_fit_bin_idx][1] -= slice_length
+        else:
+            bins.append([[slice], large_tile_size - slice_length])
+
+    num_blocks = len(bins) + len(subslices)
+    block_idx = num_blocks
+
+    # merge bins into subslices
+    for bin in bins:
+        bin_slices = bin[0]
+        new_subslices = []
+
+        for slice in bin_slices:
+            index, type, start, end = slice[:4]
+            for off in range(start, end, tile_size):
+                if off + tile_size <= end:
+                    new_subslices.append([index, type, off, off + tile_size, -1])
+                else:
+                    new_subslices.append([index, type, off, end, -1])
+
+        # Link the subslices together
+        for i in range(len(new_subslices) - 1):
+            new_subslices[i][4] = block_idx + i
+
+        block_idx += len(new_subslices) - 1
+        subslices.extend(new_subslices)
+
+    return subslices, num_blocks
 
 
 def _init_segment_matmul_forward_scheduler():

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import triton
 import triton.language as tl
@@ -69,7 +71,6 @@ def segment_matmul_kernel(
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr,
-    NUM_BLOCKS_M: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr
@@ -77,76 +78,84 @@ def segment_matmul_kernel(
     BLOCK_N: tl.constexpr = BLOCK_SIZE_K if other_transposed else BLOCK_SIZE_N
     BLOCK_K: tl.constexpr = BLOCK_SIZE_N if other_transposed else BLOCK_SIZE_K
 
-    # TODO(Keren): a different block grouping scheme
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
+    next_id = pid_m
 
-    start_off = tl.load(input_tiles + 4 * pid_m + 2)
-    end_off = tl.load(input_tiles + 4 * pid_m + 3)
-    if end_off <= start_off:
-        return
+    while next_id != -1:
+        # TODO: large tensors
+        # Use int32 to reduce register usage
+        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+        end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+        next_next_id = tl.load(input_tiles + 5 * next_id + 4)
+        next_next_id = next_next_id.to(tl.int32)
+        length = end_off - start_off
+        if length > 0:
+            type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+            BLOCK_M_16: tl.constexpr = 16
+            BLOCK_M_32: tl.constexpr = 32
+            BLOCK_M_64: tl.constexpr = 64
 
-    type_id = tl.load(input_tiles + 4 * pid_m + 1)
-    BLOCK_M_16: tl.constexpr = 16
-    BLOCK_M_32: tl.constexpr = 32
-    BLOCK_M_64: tl.constexpr = 64
-
-    if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
-        _dynamic_tiling(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            BLOCK_M=BLOCK_M_16,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
-    elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
-        _dynamic_tiling(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            BLOCK_M=BLOCK_M_32,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
-    elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
-        _dynamic_tiling(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            BLOCK_M=BLOCK_M_64,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
-    else:
-        _dynamic_tiling(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            BLOCK_M=BLOCK_SIZE_M,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
+            for i in range(0, tl.cdiv(length, BLOCK_SIZE_M)):
+                cur_start_off = start_off + i * BLOCK_SIZE_M
+                cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
+                if cur_end_off - cur_start_off <= BLOCK_M_16 and DYNAMIC_TILING:
+                    _dynamic_tiling(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        BLOCK_M=BLOCK_M_16,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K
+                    )
+                elif cur_end_off - cur_start_off <= BLOCK_M_32 and DYNAMIC_TILING:
+                    _dynamic_tiling(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        BLOCK_M=BLOCK_M_32,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K
+                    )
+                elif cur_end_off - cur_start_off <= BLOCK_M_64 and DYNAMIC_TILING:
+                    _dynamic_tiling(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        BLOCK_M=BLOCK_M_64,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K
+                    )
+                else:
+                    _dynamic_tiling(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        BLOCK_M=BLOCK_SIZE_M,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K
+                    )
+        next_id = next_next_id
 
 
 # TODO(Keren): split_matmul_kernel
@@ -180,12 +189,12 @@ def batch_matmul_kernel(
     pid_n = tl.program_id(axis=1)
     bid = tl.program_id(axis=2)
 
-    start_off = tl.load(input_slices + 4 * bid + 2)
-    end_off = tl.load(input_slices + 4 * bid + 3)
+    start_off = tl.load(input_slices + 5 * bid + 2)
+    end_off = tl.load(input_slices + 5 * bid + 3)
     if end_off <= start_off:
         return
 
-    type_id = tl.load(input_slices + 4 * bid + 1)
+    type_id = tl.load(input_slices + 5 * bid + 1)
     offs_k = pid_k * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
     offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_m = tl.arange(0, BLOCK_SIZE_M)
@@ -216,7 +225,8 @@ def batch_matmul_kernel(
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
-                           output: torch.Tensor = None, tile_size: int = 64, out_dtype: torch.dtype = None):
+                           output: torch.Tensor = None,
+                           num_blocks: Optional[int] = None, tile_size: int = 64, out_dtype: torch.dtype = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -224,12 +234,12 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     M: int = input.size(0)
     K: int = input.size(1)
     N: int = other.size(2)
-    NUM_BLOCKS_M: int = input_tiles.size(0)
+    num_blocks = num_blocks or input_tiles.size(0)
     if output is None:
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
     def grid(meta):
-        return (NUM_BLOCKS_M, triton.cdiv(N, meta['BLOCK_SIZE_N']))
+        return (num_blocks, triton.cdiv(N, meta['BLOCK_SIZE_N']))
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,
@@ -240,7 +250,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         DYNAMIC_TILING=False,
         other_transposed=False,
         out_dtype=out_dtype,
-        NUM_BLOCKS_M=NUM_BLOCKS_M,
         BLOCK_SIZE_M=tile_size,
     )
     return output
@@ -249,7 +258,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                             input_tiles: torch.Tensor, input_slices: torch.Tensor,
                             grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
-                            tile_size: int = 64):
+                            num_blocks: Optional[int] = None, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -257,7 +266,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
     K: int = input.size(1)
     N: int = other.size(2)
     B: int = input_slices.size(0)
-    NUM_BLOCKS_M: int = input_tiles.size(0)
+    num_blocks = num_blocks or input_tiles.size(0)
     grad_output = grad_output.contiguous()
 
     def dx(grad_input):
@@ -266,7 +275,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (NUM_BLOCKS_M, triton.cdiv(K, meta['BLOCK_SIZE_K']))
+            return (num_blocks, triton.cdiv(K, meta['BLOCK_SIZE_K']))
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
@@ -276,7 +285,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input.stride(0), grad_input.stride(1),
             other_transposed=True,
             out_dtype=out_dtype,
-            NUM_BLOCKS_M=NUM_BLOCKS_M,
+            NUM_BLOCKS_M=num_blocks,
             BLOCK_SIZE_M=tile_size,
         )
         return grad_input
