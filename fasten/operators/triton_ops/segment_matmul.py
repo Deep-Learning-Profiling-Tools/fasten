@@ -35,7 +35,7 @@ def _dynamic_tiling(
     mask_m = offs_m[:, None] < end_off
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+        a = tl.load(input_ptrs, mask=mask_m, other=0.0)
         b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
@@ -83,13 +83,19 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
     next_id = pid_m
+    start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+    end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+    next_start_off = 0
+    next_end_off = 0
 
     while next_id != -1:
         # TODO: large tensors
         # Use int32 to reduce register usage
-        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-        end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
         length = end_off - start_off
+        next_next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
+        if next_next_id != -1:
+            next_start_off = tl.load(input_tiles + 5 * next_next_id + 2).to(tl.int32)
+            next_end_off = tl.load(input_tiles + 5 * next_next_id + 3).to(tl.int32)
         if length > 0:
             type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
             BLOCK_M_16: tl.constexpr = 16
@@ -155,7 +161,9 @@ def segment_matmul_kernel(
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K
                     )
-        next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
+        next_id = next_next_id
+        start_off = next_start_off
+        end_off = next_end_off
 
 
 # TODO(Keren): split_matmul_kernel
