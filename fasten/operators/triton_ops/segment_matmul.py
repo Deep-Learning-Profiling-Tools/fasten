@@ -89,8 +89,6 @@ def segment_matmul_kernel(
         # Use int32 to reduce register usage
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
-        next_next_id = tl.load(input_tiles + 5 * next_id + 4)
-        next_next_id = next_next_id.to(tl.int32)
         length = end_off - start_off
         if length > 0:
             type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
@@ -157,7 +155,7 @@ def segment_matmul_kernel(
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K
                     )
-        next_id = next_next_id
+        next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
 
 
 # TODO(Keren): split_matmul_kernel
