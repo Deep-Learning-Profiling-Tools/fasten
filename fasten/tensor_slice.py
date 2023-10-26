@@ -226,7 +226,7 @@ def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,
     cur_index = 0
     for i in range(len(unique_types)):
         type_list.append([
-            i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item()])
+            i, unique_types[i].item(), cur_index, cur_index + type_counts[i].item(), -1])
         cur_index += type_counts[i].item()
 
     sorted_data = torch.index_select(data, dim=dim, index=type_indices) if not is_sorted else data
