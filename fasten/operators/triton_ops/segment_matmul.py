@@ -71,6 +71,7 @@ def segment_matmul_kernel(
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr
@@ -248,6 +249,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
         DYNAMIC_TILING=False,
+        num_BLOCKS=num_blocks,
         other_transposed=False,
         out_dtype=out_dtype,
         BLOCK_SIZE_M=tile_size,
@@ -284,6 +286,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             other.stride(0), other.stride(2), other.stride(1),  # swap K and N
             grad_input.stride(0), grad_input.stride(1),
             DYNAMIC_TILING=False,
+            NUM_BLOCKS=num_blocks,
             other_transposed=True,
             out_dtype=out_dtype,
             BLOCK_SIZE_M=tile_size,
