@@ -1,4 +1,3 @@
-import logging
 from collections import OrderedDict
 from itertools import product
 from typing import Optional, Tuple, Union
@@ -190,7 +189,7 @@ class TensorSlice:
                 rep=1 if debug else 10
             )
             if debug:
-                logging.info(f'op_name={op_name}, tile_size={tile_size}, tiling_method={tiling_method}, ms={ms}')
+                print(f'op_name={op_name}, tile_size={tile_size}, tiling_method={tiling_method}, ms={ms}')
             if ms < best_ms:
                 best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
