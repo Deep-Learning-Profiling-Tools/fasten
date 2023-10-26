@@ -283,6 +283,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_output.stride(0), grad_output.stride(1),
             other.stride(0), other.stride(2), other.stride(1),  # swap K and N
             grad_input.stride(0), grad_input.stride(1),
+            DYNAMIC_TYLING=False,
             other_transposed=True,
             out_dtype=out_dtype,
             BLOCK_SIZE_M=tile_size,
