@@ -285,7 +285,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input.stride(0), grad_input.stride(1),
             other_transposed=True,
             out_dtype=out_dtype,
-            NUM_BLOCKS_M=num_blocks,
             BLOCK_SIZE_M=tile_size,
         )
         return grad_input
