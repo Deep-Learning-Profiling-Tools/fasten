@@ -175,20 +175,20 @@ class TensorSlice:
 
         triton_op = getattr(triton_ops, op_name)
         for tile_size, tiling_method in product(scheduler.tile_sizes, scheduler.tiling_methods):
-            input_tiles, num_blocks = self.tiling(tile_size, method=tiling_method)
+            input_tiles = self.tiling(tile_size, method=tiling_method)
             ms = do_bench(
                 lambda: triton_op(
                     *args,
                     input_slices=self.slices,
                     input_tiles=input_tiles.slices,
-                    num_blocks=num_blocks,
+                    num_blocks=input_tiles.num_blocks,
                     tile_size=tile_size
                 ),
                 warmup=5,
                 rep=10
             )
             if ms < best_ms:
-                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices, num_blocks=num_blocks)
+                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
         return best_ms, best_config, best_op
 
