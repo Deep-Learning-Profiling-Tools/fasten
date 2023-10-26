@@ -129,7 +129,7 @@ def segment_matmul_kernel(
                             BLOCK_K=BLOCK_K
                         )
                 else:
-                    cur_start_off = start_off + i * BLOCK_SIZE_M
+                    cur_start_off = start_off
                     cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
                     if cur_end_off - cur_start_off <= BLOCK_M_16 and DYNAMIC_TILING:
                         _dynamic_tiling(
