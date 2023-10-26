@@ -102,6 +102,7 @@ def segment_matmul_kernel(
             if next_id != -1:
                 start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
                 end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+                next_next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
                 BLOCK_M_16: tl.constexpr = 16
                 BLOCK_M_32: tl.constexpr = 32
                 BLOCK_M_64: tl.constexpr = 64
@@ -172,7 +173,7 @@ def segment_matmul_kernel(
                                 BLOCK_N=BLOCK_N,
                                 BLOCK_K=BLOCK_K
                             )
-                next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
+                next_id = next_next_id
 
 
 # TODO(Keren): split_matmul_kernel
