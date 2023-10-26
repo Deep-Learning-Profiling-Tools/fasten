@@ -24,23 +24,25 @@ def _dynamic_tiling(
     offs_m = start_off + tl.arange(0, BLOCK_M)
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     offs_k = tl.arange(0, BLOCK_K)
+    rn = tl.max_contiguous(tl.multiple_of(offs_n % N, BLOCK_N), BLOCK_N)
 
     # [M, K] x [K, N] -> [M, N]
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
     other_ptrs = other + type_id * stride_other_b + \
-        (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
+        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
     mask_m = offs_m[:, None] < end_off
-    mask_n = offs_n[None, :] < N
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
-        b = tl.load(other_ptrs, mask=mask_n & (offs_k[:, None] + k * BLOCK_K < K), other=0.0)
+        mask_k = offs_k[None, :] + k * BLOCK_K < K
+        a = tl.load(input_ptrs, mask=mask_m & mask_k, other=0.0)
+        b = tl.load(other_ptrs, mask=mask_k, other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
         other_ptrs += BLOCK_K * stride_other_k
 
+    mask_n = offs_n[None, :] < N
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
