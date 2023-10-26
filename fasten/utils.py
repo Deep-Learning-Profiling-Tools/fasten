@@ -1,3 +1,4 @@
+import os
 from enum import Enum
 
 import torch
@@ -49,3 +50,8 @@ def torch_dtype_to_triton_dtype(dtype, grad: bool = False):
         if dtype not in type_dict:
             raise ValueError(f'Unsupported dtype {dtype}')
         return type_dict[dtype]
+
+
+def is_debug():
+    FLAG = os.environ.get('FASTEN_DEBUG', '0')
+    return FLAG == '1' or FLAG.lower() == 'true' or FLAG.lower() == 'yes' or FLAG.lower() == 'on'

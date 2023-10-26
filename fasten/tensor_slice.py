@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 from itertools import product
 from typing import Optional, Tuple, Union
@@ -8,7 +9,7 @@ from triton.testing import do_bench
 from .operators import torch_ops, triton_ops
 from .scheduler import (BestConfig, CacheEntry, Scheduler, balance_tiling,
                         default_tiling, schedulers)
-from .utils import TilingMethod
+from .utils import TilingMethod, is_debug
 
 
 class TensorSlice:
@@ -172,6 +173,7 @@ class TensorSlice:
         best_op = getattr(torch_ops, op_name)
         best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
         best_config = BestConfig()
+        debug = is_debug()
 
         triton_op = getattr(triton_ops, op_name)
         for tile_size, tiling_method in product(scheduler.tile_sizes, scheduler.tiling_methods):
@@ -184,9 +186,11 @@ class TensorSlice:
                     num_blocks=input_tiles.num_blocks,
                     tile_size=tile_size
                 ),
-                warmup=5,
-                rep=10
+                warmup=1 if debug else 5,
+                rep=1 if debug else 10
             )
+            if debug:
+                logging.info(f'op_name={op_name}, tile_size={tile_size}, tiling_method={tiling_method}, ms={ms}')
             if ms < best_ms:
                 best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
