@@ -40,7 +40,7 @@ def test_tiling_default(tile_size: int, device: str):
 
 
 @pytest.mark.parametrize('tile_size', [16])
-def test_tiling_balance(tile_size: int):
+def test_tiling_balanced(tile_size: int):
     data = torch.ones((512, 128))
     types = torch.zeros(512, dtype=torch.long)
     types[0:8] = 1
@@ -50,5 +50,5 @@ def test_tiling_balance(tile_size: int):
     types[256:280] = 5
     types[280:512] = 6
     tensor_slice = compact_tensor_types(data, types)
-    tensor_tile = tensor_slice.tiling(tile_size, method=TilingMethod.BALANCE)
+    tensor_tile = tensor_slice.tiling(tile_size, method=TilingMethod.BALANCED)
     assert tensor_tile.num_blocks == 5
