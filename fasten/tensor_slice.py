@@ -142,7 +142,7 @@ class TensorSlice:
             self._cache[op_name] = dict()
         self._cache[op_name][key] = entry
 
-    def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_tile_size, method: TilingMethod = Scheduler.default_tiling_method):
+    def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_block_size, method: TilingMethod = Scheduler.default_tiling_method):
         assert tile_size > 0
         slices = self._slices.tolist()
         num_blocks = None
