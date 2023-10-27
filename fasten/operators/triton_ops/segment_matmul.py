@@ -95,17 +95,18 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
+    BLOCK_M_16: tl.constexpr = 16
+    BLOCK_M_32: tl.constexpr = 32
+    BLOCK_M_64: tl.constexpr = 64
+
     for i in range(0, BLOCKING_FACTOR):
         next_id = pid_m * BLOCKING_FACTOR + i
         # TODO: large tensors
         # Use int32 to reduce register usage
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
-        BLOCK_M_16: tl.constexpr = 16
-        BLOCK_M_32: tl.constexpr = 32
-        BLOCK_M_64: tl.constexpr = 64
-
         length = end_off - start_off
+
         if length > 0:
             type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
             cur_start_off = start_off
