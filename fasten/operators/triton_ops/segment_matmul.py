@@ -83,7 +83,7 @@ def segment_matmul_kernel(
     DYNAMIC_TILING: tl.constexpr,
     NUM_TILES: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
-    BLOCKING_FACTOR: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
@@ -99,8 +99,8 @@ def segment_matmul_kernel(
     BLOCK_M_32: tl.constexpr = 32
     BLOCK_M_64: tl.constexpr = 64
 
-    for i in range(0, BLOCKING_FACTOR):
-        next_id = pid_m * BLOCKING_FACTOR + i
+    for i in range(0, BLOCK_SIZE):
+        next_id = pid_m * BLOCK_SIZE + i
         if next_id < NUM_TILES:
             # TODO: large tensors
             # Use int32 to reduce register usage
@@ -242,7 +242,7 @@ def batch_matmul_kernel(
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
-                           num_blocks: Optional[int] = None, tile_size: int = 64, out_dtype: torch.dtype = None):
+                           num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64, out_dtype: torch.dtype = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -252,7 +252,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     N: int = other.size(2)
     num_tiles = input_tiles.size(0)
     num_blocks = num_blocks or num_tiles
-    blocking_factor = triton.cdiv(num_tiles, num_blocks)
     if output is None:
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
@@ -268,7 +267,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         DYNAMIC_TILING=False,
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
-        BLOCKING_FACTOR=blocking_factor,
+        BLOCK_SIZE=block_size,
         other_transposed=False,
         out_dtype=out_dtype,
         BLOCK_SIZE_M=tile_size,
@@ -279,7 +278,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                             input_tiles: torch.Tensor, input_slices: torch.Tensor,
                             grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
-                            num_blocks: Optional[int] = None, tile_size: int = 64):
+                            num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -289,7 +288,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
     B: int = input_slices.size(0)
     num_tiles = input_tiles.size(0)
     num_blocks = num_blocks or num_tiles
-    blocking_factor = tl.cdiv(num_tiles, num_blocks)
     grad_output = grad_output.contiguous()
 
     def dx(grad_input):
@@ -309,7 +307,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             DYNAMIC_TILING=False,
             NUM_TILES=num_tiles,
             NUM_BLOCKS=num_blocks,
-            BLOCKING_FACTOR=blocking_factor,
+            BLOCK_SIZE=block_size,
             other_transposed=True,
             out_dtype=out_dtype,
             BLOCK_SIZE_M=tile_size,

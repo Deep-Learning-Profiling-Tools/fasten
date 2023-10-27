@@ -9,8 +9,9 @@ from .utils import TilingMethod
 
 @dataclass
 class BestConfig:
-    tile_size: int = None
-    num_blocks: int = None
+    tile_size: int = None  # the maximum size of each tile
+    block_size: int = None  # the number of tiles belong to a block, -1: dynamic block size
+    num_blocks: int = None  # number of blocks that group the tiles
     input_tiles: torch.Tensor = None
 
     def asdict(self):
@@ -33,6 +34,17 @@ class Scheduler:
     tiling_methods: list[TilingMethod] = field(default_factory=lambda: [Scheduler.default_tiling_method])
     default_block_size: int = 4
     block_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
+
+    def get_configs(self):
+        configs = []
+        for tile_size in self.tile_sizes:
+            for tiling_method in self.tiling_methods:
+                if tiling_method == TilingMethod.DEFAULT:
+                    for block_size in self.block_sizes:
+                        configs.append((tile_size, tiling_method, block_size))
+                else:
+                    configs.append((tile_size, tiling_method, -1))
+        return configs
 
 
 def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:

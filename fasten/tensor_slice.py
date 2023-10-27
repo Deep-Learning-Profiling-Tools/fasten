@@ -1,5 +1,4 @@
 from collections import OrderedDict
-from itertools import product
 from typing import Optional, Tuple, Union
 
 import torch
@@ -23,7 +22,7 @@ class TensorSlice:
             device: The device to put the slices on, default is 'cpu'
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', num_blocks: Optional[int] = None) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
         self._data = data
 
         if type(slices) is int:
@@ -43,6 +42,7 @@ class TensorSlice:
             self._slices = slices.to(device)
         # Don't backpropagate on slice tensors
         self._slices.requires_grad = False
+        self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
 
@@ -93,6 +93,10 @@ class TensorSlice:
     def num_blocks(self):
         return self._num_blocks
 
+    @property
+    def block_size(self):
+        return self._block_size
+
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -138,7 +142,7 @@ class TensorSlice:
             self._cache[op_name] = dict()
         self._cache[op_name][key] = entry
 
-    def tiling(self, tile_size: int, block_size: int, method: TilingMethod = TilingMethod.DEFAULT):
+    def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_tile_size, method: TilingMethod = Scheduler.default_tiling_method):
         assert tile_size > 0
         slices = self._slices.tolist()
         num_blocks = None
@@ -148,7 +152,7 @@ class TensorSlice:
             subslices, num_blocks = balanced_tiling(slices, tile_size, block_size)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
-        return TensorSlice(self.data, subslices, self._slices.device, num_blocks=num_blocks)
+        return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
 
     def schedule(self, op_name: str, *args, autotune: bool = False) -> CacheEntry:
         scheduler = schedulers[op_name]
@@ -174,8 +178,8 @@ class TensorSlice:
         debug = is_debug()
 
         triton_op = getattr(triton_ops, op_name)
-        for tile_size, tiling_method in product(scheduler.tile_sizes, scheduler.tiling_methods):
-            input_tiles = self.tiling(tile_size, method=tiling_method)
+        for tile_size, tiling_method, block_size in scheduler.get_configs():
+            input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
             ms = do_bench(
                 lambda: triton_op(
                     *args,
@@ -188,15 +192,15 @@ class TensorSlice:
                 rep=1 if debug else 10
             )
             if debug:
-                print(f'op_name={op_name}, tile_size={tile_size}, tiling_method={tiling_method}, ms={ms}')
+                print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
             if ms < best_ms:
-                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
+                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
-        input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method)
-        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, input_tiles=input_tiles.slices), getattr(triton_ops, op_name)
+        input_tiles, num_blocks = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
+        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=num_blocks), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,
