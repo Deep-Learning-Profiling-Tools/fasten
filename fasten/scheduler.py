@@ -32,7 +32,7 @@ class Scheduler:
     tile_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
     default_tiling_method = TilingMethod.DEFAULT
     tiling_methods: list[TilingMethod] = field(default_factory=lambda: [Scheduler.default_tiling_method])
-    default_block_size: int = 4
+    default_block_size: int = 1
     block_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
 
     def get_configs(self):
