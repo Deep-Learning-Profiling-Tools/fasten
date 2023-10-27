@@ -250,7 +250,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     N: int = other.size(2)
     num_slices = input_slices.size(0)
     num_blocks = num_blocks or num_slices
-    blocking_factor = tl.cdiv(num_slices, num_blocks)
+    blocking_factor = triton.cdiv(num_slices, num_blocks)
     if output is None:
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
