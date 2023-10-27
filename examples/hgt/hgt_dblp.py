@@ -1,27 +1,18 @@
-import argparse
 import os.path as osp
 
-import timemory
 import torch
 import torch.nn.functional as F
-from hgt_conv import HGTConv
-from timemory.util import marker
-from torch_geometric.datasets import DBLP, Entities
-from torch_geometric.nn import Linear
 
-timemory.settings.scientific = False
-timemory.settings.flat_profile = False
-timemory.settings.timeline_profile = False
-timemory.settings.cout_output = False
+import torch_geometric.transforms as T
+from torch_geometric.datasets import DBLP
+from torch_geometric.nn import HGTConv, Linear
+from fasten.nn import FastenHGTConv
 
-
-path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
-dataset = DBLP(path)
+path = osp.join(osp.dirname(osp.realpath(__file__)), '/home/kganapa/data/DBLP')
+# We initialize conference node features with a single one-vector as feature:
+dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
 print(data)
-
-# We initialize conference node features with a single feature.
-data['conference'].x = torch.ones(data['conference'].num_nodes, 1)
 
 
 class HGT(torch.nn.Module):
@@ -34,15 +25,17 @@ class HGT(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
-            conv = HGTConv(hidden_channels, hidden_channels, data.metadata(),
+            conv = FastenHGTConv(hidden_channels, hidden_channels, data.metadata(),
                            num_heads, group='sum')
             self.convs.append(conv)
 
         self.lin = Linear(hidden_channels, out_channels)
 
     def forward(self, x_dict, edge_index_dict):
-        for node_type, x in x_dict.items():
-            x_dict[node_type] = self.lin_dict[node_type](x).relu_()
+        x_dict = {
+            node_type: self.lin_dict[node_type](x).relu_()
+            for node_type, x in x_dict.items()
+        }
 
         for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict)
@@ -63,12 +56,10 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 def train():
     model.train()
     optimizer.zero_grad()
-    with marker(["wall_clock"], key="forward"):
-        out = model(data.x_dict, data.edge_index_dict)
+    out = model(data.x_dict, data.edge_index_dict)
     mask = data['author'].train_mask
     loss = F.cross_entropy(out[mask], data['author'].y[mask])
-    with marker(["wall_clock"], key="backward"):
-        loss.backward()
+    loss.backward()
     optimizer.step()
     return float(loss)
 
@@ -86,10 +77,8 @@ def test():
     return accs
 
 
-for epoch in range(1, 101):
-    with marker(["wall_clock"], key="train"):
-        loss = train()
-    with marker(["wall_clock"], key="test"):
-        train_acc, val_acc, test_acc = test()
+for epoch in range(1, 5):
+    loss = train()
+    train_acc, val_acc, test_acc = test()
     print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
           f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
