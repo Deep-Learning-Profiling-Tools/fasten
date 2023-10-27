@@ -39,11 +39,8 @@ class Scheduler:
         configs = []
         for tile_size in self.tile_sizes:
             for tiling_method in self.tiling_methods:
-                if tiling_method == TilingMethod.DEFAULT:
-                    for block_size in self.block_sizes:
-                        configs.append((tile_size, tiling_method, block_size))
-                else:
-                    configs.append((tile_size, tiling_method, -1))
+                for block_size in self.block_sizes:
+                    configs.append((tile_size, tiling_method, block_size))
         return configs
 
 

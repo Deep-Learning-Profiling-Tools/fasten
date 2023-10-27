@@ -20,6 +20,8 @@ class TensorSlice:
             slices: A 5-dim PyTorch Tensor, where each row represents [type_index, type, start, end, next].
                     It can also be a int or a list, then internally we transform it to a tensor.
             device: The device to put the slices on, default is 'cpu'
+            block_size: The number of tiles belong to a block, default is 1
+            num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
     def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
@@ -148,7 +150,7 @@ class TensorSlice:
         num_blocks = None
         if method == TilingMethod.DEFAULT:
             subslices, num_blocks = default_tiling(slices, tile_size, block_size)
-        elif method == TilingMethod.BLOCKED:
+        elif method == TilingMethod.BALANCED:
             subslices, num_blocks = balanced_tiling(slices, tile_size, block_size)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
