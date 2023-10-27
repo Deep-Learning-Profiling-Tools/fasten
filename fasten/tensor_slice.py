@@ -7,7 +7,7 @@ from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
 from .scheduler import (BestConfig, CacheEntry, Scheduler, balanced_tiling,
-                        blocked_tiling, default_tiling, schedulers)
+                        default_tiling, schedulers)
 from .utils import TilingMethod, is_debug
 
 
@@ -138,17 +138,14 @@ class TensorSlice:
             self._cache[op_name] = dict()
         self._cache[op_name][key] = entry
 
-    def tiling(self, tile_size: int, large_tile_factor: int = 4, method: TilingMethod = TilingMethod.DEFAULT):
+    def tiling(self, tile_size: int, block_size: int, method: TilingMethod = TilingMethod.DEFAULT):
         assert tile_size > 0
         slices = self._slices.tolist()
-        subslices = []
         num_blocks = None
         if method == TilingMethod.DEFAULT:
-            subslices, num_blocks = default_tiling(slices, tile_size)
+            subslices, num_blocks = default_tiling(slices, tile_size, block_size)
         elif method == TilingMethod.BLOCKED:
-            subslices, num_blocks = blocked_tiling(slices, tile_size)
-        elif method == TilingMethod.BLOCKED:
-            subslices, num_blocks = balanced_tiling(slices, tile_size, tile_size * large_tile_factor, subslices)
+            subslices, num_blocks = balanced_tiling(slices, tile_size, block_size)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, num_blocks=num_blocks)

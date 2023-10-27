@@ -28,12 +28,14 @@ class CacheEntry:
 class Scheduler:
     get_key: callable
     default_tile_size: int = 32
-    tile_sizes: list[int] = field(default_factory=lambda: [32])
+    tile_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
     default_tiling_method = TilingMethod.DEFAULT
-    tiling_methods: list[TilingMethod] = field(default_factory=lambda: [TilingMethod.DEFAULT])
+    tiling_methods: list[TilingMethod] = field(default_factory=lambda: [Scheduler.default_tiling_method])
+    default_block_size: int = 4
+    block_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
 
 
-def default_tiling(slices: list, tile_size: int) -> Tuple[list, int]:
+def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
     subslices = []
     for slice in slices:
         index = slice[0]
@@ -42,16 +44,13 @@ def default_tiling(slices: list, tile_size: int) -> Tuple[list, int]:
         end = slice[3]
         for off in range(start, end, tile_size):
             subslices.append([index, type, off, min(off + tile_size, end), -1])
-    return subslices, len(subslices)
+    return subslices, triton.cdiv(len(subslices), block_size)
 
 
-def blocked_tiling(slices: list, tile_size: int, iters: int = 4) -> Tuple[list, int]:
-    subslices, _ = default_tiling(slices, tile_size)
-    return subslices, triton.cdiv(len(subslices), iters)
-
-
-def balanced_tiling(slices: list, tile_size: int, large_tile_size: int, subslices: list) -> Tuple[list, int]:
+def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
     slice_pool = []
+    subslices = []
+    large_tile_size = tile_size * block_size
     for slice in slices:
         index = slice[0]
         type = slice[1]
@@ -111,7 +110,7 @@ def balanced_tiling(slices: list, tile_size: int, large_tile_size: int, subslice
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
-    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT, TilingMethod.BLOCKED])
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
 
 
 def _init_segment_matmul_backward_scheduler():
