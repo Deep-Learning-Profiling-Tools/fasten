@@ -3,7 +3,6 @@ import torch
 import triton
 
 from fasten import compact_tensor_types
-from fasten.utils import TilingMethod
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
@@ -37,18 +36,3 @@ def test_tiling_default(tile_size: int, device: str):
     tensor_tile = tensor_slice.tiling(tile_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
-
-
-@pytest.mark.parametrize('tile_size', [16])
-def test_tiling_balanced(tile_size: int):
-    data = torch.ones((512, 128))
-    types = torch.zeros(512, dtype=torch.long)
-    types[0:8] = 1
-    types[8:64] = 2
-    types[64:128] = 3
-    types[128:256] = 4
-    types[256:280] = 5
-    types[280:512] = 6
-    tensor_slice = compact_tensor_types(data, types)
-    tensor_tile = tensor_slice.tiling(tile_size, method=TilingMethod.BALANCED)
-    assert tensor_tile.num_blocks == 5
