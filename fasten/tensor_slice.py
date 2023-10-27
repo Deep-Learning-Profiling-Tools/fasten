@@ -160,7 +160,6 @@ class TensorSlice:
         cache_entry = self._lookup_cache(op_name, key)
 
         if cache_entry is not None:
-            print("get from cache", cache_entry.best_config.asdict())
             return cache_entry
 
         if autotune:
@@ -187,6 +186,7 @@ class TensorSlice:
                     input_slices=self.slices,
                     input_tiles=input_tiles.slices,
                     num_blocks=input_tiles.num_blocks,
+                    block_size=block_size,
                     tile_size=tile_size
                 ),
                 warmup=1 if debug else 5,
