@@ -81,7 +81,7 @@ def segment_matmul_kernel(
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr,
-    NUM_SLICES: tl.constexpr,
+    NUM_TILES: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
     BLOCKING_FACTOR: tl.constexpr,
     EVEN_K: tl.constexpr,
@@ -249,9 +249,9 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     M: int = input.size(0)
     K: int = input.size(1)
     N: int = other.size(2)
-    num_slices = input_slices.size(0)
-    num_blocks = num_blocks or num_slices
-    blocking_factor = triton.cdiv(num_slices, num_blocks)
+    num_tiles = input_tiles.size(0)
+    num_blocks = num_blocks or num_tiles
+    blocking_factor = triton.cdiv(num_tiles, num_blocks)
     if output is None:
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
@@ -265,7 +265,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
         DYNAMIC_TILING=False,
-        NUM_SLICES=num_slices,
+        NUM_SLICES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCKING_FACTOR=blocking_factor,
         other_transposed=False,
@@ -286,9 +286,9 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
     K: int = input.size(1)
     N: int = other.size(2)
     B: int = input_slices.size(0)
-    num_slices = input_slices.size(0)
-    num_blocks = num_blocks or num_slices
-    blocking_factor = tl.cdiv(num_slices, num_blocks)
+    num_tiles = input_tiles.size(0)
+    num_blocks = num_blocks or num_tiles
+    blocking_factor = tl.cdiv(num_tiles, num_blocks)
     grad_output = grad_output.contiguous()
 
     def dx(grad_input):
@@ -306,7 +306,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             other.stride(0), other.stride(2), other.stride(1),  # swap K and N
             grad_input.stride(0), grad_input.stride(1),
             DYNAMIC_TILING=False,
-            NUM_SLICES=num_slices,
+            NUM_TILES=num_tiles,
             NUM_BLOCKS=num_blocks,
             BLOCKING_FACTOR=blocking_factor,
             other_transposed=True,
