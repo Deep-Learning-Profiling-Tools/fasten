@@ -46,7 +46,7 @@ def default_tiling(slices: list, tile_size: int) -> Tuple[list, int]:
 
 
 def blocked_tiling(slices: list, tile_size: int, iters: int = 4) -> Tuple[list, int]:
-    subslices = default_tiling(slices, tile_size)
+    subslices, _ = default_tiling(slices, tile_size)
     return subslices, triton.cdiv(len(subslices), iters)
 
 
