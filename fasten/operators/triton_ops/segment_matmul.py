@@ -244,7 +244,7 @@ def segment_matmul_kernel(
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K
                     )
-            next_id = tl.load(input_tiles + 5 * next_id + 4)
+            next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
 
 
 # TODO(Keren): split_matmul_kernel
