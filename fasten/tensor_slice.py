@@ -201,7 +201,7 @@ class TensorSlice:
                 best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, tiling_method={best_config.tiling_method}, ms={ms}')
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
