@@ -26,7 +26,7 @@ def test_compact_tensor_types(device: str, dim: int):
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
 @pytest.mark.parametrize('tile_size', [1, 2, 3, 16, 128])
-def test_tiling(tile_size: int, device: str):
+def test_tiling_default(tile_size: int, device: str):
     data = torch.ones((128, 128), device=device)
     types = torch.zeros(128, dtype=torch.long, device=device)
     types[63:90] = 2
