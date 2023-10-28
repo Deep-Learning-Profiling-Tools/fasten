@@ -82,7 +82,7 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
             subslices.append(slice)
         else:
             # small slice => a chain of blocks
-            if last_small_slice_idx == -1 or slice_size + last_block_size > large_tile_size:
+            if last_small_slice_idx == -1 or slice_size + last_block_size > 2 * large_tile_size:
                 last_small_slice_idx = len(subslices)
                 last_block_size = slice_size
                 subslices.append(slice)
