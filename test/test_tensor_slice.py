@@ -44,8 +44,8 @@ def test_tiling_balanced(block_size: int):
     data = torch.ones((256, 128))
     types = torch.zeros(256, dtype=torch.long)
     types[0:15] = 1
-    types[15:64] = 2
-    types[64:128] = 3
+    types[15:65] = 2
+    types[65:128] = 3
     types[128:256] = 4
     tensor_slice = compact_tensor_types(data, types)
     tensor_tile = tensor_slice.tiling(tile_size=16, block_size=block_size, method=TilingMethod.BALANCED)
