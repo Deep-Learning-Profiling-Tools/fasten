@@ -63,7 +63,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
             sorted_data_grad_ref[s] = torch.matmul(output_grad[s], other[t].t())
             other_grad_ref[t] = torch.matmul(tensor_slice.data[s].t(), output_grad[s])
         torch.testing.assert_close(tensor_slice.data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
-        if M // T >= 8192:
+        if M // T >= 4096:
             # gradient accumlation starts to be significantly different with large samples
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1.0, rtol=1e-2)
         else:
@@ -92,7 +92,7 @@ def benchmark_results(format: str = "csv"):
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
-@pytest.mark.parametrize("K", [16, 32, 64])
+@pytest.mark.parametrize("K", [16, 64, 256])
 def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
