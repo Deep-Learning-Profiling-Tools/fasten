@@ -82,7 +82,7 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
             subslices.append(slice)
         else:
             # small slice => a chain of blocks
-            if last_small_slice_idx == -1 or slice_size + last_block_size >= large_tile_size:
+            if last_small_slice_idx == -1 or slice_size + last_block_size > large_tile_size:
                 last_small_slice_idx = len(subslices)
                 last_block_size = slice_size
                 subslices.append(slice)
@@ -102,7 +102,7 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
-    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT, TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8, 16])
 
 
 def _init_segment_matmul_backward_scheduler():
