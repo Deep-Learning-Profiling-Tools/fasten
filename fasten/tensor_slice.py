@@ -163,7 +163,6 @@ class TensorSlice:
         cache_entry = self._lookup_cache(op_name, key)
 
         if cache_entry is not None:
-            print("cachit hit ", cache_entry.best_config.block_size)
             return cache_entry
 
         if autotune:
@@ -201,6 +200,8 @@ class TensorSlice:
             if ms < best_ms:
                 best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
+        if debug:
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, tiling_method={best_config.tiling_method}, ms={ms}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
