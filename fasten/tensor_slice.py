@@ -152,8 +152,6 @@ class TensorSlice:
             subslices, num_blocks = default_tiling(slices, tile_size, block_size)
         elif method == TilingMethod.BALANCED:
             subslices, num_blocks = balanced_tiling(slices, tile_size, block_size)
-            # Mark it as dynamic tiling
-            block_size = -1
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
