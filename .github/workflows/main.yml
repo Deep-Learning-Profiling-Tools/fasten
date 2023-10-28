@@ -37,4 +37,5 @@ jobs:
     - name: run test cases
       run: | 
         cd ./test;
-        pytest --tb=line -k "cpu and(slices0 or slices1)"
+        pytest --tb=line -k "cpu and(slices0 or slices1)" test_ops.py
+        pytest --tb=line -k "cpu" test_nn.py test_triton.py test_tensor_slice.py 
