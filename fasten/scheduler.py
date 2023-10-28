@@ -89,7 +89,7 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
             else:
                 last_block_size += slice_size
                 small_slice_pool.append(slice)
-            small_slice_indices.append(last_small_slice_idx)
+                small_slice_indices.append(last_small_slice_idx)
 
     num_blocks = len(subslices)
     for index in small_slice_indices:
