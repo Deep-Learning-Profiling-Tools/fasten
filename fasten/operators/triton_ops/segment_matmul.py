@@ -182,7 +182,7 @@ def segment_matmul_kernel(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-                for i in range(0, BLOCK_SIZE):
+                for i in range(0, tl.cdiv(length, BLOCK_SIZE_M)):
                     cur_start_off = start_off + i * BLOCK_SIZE_M
                     cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
                     if cur_end_off - cur_start_off <= BLOCK_M_16 and DYNAMIC_TILING:
