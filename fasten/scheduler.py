@@ -58,7 +58,6 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
 
 def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
     slice_pool = []
-    subslices = []
     large_tile_size = tile_size * block_size
     for slice in slices:
         index = slice[0]
@@ -67,51 +66,35 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
         end = slice[3]
         for off in range(start, end, large_tile_size):
             if off + large_tile_size <= end:
-                subslices.append([index, type, off, off + large_tile_size, -1])
+                slice_pool.append([index, type, off, off + large_tile_size, -1])
             else:
-                slice_pool.append([index, type, off, end])
+                slice_pool.append([index, type, off, end, -1])
 
-    slice_pool = sorted(slice_pool, key=lambda s: s[3] - s[2], reverse=True)
-    # bin packing is np hard, so we use a greedy algorithm here
-    bins = []
+    last_small_slice_idx = -1
+    last_block_size = 0
+    subslices = []
+    small_slice_pool = []
+    small_slice_indices = []
     for slice in slice_pool:
-        slice_length = slice[3] - slice[2]
-        best_fit_bin_idx = -1
-        least_space_left = float('inf')
-
-        for i, bin in enumerate(bins):
-            if bin[1] >= slice_length and bin[1] - slice_length < least_space_left:
-                least_space_left = bin[1] - slice_length
-                best_fit_bin_idx = i
-
-        if best_fit_bin_idx != -1:
-            bins[best_fit_bin_idx][0].append(slice)
-            bins[best_fit_bin_idx][1] -= slice_length
+        slice_size = slice[3] - slice[2]
+        if slice_size == large_tile_size:
+            # large slice => single block
+            subslices.append(slice)
         else:
-            bins.append([[slice], large_tile_size - slice_length])
+            # small slice => a chain of blocks
+            if last_small_slice_idx == -1 or slice_size + last_block_size >= large_tile_size:
+                last_small_slice_idx = len(subslices)
+                last_block_size = slice_size
+                subslices.append(slice)
+            else:
+                last_block_size += slice_size
+                small_slice_pool.append(slice)
+            small_slice_indices.append(last_small_slice_idx)
 
-    num_blocks = len(bins) + len(subslices)
-    block_idx = num_blocks
-
-    # merge bins into subslices
-    for bin in bins:
-        bin_slices = bin[0]
-        new_subslices = []
-
-        for slice in bin_slices:
-            index, type, start, end = slice[:4]
-            for off in range(start, end, tile_size):
-                if off + tile_size <= end:
-                    new_subslices.append([index, type, off, off + tile_size, -1])
-                else:
-                    new_subslices.append([index, type, off, end, -1])
-
-        # Link the subslices together
-        for i in range(len(new_subslices) - 1):
-            new_subslices[i][4] = block_idx + i
-
-        block_idx += len(new_subslices) - 1
-        subslices.extend(new_subslices)
+    num_blocks = len(subslices)
+    for index in small_slice_indices:
+        subslices[index][4] = len(subslices)
+        subslices.append(small_slice_pool.pop(0))
 
     return subslices, num_blocks
 
