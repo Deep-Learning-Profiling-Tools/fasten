@@ -23,7 +23,7 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
     tiling_method = getattr(TilingMethod, tiling_method.upper())
     if phase == "forward":
         input_tiles = tensor_slice.tiling(tile_size, method=tiling_method)
-        output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, out_dtype=torch.float32, num_blocks=input_tiles.num_blocks)
+        output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, out_dtype=torch.float32, num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
         output_ref = torch.zeros((M, K), dtype=dtype, device="cuda")
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
