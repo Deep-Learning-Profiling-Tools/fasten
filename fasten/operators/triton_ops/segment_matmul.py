@@ -223,7 +223,7 @@ def segment_matmul_kernel(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-                if BLOCK_SIZE_M * BLOCK_SIZE == length:
+                if length == BLOCK_SIZE_M * BLOCK_SIZE:  # fast path
                     for i in range(0, BLOCK_SIZE):
                         cur_start_off = start_off + i * BLOCK_SIZE_M
                         cur_end_off = cur_start_off + BLOCK_SIZE_M
