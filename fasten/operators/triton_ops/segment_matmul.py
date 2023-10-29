@@ -275,7 +275,7 @@ def segment_matmul_kernel(
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
         for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off
+            cur_start_off = start_off + i * BLOCK_SIZE_M
             cur_end_off = cur_start_off + BLOCK_SIZE_M
             _dispatch(
                 pid_n, type_id,
