@@ -53,7 +53,20 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
         end = slice[3]
         for off in range(start, end, tile_size):
             subslices.append([index, type, off, min(off + tile_size, end), -1])
-    return subslices, triton.cdiv(len(subslices), block_size)
+    num_blocks = triton.cdiv(len(subslices), block_size)
+    for i in range(num_blocks):
+        last_subslice_idx = (i + 1) * block_size - 1
+        if last_subslice_idx >= len(subslices):
+            continue
+        first_subslice = subslices[i * block_size]
+        last_subslice = subslices[last_subslice_idx]
+        first_subslice_start = first_subslice[2]
+        last_subslice_end = last_subslice[3]
+        first_subslice_type = first_subslice[1]
+        last_subslice_type = last_subslice[1]
+        if first_subslice_type == last_subslice_type and first_subslice_start + tile_size * block_size == last_subslice_end:
+            first_subslice[4] = 1  # contigous block
+    return subslices, num_blocks
 
 
 def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
