@@ -8,7 +8,7 @@ from ...utils import torch_dtype_to_triton_dtype
 
 
 @triton.jit
-def _dynamic_tiling(
+def _matmul(
     pid_n, type_id,
     start_off, end_off,
     input, other, output,
@@ -55,6 +55,88 @@ def _dynamic_tiling(
     tl.store(c_ptrs, acc, mask=c_mask)
 
 
+@triton.jit
+def _dispatch(
+    pid_n, type_id,
+    start_off, end_off,
+    input, other, output,
+    K, N,
+    stride_input_m, stride_input_k,
+    stride_other_b, stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr
+):
+    BLOCK_M_16: tl.constexpr = 16
+    BLOCK_M_32: tl.constexpr = 32
+    BLOCK_M_64: tl.constexpr = 64
+
+    if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
+        _matmul(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            EVEN_K=EVEN_K,
+            BLOCK_M=BLOCK_M_16,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
+        _matmul(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            EVEN_K=EVEN_K,
+            BLOCK_M=BLOCK_M_32,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
+        _matmul(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            EVEN_K=EVEN_K,
+            BLOCK_M=BLOCK_M_64,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+    else:
+        _matmul(
+            pid_n, type_id,
+            start_off, end_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            EVEN_K=EVEN_K,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K
+        )
+
+
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -95,10 +177,6 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
-    BLOCK_M_16: tl.constexpr = 16
-    BLOCK_M_32: tl.constexpr = 32
-    BLOCK_M_64: tl.constexpr = 64
-
     if BLOCK_SIZE > 0:
         for i in range(0, BLOCK_SIZE):
             next_id = pid_m * BLOCK_SIZE + i
@@ -113,66 +191,21 @@ def segment_matmul_kernel(
                     type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
                     cur_start_off = start_off
                     cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
-                    if cur_end_off - cur_start_off <= BLOCK_M_16 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_16,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    elif cur_end_off - cur_start_off <= BLOCK_M_32 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_32,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    elif cur_end_off - cur_start_off <= BLOCK_M_64 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_64,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    else:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_SIZE_M,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
+                    _dispatch(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        EVEN_K=EVEN_K,
+                        BLOCK_M=BLOCK_SIZE_M,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K,
+                        DYNAMIC_TILING=DYNAMIC_TILING
+                    )
     else:
         next_id = pid_m
         while next_id != -1:
@@ -185,66 +218,21 @@ def segment_matmul_kernel(
                 for i in range(0, tl.cdiv(length, BLOCK_SIZE_M)):
                     cur_start_off = start_off + i * BLOCK_SIZE_M
                     cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
-                    if cur_end_off - cur_start_off <= BLOCK_M_16 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_16,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    elif cur_end_off - cur_start_off <= BLOCK_M_32 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_32,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    elif cur_end_off - cur_start_off <= BLOCK_M_64 and DYNAMIC_TILING:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_M_64,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
-                    else:
-                        _dynamic_tiling(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_SIZE_M,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K
-                        )
+                    _dispatch(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        EVEN_K=EVEN_K,
+                        BLOCK_M=BLOCK_SIZE_M,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K,
+                        DYNAMIC_TILING=DYNAMIC_TILING
+                    )
             next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
 
 
