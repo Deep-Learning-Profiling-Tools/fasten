@@ -268,109 +268,59 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
-    if BLOCK_SIZE > 0:
-        next_id = pid_m * BLOCK_SIZE
-        contiguous = False
-        contiguous = tl.load(input_tiles + 5 * next_id + 4).to(tl.int1)
-        if contiguous:
-            # large tiles
-            start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-            type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-            for i in range(0, BLOCK_SIZE):
-                cur_start_off = start_off
-                cur_end_off = cur_start_off + BLOCK_SIZE_M
-                _dispatch(
-                    pid_n, type_id,
-                    cur_start_off, cur_end_off,
-                    input, other, output,
-                    K, N,
-                    stride_input_m, stride_input_k,
-                    stride_other_b, stride_other_k, stride_other_n,
-                    stride_output_m, stride_output_n,
-                    out_dtype=out_dtype,
-                    EVEN_K=EVEN_K,
-                    BLOCK_M=BLOCK_SIZE_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
-                    DYNAMIC_TILING=DYNAMIC_TILING,
-                )
-        else:
-            for i in range(0, BLOCK_SIZE):
-                next_id = pid_m * BLOCK_SIZE + i
-                if next_id < NUM_TILES:
-                    # TODO: large tensors
-                    # Use int32 to reduce register usage
-                    start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-                    end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
-                    length = end_off - start_off
-
-                    if length > 0:
-                        type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-                        cur_start_off = start_off
-                        cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
-                        _dispatch(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_SIZE_M,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K,
-                            DYNAMIC_TILING=DYNAMIC_TILING,
-                        )
+    next_id = pid_m * BLOCK_SIZE
+    contiguous = tl.load(input_tiles + 5 * next_id + 4)
+    if contiguous == 1:
+        # large tiles
+        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+        type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+        for i in range(0, BLOCK_SIZE):
+            cur_start_off = start_off
+            cur_end_off = cur_start_off + BLOCK_SIZE_M
+            _dispatch(
+                pid_n, type_id,
+                cur_start_off, cur_end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_SIZE_M,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K,
+                DYNAMIC_TILING=DYNAMIC_TILING,
+            )
     else:
-        next_id = pid_m
-        while next_id != -1:
-            start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-            end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
-            length = end_off - start_off
+        for i in range(0, BLOCK_SIZE):
+            next_id = pid_m * BLOCK_SIZE + i
+            if next_id < NUM_TILES:
+                # TODO: large tensors
+                # Use int32 to reduce register usage
+                start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+                end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+                length = end_off - start_off
 
-            if length > 0:
-                type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-                if length == BLOCK_SIZE_M * BLOCK_SIZE:  # fast path
-                    for i in range(0, BLOCK_SIZE):
-                        cur_start_off = start_off + i * BLOCK_SIZE_M
-                        cur_end_off = cur_start_off + BLOCK_SIZE_M
-                        _dispatch(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_SIZE_M,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K,
-                            DYNAMIC_TILING=DYNAMIC_TILING,
-                        )
-                else:
-                    for i in range(0, tl.cdiv(length, BLOCK_SIZE_M)):
-                        cur_start_off = start_off + i * BLOCK_SIZE_M
-                        cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
-                        _dispatch(
-                            pid_n, type_id,
-                            cur_start_off, cur_end_off,
-                            input, other, output,
-                            K, N,
-                            stride_input_m, stride_input_k,
-                            stride_other_b, stride_other_k, stride_other_n,
-                            stride_output_m, stride_output_n,
-                            out_dtype=out_dtype,
-                            EVEN_K=EVEN_K,
-                            BLOCK_M=BLOCK_SIZE_M,
-                            BLOCK_N=BLOCK_N,
-                            BLOCK_K=BLOCK_K,
-                            DYNAMIC_TILING=DYNAMIC_TILING,
-                        )
-            next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
+                if length > 0:
+                    type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+                    cur_start_off = start_off
+                    cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
+                    _dispatch(
+                        pid_n, type_id,
+                        cur_start_off, cur_end_off,
+                        input, other, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_b, stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        EVEN_K=EVEN_K,
+                        BLOCK_M=BLOCK_SIZE_M,
+                        BLOCK_N=BLOCK_N,
+                        BLOCK_K=BLOCK_K,
+                        DYNAMIC_TILING=DYNAMIC_TILING,
+                    )
 
 
 # TODO(Keren): split_matmul_kernel

@@ -69,6 +69,7 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
     return subslices, num_blocks
 
 
+# XXX(Keren): balanced tiling is disabled for performance issues
 def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
     slice_pool = []
     large_tile_size = tile_size * block_size
@@ -118,7 +119,7 @@ def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
-    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT, TilingMethod.BALANCED], block_sizes=[1, 4, 16, 32, 64])
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 4, 16, 32, 64])
 
 
 def _init_segment_matmul_backward_scheduler():

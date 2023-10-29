@@ -14,7 +14,7 @@ from fasten.utils import TilingMethod
 @pytest.mark.parametrize("block_size", [1, 4])
 @pytest.mark.parametrize("K", [16, 80])
 @pytest.mark.parametrize("device", ["cuda"])
-@pytest.mark.parametrize("tiling_method", ["default", "balanced"])
+@pytest.mark.parametrize("tiling_method", ["default"])
 def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_size: int, block_size: int, device: str, tiling_method: str) -> None:
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), dtype=dtype, device=device)
