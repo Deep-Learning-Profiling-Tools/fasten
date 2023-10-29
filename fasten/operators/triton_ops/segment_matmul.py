@@ -87,53 +87,104 @@ def _dispatch(
     BLOCK_M_64: tl.constexpr = 64
 
     if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
-        _matmul(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            MASK_M=True,
-            EVEN_K=EVEN_K,
-            BLOCK_M=BLOCK_M_16,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
+        if start_off - end_off == BLOCK_M_16:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=False,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_M_16,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
+        else:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=True,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_M_16,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
     elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
-        _matmul(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            EVEN_K=EVEN_K,
-            MASK_M=True,
-            BLOCK_M=BLOCK_M_32,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
+        if start_off - end_off == BLOCK_M_32:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                EVEN_K=EVEN_K,
+                MASK_M=False,
+                BLOCK_M=BLOCK_M_32,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
+        else:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                EVEN_K=EVEN_K,
+                MASK_M=True,
+                BLOCK_M=BLOCK_M_32,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
     elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
-        _matmul(
-            pid_n, type_id,
-            start_off, end_off,
-            input, other, output,
-            K, N,
-            stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
-            stride_output_m, stride_output_n,
-            out_dtype=out_dtype,
-            MASK_M=True,
-            EVEN_K=EVEN_K,
-            BLOCK_M=BLOCK_M_64,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
-        )
+        if start_off - end_off == BLOCK_M_64:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=False,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_M_64,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
+        else:
+            _matmul(
+                pid_n, type_id,
+                start_off, end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=True,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_M_64,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K
+            )
     else:
         if start_off - end_off == BLOCK_M:
             _matmul(
