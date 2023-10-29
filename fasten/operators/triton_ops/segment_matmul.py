@@ -34,7 +34,7 @@ def _matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
-    mask_m = offs_m[:, None] < end_off if MASK_M else None
+    mask_m = offs_m[:, None] < end_off if MASK_M else True
 
     k_iter = K // BLOCK_K if EVEN_K else tl.cdiv(K, BLOCK_K)
     for k in range(0, k_iter):
