@@ -17,6 +17,7 @@ def _matmul(
     stride_other_b, stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
+    MASK_M: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -33,16 +34,24 @@ def _matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
-    mask_m = offs_m[:, None] < end_off
+    mask_m = offs_m[:, None] < end_off if MASK_M else None
 
     k_iter = K // BLOCK_K if EVEN_K else tl.cdiv(K, BLOCK_K)
     for k in range(0, k_iter):
         if EVEN_K:
-            a = tl.load(input_ptrs, mask=mask_m, other=0.0)
-            b = tl.load(other_ptrs)
+            if MASK_M:
+                a = tl.load(input_ptrs, mask=mask_m, other=0.0)
+                b = tl.load(other_ptrs)
+            else:
+                a = tl.load(input_ptrs)
+                b = tl.load(other_ptrs)
         else:
-            a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
-            b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
+            if MASK_M:
+                a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+                b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
+            else:
+                a = tl.load(input_ptrs, mask=(offs_k[None, :] + k * BLOCK_K < K), other=0.0)
+                b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_K * stride_input_k
         other_ptrs += BLOCK_K * stride_other_k
