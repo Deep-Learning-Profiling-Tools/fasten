@@ -271,7 +271,7 @@ def segment_matmul_kernel(
     if BLOCK_SIZE > 0:
         next_id = pid_m * BLOCK_SIZE
         contiguous = False
-        contiguous = tl.load(input_tiles + 5 * next_id + 4).to(tl.bool)
+        contiguous = tl.load(input_tiles + 5 * next_id + 4).to(tl.int1)
         if contiguous:
             # large tiles
             start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
