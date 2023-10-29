@@ -10,7 +10,7 @@ from ...utils import torch_dtype_to_triton_dtype
 @triton.jit
 def _blocked_matmul(
     pid_n, type_id,
-    start_off, end_off,
+    start_off,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
@@ -34,6 +34,8 @@ def _blocked_matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
+    a = tl.zeros((BLOCK_M, BLOCK_K), dtype=input.dtype.element_ty)
+    b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
 
     for i in range(0, BLOCK_SIZE):
         if i == 0:
