@@ -139,14 +139,22 @@ def _dispatch(
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=3),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=4),
+        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
@@ -204,7 +212,6 @@ def segment_matmul_kernel(
                         BLOCK_M=BLOCK_SIZE_M,
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K,
-                        DYNAMIC_TILING=DYNAMIC_TILING
                     )
     else:
         next_id = pid_m
@@ -231,7 +238,6 @@ def segment_matmul_kernel(
                         BLOCK_M=BLOCK_SIZE_M,
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K,
-                        DYNAMIC_TILING=DYNAMIC_TILING
                     )
             next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
 
@@ -326,7 +332,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
-        DYNAMIC_TILING=False,
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
@@ -366,7 +371,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_output.stride(0), grad_output.stride(1),
             other.stride(0), other.stride(2), other.stride(1),  # swap K and N
             grad_input.stride(0), grad_input.stride(1),
-            DYNAMIC_TILING=False,
             NUM_TILES=num_tiles,
             NUM_BLOCKS=num_blocks,
             BLOCK_SIZE=block_size,
