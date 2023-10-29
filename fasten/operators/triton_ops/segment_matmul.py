@@ -212,6 +212,7 @@ def segment_matmul_kernel(
                         BLOCK_M=BLOCK_SIZE_M,
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K,
+                        DYNAMIC_TILING=DYNAMIC_TILING,
                     )
     else:
         next_id = pid_m
@@ -238,6 +239,7 @@ def segment_matmul_kernel(
                         BLOCK_M=BLOCK_SIZE_M,
                         BLOCK_N=BLOCK_N,
                         BLOCK_K=BLOCK_K,
+                        DYNAMIC_TILING=DYNAMIC_TILING,
                     )
             next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
 
