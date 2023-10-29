@@ -7,7 +7,7 @@ import triton.language as tl
 from ...utils import torch_dtype_to_triton_dtype
 
 
-@triton.jit(noinline=True)
+@triton.jit
 def _matmul(
     pid_n, type_id,
     start_off, end_off,
