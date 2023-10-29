@@ -97,7 +97,7 @@ def _dispatch(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
-            MASK_M=True,
+            MASK_M=end_off - start_off < BLOCK_M_16,
             BLOCK_M=BLOCK_M_16,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
@@ -113,7 +113,7 @@ def _dispatch(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
-            MASK_M=True,
+            MASK_M=end_off - start_off < BLOCK_M_32,
             BLOCK_M=BLOCK_M_32,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
@@ -129,7 +129,7 @@ def _dispatch(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
-            MASK_M=True,
+            MASK_M=end_off - start_off < BLOCK_M_64,
             BLOCK_M=BLOCK_M_64,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
@@ -145,7 +145,7 @@ def _dispatch(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
-            MASK_M=False,
+            MASK_M=True,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K
