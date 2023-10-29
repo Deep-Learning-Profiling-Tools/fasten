@@ -65,7 +65,8 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
         first_subslice_type = first_subslice[1]
         last_subslice_type = last_subslice[1]
         if first_subslice_type == last_subslice_type and first_subslice_start + tile_size * block_size == last_subslice_end:
-            first_subslice[4] = 1  # contigous block
+            first_subslice[4] = 1  # large block
+        # else small block
     return subslices, num_blocks
 
 
