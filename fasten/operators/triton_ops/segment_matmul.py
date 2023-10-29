@@ -60,8 +60,10 @@ def _matmul(
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
-    c_mask = mask_m & mask_n
-    tl.store(c_ptrs, acc, mask=c_mask)
+    if MASK_M:
+        tl.store(c_ptrs, acc, mask=mask_m & mask_n)
+    else:
+        tl.store(c_ptrs, acc)
 
 
 @triton.jit
