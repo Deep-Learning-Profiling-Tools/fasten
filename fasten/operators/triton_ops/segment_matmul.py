@@ -34,23 +34,22 @@ def _blocked_matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
+    a = tl.zeros((BLOCK_M, BLOCK_K), dtype=input.dtype.element_ty)
     b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
 
-    for _ in tl.static_range(0, 1):
-        if EVEN_K:
-            a = tl.load(input_ptrs)
-            b = tl.load(other_ptrs)
+    for i in range(0, BLOCK_SIZE):
+        if i == 0:
+            if EVEN_K:
+                a = tl.load(input_ptrs)
+                b = tl.load(other_ptrs)
+            else:
+                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+                b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
         else:
-            a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
-            b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_M * stride_input_m
-
-    for _ in tl.static_range(1, BLOCK_SIZE):
-        if EVEN_K:
-            a = tl.load(input_ptrs)
-        else:
-            a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+            if EVEN_K:
+                a = tl.load(input_ptrs)
+            else:
+                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_M * stride_input_m
 
