@@ -255,10 +255,9 @@ def segment_matmul_kernel(
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
         if K <= BLOCK_SIZE_K and BLOCK_SIZE_K <= 64:
             cur_start_off = start_off
-            cur_end_off = cur_start_off + BLOCK_SIZE_M * BLOCK_SIZE
             _blocked_matmul(
                 pid_n, type_id,
-                cur_start_off, cur_end_off,
+                cur_start_off,
                 input, other, output,
                 K, N,
                 stride_input_m, stride_input_k,
