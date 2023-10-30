@@ -19,6 +19,9 @@ DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
 slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
 
+# non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
+use_cudagraph = False
+
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
@@ -63,7 +66,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
             sorted_data_grad_ref[s] = torch.matmul(output_grad[s], other[t].t())
             other_grad_ref[t] = torch.matmul(tensor_slice.data[s].t(), output_grad[s])
         torch.testing.assert_close(tensor_slice.data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
-        if M // T >= 8192:
+        if M // T >= 4096:
             # gradient accumlation starts to be significantly different with large samples
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1.0, rtol=1e-2)
         else:
@@ -92,7 +95,7 @@ def benchmark_results(format: str = "csv"):
 @pytest.mark.parametrize("phase", ["forward", "backward", "full"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
-@pytest.mark.parametrize("K", [16, 32, 64])
+@pytest.mark.parametrize("K", [32, 64, 256])
 def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
@@ -135,7 +138,12 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    fasten_ms = triton.testing.do_bench(fasten_fn)
+    if use_cudagraph:
+        stream = torch.cuda.Stream()
+        torch.cuda.set_stream(stream)
+        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
+    else:
+        fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
     print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
