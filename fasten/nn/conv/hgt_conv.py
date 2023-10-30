@@ -6,13 +6,14 @@ from torch import Tensor
 from torch.nn import Parameter
 
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.dense import HeteroDictLinear, HeteroLinear
+from torch_geometric.nn.dense import HeteroLinear
 from torch_geometric.nn.inits import ones
 from torch_geometric.nn.parameter_dict import ParameterDict
 from torch_geometric.typing import Adj, EdgeType, Metadata, NodeType
 from torch_geometric.utils import softmax
 from torch_geometric.utils.hetero import construct_bipartite_edge_index
 from fasten.nn.linear import FastenHeteroDictLinear
+from fasten import TensorSlice
 
 
 class FastenHGTConv(MessagePassing):
@@ -157,7 +158,9 @@ class FastenHGTConv(MessagePassing):
     def forward(
         self,
         x_dict: Dict[NodeType, Tensor],
-        edge_index_dict: Dict[EdgeType, Adj]  # Support both.
+        edge_index_dict: Dict[EdgeType, Adj], # Support both.
+        tensor_slice: TensorSlice = None,  
+        slices: list = None, **kwargs
     ) -> Dict[NodeType, Optional[Tensor]]:
         r"""Runs the forward pass of the module.
 
@@ -182,7 +185,7 @@ class FastenHGTConv(MessagePassing):
         k_dict, q_dict, v_dict, out_dict = {}, {}, {}, {}
 
         # Compute K, Q, V over node types:
-        kqv_dict = self.kqv_lin(x_dict)
+        kqv_dict = self.kqv_lin(x_dict, tensor_slice, slices)
         for key, val in kqv_dict.items():
             k, q, v = torch.tensor_split(val, 3, dim=1)
             k_dict[key] = k.view(-1, H, D)
@@ -210,7 +213,7 @@ class FastenHGTConv(MessagePassing):
             k:
             torch.nn.functional.gelu(v) if v is not None else v
             for k, v in out_dict.items()
-        })
+        }, tensor_slice, slices)
 
         # Iterate over node types:
         for node_type, out in out_dict.items():

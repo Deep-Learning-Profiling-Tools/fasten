@@ -13,7 +13,7 @@ from torch_geometric.nn import inits
 from torch_geometric.typing import pyg_lib
 from torch_geometric.utils import index_sort, scatter
 from torch_geometric.utils.sparse import index2ptr
-from fasten import Engine, ops, compact_tensor_types
+from fasten import Engine, ops, TensorSlice
 
 
 def is_uninitialized_parameter(x: Any) -> bool:
@@ -390,6 +390,8 @@ class FastenHeteroDictLinear(torch.nn.Module):
     def forward(
         self,
         x_dict: Dict[str, Tensor],
+        tensor_slice: TensorSlice = None,
+        slices: list = None, **kwargs
     ) -> Dict[str, Tensor]:
         r"""
         Args:
@@ -415,26 +417,28 @@ class FastenHeteroDictLinear(torch.nn.Module):
                     weights.append(lin.weight.t())
                     biases.append(lin.bias)
             biases = None if biases[0] is None else biases
+            print("X_dict Keys:", x_dict.keys())
+            print("Self lin keys:", self.lins.keys())
+            #Stacking the input and weight tensor to feed it to segment matmul
             stacked_xs = torch.cat(xs, dim=0)
-            # print("Input shape:",stacked_xs.shape)
+            # print("X_dict dimensions:", stacked_xs.shape)
             stacked_weights = torch.stack(weights)
-            xs_slices = [slice(xs_ptr[i], xs_ptr[i+1]) for i in range(len(xs_ptr) - 1)] 
-            # print("slices:", xs_slices)
-            # print("weights:", stacked_weights.shape)
-            types = torch.zeros((stacked_xs.shape[0],), device="cuda", dtype=torch.int)
-            for i, s in enumerate(xs_slices):
-                types[s] = i
-            tensor_slice = compact_tensor_types(data = stacked_xs, types = types,is_sorted = True, device= "cuda")
-            out_segmm = ops.fasten_segment_matmul(tensor_slice.data, stacked_weights, tensor_slice,  Engine.TRITON)
-            # print("output:", out_segmm.shape)
-            # print("called triton segmmm")
-            # outs = pyg_lib.ops.grouped_matmul(xs, weights, biases)
-            # if biases[0] is not None:
-            #     stacked_biases = torch.cat(biases, dim=0)
-            #     print("Bias shape:", stacked_biases.shape)
-            #     out_segmm = out_segmm + stacked_biases
+            #Creating slices from ptr vector to create tensor_slice
+            # xs_slices = [slice(xs_ptr[i], xs_ptr[i+1]) for i in range(len(xs_ptr) - 1)] 
+            # print(xs_slices)
+            # types = torch.zeros((stacked_xs.shape[0],), device="cuda", dtype=torch.int)
+            # for i, s in enumerate(xs_slices):
+            #     types[s] = i
+            # # print("Types", types.shape)
+            # print("XS_slice", stacked_xs[5,30:35])
+            # print("End of types:",types[:10] )
+            # tensor_slice = compact_tensor_types(data = stacked_xs, types = types,is_sorted = True, device= "cuda")
+            # Calling fasten Segment Matmul instead of grouped matmul
+            # print("Tensor data:",tensor_slice.data.shape)
+            out_segmm = ops.fasten_segment_matmul(stacked_xs, stacked_weights, tensor_slice,  Engine.TRITON)
+
             outs = []
-            for s in xs_slices:
+            for s in slices:
                 outs.append(out_segmm[s])
             
             if biases is not None:

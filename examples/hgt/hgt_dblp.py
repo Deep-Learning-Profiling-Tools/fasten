@@ -5,14 +5,27 @@ import torch.nn.functional as F
 
 import torch_geometric.transforms as T
 from torch_geometric.datasets import DBLP
-from torch_geometric.nn import HGTConv, Linear
+from torch_geometric.nn import Linear
 from fasten.nn import FastenHGTConv
+from fasten import compact_tensor_types, TensorSlice
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '/home/kganapa/data/DBLP')
 # We initialize conference node features with a single one-vector as feature:
 dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
-print(data)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def tensor_slice_gen(data) -> TensorSlice:
+    ptr =[0]
+    for key, value in data.x_dict.items():
+        print(key)
+        print(ptr[-1]+ data.x_dict[key].shape[0])
+    slices = [slice(ptr[i], ptr[i+1]) for i in range(len(ptr) - 1)]
+    types = torch.zeros((ptr[-1],), device=device, dtype=torch.int)
+    for i, s in enumerate(slices):
+        types[s] = i
+    tensor_slice = compact_tensor_types(data = None, types = types, is_sorted = True, device= device)
+    return tensor_slice, slices
 
 
 class HGT(torch.nn.Module):
@@ -31,14 +44,14 @@ class HGT(torch.nn.Module):
 
         self.lin = Linear(hidden_channels, out_channels)
 
-    def forward(self, x_dict, edge_index_dict):
+    def forward(self, x_dict, edge_index_dict, tensor_slice, slices):
         x_dict = {
             node_type: self.lin_dict[node_type](x).relu_()
             for node_type, x in x_dict.items()
         }
 
         for conv in self.convs:
-            x_dict = conv(x_dict, edge_index_dict)
+            x_dict = conv(x_dict = x_dict, edge_index_dict = edge_index_dict, tensor_slice=tensor_slice, slices=slices)
 
         return self.lin(x_dict['author'])
 
@@ -46,17 +59,19 @@ class HGT(torch.nn.Module):
 model = HGT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 data, model = data.to(device), model.to(device)
+tensor_slice, slices = tensor_slice_gen(data)
 
 with torch.no_grad():  # Initialize lazy modules.
-    out = model(data.x_dict, data.edge_index_dict)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
 
 def train():
+    tensor_slice, slices = tensor_slice_gen(data)
     model.train()
     optimizer.zero_grad()
-    out = model(data.x_dict, data.edge_index_dict)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
     mask = data['author'].train_mask
     loss = F.cross_entropy(out[mask], data['author'].y[mask])
     loss.backward()
@@ -67,7 +82,7 @@ def train():
 @torch.no_grad()
 def test():
     model.eval()
-    pred = model(data.x_dict, data.edge_index_dict).argmax(dim=-1)
+    pred = model(data.x_dict, data.edge_index_dict, tensor_slice, slices).argmax(dim=-1)
 
     accs = []
     for split in ['train_mask', 'val_mask', 'test_mask']:
