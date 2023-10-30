@@ -36,7 +36,7 @@ def _blocked_matmul(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
     b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
 
-    for i in range(0, 1):
+    for _ in tl.static_range(0, 1):
         if EVEN_K:
             a = tl.load(input_ptrs)
             b = tl.load(other_ptrs)
@@ -46,7 +46,7 @@ def _blocked_matmul(
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_M * stride_input_m
 
-    for i in range(1, BLOCK_SIZE):
+    for _ in tl.static_range(1, BLOCK_SIZE):
         if EVEN_K:
             a = tl.load(input_ptrs)
         else:
