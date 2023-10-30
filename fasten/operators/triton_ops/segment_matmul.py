@@ -222,7 +222,7 @@ def _dispatch(
     key=['N', 'K'],
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: (args['K'] % args['BLOCK_SIZE_K']) == 0,
+    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0,
     'MASK_K': lambda args: args['K'] != args['BLOCK_SIZE_K']
 })
 @triton.jit
