@@ -4,7 +4,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 from torch import Tensor
 from torch.nn import Parameter
-
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense import HeteroLinear
 from torch_geometric.nn.inits import ones
@@ -12,8 +11,9 @@ from torch_geometric.nn.parameter_dict import ParameterDict
 from torch_geometric.typing import Adj, EdgeType, Metadata, NodeType
 from torch_geometric.utils import softmax
 from torch_geometric.utils.hetero import construct_bipartite_edge_index
-from fasten.nn.linear import FastenHeteroDictLinear
+
 from fasten import TensorSlice
+from fasten.nn.linear import FastenHeteroDictLinear
 
 
 class FastenHGTConv(MessagePassing):
@@ -42,6 +42,7 @@ class FastenHGTConv(MessagePassing):
         **kwargs (optional): Additional arguments of
             :class:`torch_geometric.nn.conv.MessagePassing`.
     """
+
     def __init__(
         self,
         in_channels: Union[int, Dict[str, int]],
@@ -72,10 +73,10 @@ class FastenHGTConv(MessagePassing):
         self.dst_node_types = set([key[-1] for key in self.edge_types])
 
         self.kqv_lin = FastenHeteroDictLinear(self.in_channels,
-                                        self.out_channels * 3)
+                                              self.out_channels * 3)
 
         self.out_lin = FastenHeteroDictLinear(self.out_channels, self.out_channels,
-                                        types=self.node_types)
+                                              types=self.node_types)
 
         dim = out_channels // heads
         num_types = heads * len(self.edge_types)
@@ -159,8 +160,8 @@ class FastenHGTConv(MessagePassing):
         self,
         x_dict: Dict[NodeType, Tensor],
         edge_index_dict: Dict[EdgeType, Adj],
-        tensor_slice: TensorSlice = None,  
-        slices = None
+        tensor_slice: TensorSlice = None,
+        slices=None
     ) -> Dict[NodeType, Optional[Tensor]]:
         r"""Runs the forward pass of the module.
 

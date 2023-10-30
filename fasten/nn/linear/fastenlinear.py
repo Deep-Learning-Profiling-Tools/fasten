@@ -4,16 +4,16 @@ from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
-from torch import Tensor
-from torch.nn.parameter import Parameter
-
 import torch_geometric.backend
 import torch_geometric.typing
+from torch import Tensor
+from torch.nn.parameter import Parameter
 from torch_geometric.nn import inits
 from torch_geometric.typing import pyg_lib
 from torch_geometric.utils import index_sort, scatter
 from torch_geometric.utils.sparse import index2ptr
-from fasten import Engine, ops, TensorSlice
+
+from fasten import Engine, TensorSlice, ops
 
 
 def is_uninitialized_parameter(x: Any) -> bool:
@@ -424,7 +424,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
             # print("X_dict dimensions:", stacked_xs.shape)
             stacked_weights = torch.stack(weights)
             #Creating slices from ptr vector to create tensor_slice
-            # xs_slices = [slice(xs_ptr[i], xs_ptr[i+1]) for i in range(len(xs_ptr) - 1)] 
+            # xs_slices = [slice(xs_ptr[i], xs_ptr[i+1]) for i in range(len(xs_ptr) - 1)]
             # print(xs_slices)
             # types = torch.zeros((stacked_xs.shape[0],), device="cuda", dtype=torch.int)
             # for i, s in enumerate(xs_slices):
@@ -440,7 +440,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
             outs = []
             for s in slices:
                 outs.append(out_segmm[s])
-            
+
             if biases is not None:
                 for i in range(len(biases)):
                   outs[i] = outs[i] + biases[i]

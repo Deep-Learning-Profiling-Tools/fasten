@@ -2,12 +2,12 @@ import os.path as osp
 
 import torch
 import torch.nn.functional as F
-
 import torch_geometric.transforms as T
 from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
+
+from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
-from fasten import compact_tensor_types, TensorSlice
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '/home/kganapa/data/DBLP')
 # We initialize conference node features with a single one-vector as feature:
