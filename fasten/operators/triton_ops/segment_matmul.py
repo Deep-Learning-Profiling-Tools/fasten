@@ -21,7 +21,7 @@ def _blocked_matmul(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
-    EVEN_K: tl.constexpr
+    MASK_K: tl.constexpr
 ):
     offs_m = start_off + tl.arange(0, BLOCK_M)
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -39,24 +39,25 @@ def _blocked_matmul(
 
     for i in range(0, BLOCK_SIZE):
         if i == 0:
-            if EVEN_K:
-                a = tl.load(input_ptrs)
-                b = tl.load(other_ptrs)
-            else:
+            if MASK_K:
                 a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
                 b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
-        else:
-            if EVEN_K:
-                a = tl.load(input_ptrs)
             else:
+                a = tl.load(input_ptrs)
+                b = tl.load(other_ptrs)
+        else:
+            if MASK_K:
                 a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+            else:
+                a = tl.load(input_ptrs)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_M * stride_input_m
 
+    mask_n = offs_n[None, :] < N
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
-    tl.store(c_ptrs, acc)
+    tl.store(c_ptrs, acc, mask=mask_n)
 
 
 @triton.jit
@@ -115,7 +116,7 @@ def _matmul(
     if MASK_M:
         tl.store(c_ptrs, acc, mask=mask_m & mask_n)
     else:
-        tl.store(c_ptrs, acc)
+        tl.store(c_ptrs, acc, mask_n)
 
 
 @triton.jit
@@ -221,7 +222,8 @@ def _dispatch(
     key=['N', 'K'],
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0
+    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0,
+    'MASK_K': lambda args: args['K'] == args['BLOCK_SIZE_K'] != 0
 })
 @triton.jit
 def segment_matmul_kernel(
@@ -237,6 +239,7 @@ def segment_matmul_kernel(
     NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
+    MASK_K: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr
@@ -253,7 +256,7 @@ def segment_matmul_kernel(
         # large tiles
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-        if K == BLOCK_SIZE_K and BLOCK_SIZE_K <= 32:
+        if BLOCK_SIZE_K <= 32:
             _blocked_matmul(
                 pid_n, type_id,
                 start_off,
@@ -268,6 +271,7 @@ def segment_matmul_kernel(
                 BLOCK_N=BLOCK_N,
                 BLOCK_K=BLOCK_K,
                 EVEN_K=EVEN_K,
+                MASK_K=MASK_K,
             )
         else:
             for i in range(0, BLOCK_SIZE):
