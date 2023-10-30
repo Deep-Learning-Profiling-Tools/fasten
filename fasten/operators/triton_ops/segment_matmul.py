@@ -8,6 +8,51 @@ from ...utils import torch_dtype_to_triton_dtype
 
 
 @triton.jit
+def _blocked_matmul(
+    pid_n, type_id,
+    start_off,
+    input, other, output,
+    K, N,
+    stride_input_m, stride_input_k,
+    stride_other_b, stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr
+):
+    offs_m = start_off + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_k = tl.arange(0, BLOCK_K)
+    rn = tl.max_contiguous(tl.multiple_of(offs_n % N, BLOCK_N), BLOCK_N)
+
+    # [M, K] x [K, N] -> [M, N]
+    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
+    other_ptrs = other + type_id * stride_other_b + \
+        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
+    a = tl.zeros((BLOCK_M, BLOCK_K), dtype=input.dtype.element_ty)
+    b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
+
+    for i in range(0, BLOCK_SIZE):
+        if i == 0:
+            a = tl.load(input_ptrs)
+            b = tl.load(other_ptrs)
+        else:
+            a = tl.load(input_ptrs)
+        acc += tl.dot(a, b, out_dtype=out_dtype)
+        input_ptrs += BLOCK_M * stride_input_m
+
+    mask_n = offs_n[None, :] < N
+    acc = acc.to(output.dtype.element_ty)
+    c_ptrs = output + stride_output_m * \
+        offs_m[:, None] + stride_output_n * offs_n[None, :]
+    tl.store(c_ptrs, acc, mask=mask_n)
+
+
+@triton.jit
 def _matmul(
     pid_n, type_id,
     start_off, end_off,
@@ -63,7 +108,7 @@ def _matmul(
     if MASK_M:
         tl.store(c_ptrs, acc, mask=mask_m & mask_n)
     else:
-        tl.store(c_ptrs, acc)
+        tl.store(c_ptrs, acc, mask_n)
 
 
 @triton.jit
@@ -169,7 +214,8 @@ def _dispatch(
     key=['N', 'K'],
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0
+    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0,
+    'EQUAL_K': lambda args: args['K'] == args['BLOCK_SIZE_K']
 })
 @triton.jit
 def segment_matmul_kernel(
@@ -185,6 +231,7 @@ def segment_matmul_kernel(
     NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
+    EQUAL_K: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr,
     BLOCK_SIZE_N: tl.constexpr,
     BLOCK_SIZE_K: tl.constexpr
@@ -201,25 +248,41 @@ def segment_matmul_kernel(
         # large tiles
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-        for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off + i * BLOCK_SIZE_M
-            cur_end_off = cur_start_off + BLOCK_SIZE_M
-            _dispatch(
+        if EQUAL_K and BLOCK_SIZE_K <= 32:
+            _blocked_matmul(
                 pid_n, type_id,
-                cur_start_off, cur_end_off,
+                start_off,
                 input, other, output,
                 K, N,
                 stride_input_m, stride_input_k,
                 stride_other_b, stride_other_k, stride_other_n,
                 stride_output_m, stride_output_n,
                 out_dtype=out_dtype,
-                MASK_M=False,
-                EVEN_K=EVEN_K,
+                BLOCK_SIZE=BLOCK_SIZE,
                 BLOCK_M=BLOCK_SIZE_M,
                 BLOCK_N=BLOCK_N,
                 BLOCK_K=BLOCK_K,
-                DYNAMIC_TILING=DYNAMIC_TILING,
             )
+        else:
+            for i in range(0, BLOCK_SIZE):
+                cur_start_off = start_off + i * BLOCK_SIZE_M
+                cur_end_off = cur_start_off + BLOCK_SIZE_M
+                _dispatch(
+                    pid_n, type_id,
+                    cur_start_off, cur_end_off,
+                    input, other, output,
+                    K, N,
+                    stride_input_m, stride_input_k,
+                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_output_m, stride_output_n,
+                    out_dtype=out_dtype,
+                    MASK_M=False,
+                    EVEN_K=EVEN_K,
+                    BLOCK_M=BLOCK_SIZE_M,
+                    BLOCK_N=BLOCK_N,
+                    BLOCK_K=BLOCK_K,
+                    DYNAMIC_TILING=DYNAMIC_TILING,
+                )
     else:
         for i in range(0, BLOCK_SIZE):
             next_id = pid_m * BLOCK_SIZE + i
