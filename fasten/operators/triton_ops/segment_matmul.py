@@ -253,7 +253,7 @@ def segment_matmul_kernel(
         # large tiles
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-        if K <= BLOCK_SIZE_K and BLOCK_SIZE_K <= 32:
+        if K == BLOCK_SIZE_K and BLOCK_SIZE_K <= 32:
             _blocked_matmul(
                 pid_n, type_id,
                 start_off,
