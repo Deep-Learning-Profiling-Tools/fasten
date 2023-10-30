@@ -158,9 +158,9 @@ class FastenHGTConv(MessagePassing):
     def forward(
         self,
         x_dict: Dict[NodeType, Tensor],
-        edge_index_dict: Dict[EdgeType, Adj], # Support both.
+        edge_index_dict: Dict[EdgeType, Adj],
         tensor_slice: TensorSlice = None,  
-        slices: list = None, **kwargs
+        slices = None
     ) -> Dict[NodeType, Optional[Tensor]]:
         r"""Runs the forward pass of the module.
 
