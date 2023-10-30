@@ -6,7 +6,7 @@ from torch_geometric.nn import RGCNConv
 from utils import read_slices_from_csv
 
 from fasten import Engine, TensorSlice, compact_tensor_types
-from fasten.nn import FastenRGCNConv
+from fasten.nn.conv import FastenRGCNConv
 
 AIFB = read_slices_from_csv('AIFB.csv')
 AM = read_slices_from_csv('AM.csv')
