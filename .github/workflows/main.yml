@@ -1,0 +1,41 @@
+name: ci-cpu
+on: 
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - Karthikg99-patch-1
+  pull_request:
+    branches:
+      - main
+permissions: write-all
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11.2
+
+    - name: Caching dependencies
+      uses: actions/cache@v3
+      with:
+        path: ${{env.pythonLocation}}
+        key: ${{env.pythonLocation}} - ${{ hashFiles('setup.py') }}
+        
+    - name: install dependencies
+      run: |
+        pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install git+https://github.com/pyg-team/pytorch_geometric.git
+        pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+        pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+        pip install .;
+    
+    - name: run test cases
+      run: | 
+        cd ./test;
+        pytest --tb=line -k "cpu and(slices0 or slices1)" test_ops.py
+        pytest --tb=line -k "cpu" test_nn.py test_triton.py test_tensor_slice.py 
