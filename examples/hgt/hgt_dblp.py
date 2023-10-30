@@ -7,7 +7,7 @@ from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
 
 from fasten import TensorSlice, compact_tensor_types
-from fasten.nn.conv import FastenHGTConv
+from fasten.nn import FastenHGTConv
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
 # We initialize conference node features with a single one-vector as feature:
