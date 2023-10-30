@@ -19,6 +19,9 @@ DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
 slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
 
+# non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
+use_cudagraph = False
+
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
@@ -135,7 +138,12 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    fasten_ms = triton.testing.do_bench(fasten_fn)
+    if use_cudagraph:
+        stream = torch.cuda.Stream()
+        torch.cuda.set_stream(stream)
+        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
+    else:
+        fasten_ms = triton.testing.do_bench(fasten_fn)
     pyg_ms = triton.testing.do_bench(pyg_fn)
     print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
