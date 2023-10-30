@@ -270,7 +270,6 @@ def segment_matmul_kernel(
                 BLOCK_M=BLOCK_SIZE_M,
                 BLOCK_N=BLOCK_N,
                 BLOCK_K=BLOCK_K,
-                EVEN_K=EVEN_K,
                 MASK_K=MASK_K,
             )
         else:
