@@ -7,9 +7,9 @@ from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
 
 from fasten import TensorSlice, compact_tensor_types
-from fasten.nn import FastenHGTConv
+from fasten.nn.conv import FastenHGTConv
 
-path = osp.join(osp.dirname(osp.realpath(__file__)), '/home/kganapa/data/DBLP')
+path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
 # We initialize conference node features with a single one-vector as feature:
 dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
@@ -17,11 +17,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def tensor_slice_gen(data) -> TensorSlice:
     ptr =[0]
-    for key, value in data.x_dict.items():
-        print(key)
-        print(ptr[-1]+ data.x_dict[key].shape[0])
+    for key, _ in data.x_dict.items():
+        ptr.append(ptr[-1]+ data.x_dict[key].shape[0])
     slices = [slice(ptr[i], ptr[i+1]) for i in range(len(ptr) - 1)]
-    types = torch.zeros((ptr[-1],), device=device, dtype=torch.int)
+    types = torch.zeros((ptr[-1],), dtype=torch.int)
     for i, s in enumerate(slices):
         types[s] = i
     tensor_slice = compact_tensor_types(data = None, types = types, is_sorted = True, device= device)
@@ -68,7 +67,6 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
 
 def train():
-    tensor_slice, slices = tensor_slice_gen(data)
     model.train()
     optimizer.zero_grad()
     out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
