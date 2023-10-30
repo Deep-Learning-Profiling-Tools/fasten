@@ -152,8 +152,7 @@ class TensorSlice:
             subslices, num_blocks = default_tiling(slices, tile_size, block_size)
         elif method == TilingMethod.BALANCED:
             subslices, num_blocks = balanced_tiling(slices, tile_size, block_size)
-            # Mark it as dynamic tiling
-            block_size = -1
+            block_size = -1  # dynamic tile size
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
@@ -190,7 +189,7 @@ class TensorSlice:
                     input_slices=self.slices,
                     input_tiles=input_tiles.slices,
                     num_blocks=input_tiles.num_blocks,
-                    block_size=block_size,
+                    block_size=input_tiles.block_size,
                     tile_size=tile_size
                 ),
                 warmup=1 if debug else 5,
@@ -199,8 +198,10 @@ class TensorSlice:
             if debug:
                 print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
             if ms < best_ms:
-                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
+                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
 
+        if debug:
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
