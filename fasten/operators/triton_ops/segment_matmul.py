@@ -43,15 +43,15 @@ def _blocked_matmul(
                 a = tl.load(input_ptrs)
                 b = tl.load(other_ptrs)
             else:
-                a = tl.load(input_ptrs, mask=(offs_k[None, :] + BLOCK_K < K), other=0.0)
-                b = tl.load(other_ptrs, mask=(offs_k[:, None] + BLOCK_K < K), other=0.0)
+                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+                b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
         else:
             if EVEN_K:
                 a = tl.load(input_ptrs)
             else:
-                a = tl.load(input_ptrs, mask=(offs_k[None, :] + BLOCK_K < K), other=0.0)
+                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += stride_input_m * BLOCK_M
+        input_ptrs += BLOCK_M * stride_input_m
 
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
@@ -254,10 +254,9 @@ def segment_matmul_kernel(
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
         if K <= BLOCK_SIZE_K and BLOCK_SIZE_K <= 64:
-            cur_start_off = start_off
             _blocked_matmul(
                 pid_n, type_id,
-                cur_start_off,
+                start_off,
                 input, other, output,
                 K, N,
                 stride_input_m, stride_input_k,
