@@ -223,7 +223,7 @@ def _dispatch(
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0,
-    'MASK_K': lambda args: args['K'] == args['BLOCK_SIZE_K']
+    'MASK_K': lambda args: args['K'] != args['BLOCK_SIZE_K']
 })
 @triton.jit
 def segment_matmul_kernel(
