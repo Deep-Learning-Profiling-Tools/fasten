@@ -51,7 +51,7 @@ def _blocked_matmul(
             else:
                 a = tl.load(input_ptrs, mask=(offs_k[None, :] + BLOCK_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_K * stride_input_k
+        input_ptrs += stride_input_m * BLOCK_M
 
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
