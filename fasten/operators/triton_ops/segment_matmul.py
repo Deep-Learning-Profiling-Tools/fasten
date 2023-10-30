@@ -34,22 +34,23 @@ def _blocked_matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
-    a = tl.zeros((BLOCK_M, BLOCK_K), dtype=input.dtype.element_ty)
     b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
 
-    for i in range(0, BLOCK_SIZE):
-        if i == 0:
-            if EVEN_K:
-                a = tl.load(input_ptrs)
-                b = tl.load(other_ptrs)
-            else:
-                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
-                b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
+    for i in range(0, 1):
+        if EVEN_K:
+            a = tl.load(input_ptrs)
+            b = tl.load(other_ptrs)
         else:
-            if EVEN_K:
-                a = tl.load(input_ptrs)
-            else:
-                a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+            a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
+            b = tl.load(other_ptrs, mask=(offs_k[:, None] < K), other=0.0)
+        acc += tl.dot(a, b, out_dtype=out_dtype)
+        input_ptrs += BLOCK_M * stride_input_m
+
+    for i in range(1, BLOCK_SIZE):
+        if EVEN_K:
+            a = tl.load(input_ptrs)
+        else:
+            a = tl.load(input_ptrs, mask=(offs_k[None, :] < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += BLOCK_M * stride_input_m
 
@@ -253,7 +254,7 @@ def segment_matmul_kernel(
         # large tiles
         start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
         type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-        if K <= BLOCK_SIZE_K and BLOCK_SIZE_K <= 64:
+        if K <= BLOCK_SIZE_K:
             _blocked_matmul(
                 pid_n, type_id,
                 start_off,
