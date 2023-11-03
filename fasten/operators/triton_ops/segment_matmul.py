@@ -198,7 +198,7 @@ def _dispatch(
         )
 
 
-@triton.jit
+@triton.jit(noinline=True)
 def _small_block(
     input_tiles,
     next_id, pid_n,
@@ -245,7 +245,7 @@ def _small_block(
                     BLOCK_M=BLOCK_SIZE_M,
                     BLOCK_N=BLOCK_N,
                     BLOCK_K=BLOCK_K,
-                    DYNAMIC_TILING=DYNAMIC_TILING,
+                    DYNAMIC_TILING=True,
                 )
             next_id = next_next_id
             next_next_id += 1
