@@ -141,8 +141,7 @@ class Linear(torch.nn.Module):
         delattr(self, '_hook')
 
     def _save_to_state_dict(self, destination, prefix, keep_vars):
-        if (is_uninitialized_parameter(self.weight)
-                or torch.onnx.is_in_onnx_export() or keep_vars):
+        if (is_uninitialized_parameter(self.weight) or torch.onnx.is_in_onnx_export() or keep_vars):
             destination[prefix + 'weight'] = self.weight
         else:
             destination[prefix + 'weight'] = self.weight.detach()
@@ -411,8 +410,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
         if use_segment_matmul is None:
             use_segment_matmul = len(x_dict) >= 1
 
-        if (use_segment_matmul and torch_geometric.typing.WITH_GMM
-                and not torch.jit.is_scripting()):
+        if (use_segment_matmul and torch_geometric.typing.WITH_GMM and not torch.jit.is_scripting()):
             xs, weights, biases = [], [], []
             for key, lin in self.lins.items():
                 if key in x_dict:
