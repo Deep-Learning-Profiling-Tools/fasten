@@ -295,11 +295,9 @@ def segment_matmul_kernel(
 
                 if length > 0:
                     type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
-                    cur_start_off = start_off
-                    cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
                     _dispatch(
                         pid_n, type_id,
-                        cur_start_off, cur_end_off,
+                        start_off, end_off,
                         input, other, output,
                         K, N,
                         stride_input_m, stride_input_k,
