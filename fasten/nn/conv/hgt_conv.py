@@ -12,7 +12,7 @@ from torch_geometric.typing import Adj, EdgeType, Metadata, NodeType
 from torch_geometric.utils import softmax
 from torch_geometric.utils.hetero import construct_bipartite_edge_index
 
-from fasten import TensorSlice
+from fasten import Engine, TensorSlice
 from fasten.nn.linear import FastenHeteroDictLinear
 
 
@@ -49,6 +49,7 @@ class FastenHGTConv(MessagePassing):
         out_channels: int,
         metadata: Metadata,
         heads: int = 1,
+        engine: Engine = Engine.AUTO,
         **kwargs,
     ):
         super().__init__(aggr='add', node_dim=0, **kwargs)
@@ -63,6 +64,7 @@ class FastenHGTConv(MessagePassing):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.heads = heads
+        self.engine = engine
         self.node_types = metadata[0]
         self.edge_types = metadata[1]
         self.edge_types_map = {
@@ -73,10 +75,10 @@ class FastenHGTConv(MessagePassing):
         self.dst_node_types = set([key[-1] for key in self.edge_types])
 
         self.kqv_lin = FastenHeteroDictLinear(self.in_channels,
-                                              self.out_channels * 3)
+                                              self.out_channels * 3, engine=self.engine)
 
         self.out_lin = FastenHeteroDictLinear(self.out_channels, self.out_channels,
-                                              types=self.node_types)
+                                              types=self.node_types, engine=self.engine)
 
         dim = out_channels // heads
         num_types = heads * len(self.edge_types)

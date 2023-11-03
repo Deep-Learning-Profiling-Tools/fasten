@@ -1,3 +1,4 @@
+import argparse
 import os.path as osp
 
 import torch
@@ -6,24 +7,29 @@ import torch_geometric.transforms as T
 from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
 
-from fasten import TensorSlice, compact_tensor_types
+from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
 # We initialize conference node features with a single one-vector as feature:
 dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+parser = argparse.ArgumentParser()
+parser.add_argument('--device', type=str, default='cpu',
+                    choices=['cpu', 'cuda'])
+args = parser.parse_args()
+device = torch.device(args.device)
+
 
 def tensor_slice_gen(data) -> TensorSlice:
-    ptr =[0]
+    ptr = [0]
     for key, _ in data.x_dict.items():
-        ptr.append(ptr[-1]+ data.x_dict[key].shape[0])
-    slices = [slice(ptr[i], ptr[i+1]) for i in range(len(ptr) - 1)]
+        ptr.append(ptr[-1] + data.x_dict[key].shape[0])
+    slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
     types = torch.zeros((ptr[-1],), dtype=torch.int)
     for i, s in enumerate(slices):
         types[s] = i
-    tensor_slice = compact_tensor_types(data = None, types = types, is_sorted = True, device= device)
+    tensor_slice = compact_tensor_types(data=None, types=types, is_sorted=True, device=device)
     return tensor_slice, slices
 
 
@@ -38,7 +44,7 @@ class HGT(torch.nn.Module):
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
             conv = FastenHGTConv(hidden_channels, hidden_channels, data.metadata(),
-                           num_heads, group='sum')
+                                 num_heads, group='sum', engine=Engine.TRITON)
             self.convs.append(conv)
 
         self.lin = Linear(hidden_channels, out_channels)
@@ -50,13 +56,12 @@ class HGT(torch.nn.Module):
         }
 
         for conv in self.convs:
-            x_dict = conv(x_dict = x_dict, edge_index_dict = edge_index_dict, tensor_slice=tensor_slice, slices=slices)
+            x_dict = conv(x_dict=x_dict, edge_index_dict=edge_index_dict, tensor_slice=tensor_slice, slices=slices)
 
         return self.lin(x_dict['author'])
 
 
 model = HGT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 data, model = data.to(device), model.to(device)
 tensor_slice, slices = tensor_slice_gen(data)
 

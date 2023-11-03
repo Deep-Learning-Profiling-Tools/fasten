@@ -346,6 +346,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
         in_channels: Union[int, Dict[Any, int]],
         out_channels: int,
         types: Optional[Any] = None,
+        engine: Engine = Engine.AUTO,
         **kwargs,
     ):
         super().__init__()
@@ -375,6 +376,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
 
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.engine = engine
         self.kwargs = kwargs
 
         self.lins = torch.nn.ModuleDict({
@@ -420,9 +422,8 @@ class FastenHeteroDictLinear(torch.nn.Module):
             biases = None if biases[0] is None else biases
             # Stacking the input and weight tensor to feed it to segment matmul
             stacked_xs = torch.cat(xs, dim=0)
-            # print("X_dict dimensions:", stacked_xs.shape)
             stacked_weights = torch.stack(weights)
-            out_segmm = ops.fasten_segment_matmul(stacked_xs, stacked_weights, tensor_slice, Engine.TRITON)
+            out_segmm = ops.fasten_segment_matmul(stacked_xs, stacked_weights, tensor_slice, self.engine)
             outs = []
 
             for s in slices:
