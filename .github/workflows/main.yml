@@ -1,5 +1,5 @@
 name: ci-cpu
-on: 
+on:
   workflow_dispatch:
   push:
     branches:
@@ -25,7 +25,7 @@ jobs:
       with:
         path: ${{env.pythonLocation}}
         key: ${{env.pythonLocation}} - ${{ hashFiles('setup.py') }}
-        
+
     - name: install dependencies
       run: |
         pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
@@ -33,9 +33,9 @@ jobs:
         pip install pyg-lib -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
         pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
         pip install .;
-    
+
     - name: run test cases
-      run: | 
+      run: |
         cd ./test;
         pytest --tb=line -k "cpu and(slices0 or slices1)" test_ops.py
-        pytest --tb=line -k "cpu" test_nn.py test_triton.py test_tensor_slice.py 
+        pytest --tb=line -k "cpu" test_nn.py test_triton.py test_tensor_slice.py

@@ -38,4 +38,3 @@ repos:
         #   - flake8-pyi
         #   - flake8-simplify
         stages: [commit, push, manual]
-        exclude: ^examples/

@@ -1,27 +1,36 @@
 import argparse
 import os.path as osp
 
-import timemory
 import torch
 import torch.nn.functional as F
-from hgt_conv import HGTConv
-from timemory.util import marker
-from torch_geometric.datasets import DBLP, Entities
+import torch_geometric.transforms as T
+from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
 
-timemory.settings.scientific = False
-timemory.settings.flat_profile = False
-timemory.settings.timeline_profile = False
-timemory.settings.cout_output = False
-
+from fasten import Engine, TensorSlice, compact_tensor_types
+from fasten.nn import FastenHGTConv
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
-dataset = DBLP(path)
+# We initialize conference node features with a single one-vector as feature:
+dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
-print(data)
+parser = argparse.ArgumentParser()
+parser.add_argument('--device', type=str, default='cpu',
+                    choices=['cpu', 'cuda'])
+args = parser.parse_args()
+device = torch.device(args.device)
 
-# We initialize conference node features with a single feature.
-data['conference'].x = torch.ones(data['conference'].num_nodes, 1)
+
+def tensor_slice_gen(data) -> TensorSlice:
+    ptr = [0]
+    for key, _ in data.x_dict.items():
+        ptr.append(ptr[-1] + data.x_dict[key].shape[0])
+    slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
+    types = torch.zeros((ptr[-1],), dtype=torch.int)
+    for i, s in enumerate(slices):
+        types[s] = i
+    tensor_slice = compact_tensor_types(data=None, types=types, is_sorted=True, device=device)
+    return tensor_slice, slices
 
 
 class HGT(torch.nn.Module):
@@ -34,28 +43,30 @@ class HGT(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
-            conv = HGTConv(hidden_channels, hidden_channels, data.metadata(),
-                           num_heads, group='sum')
+            conv = FastenHGTConv(hidden_channels, hidden_channels, data.metadata(),
+                                 num_heads, group='sum', engine=Engine.TRITON)
             self.convs.append(conv)
 
         self.lin = Linear(hidden_channels, out_channels)
 
-    def forward(self, x_dict, edge_index_dict):
-        for node_type, x in x_dict.items():
-            x_dict[node_type] = self.lin_dict[node_type](x).relu_()
+    def forward(self, x_dict, edge_index_dict, tensor_slice, slices):
+        x_dict = {
+            node_type: self.lin_dict[node_type](x).relu_()
+            for node_type, x in x_dict.items()
+        }
 
         for conv in self.convs:
-            x_dict = conv(x_dict, edge_index_dict)
+            x_dict = conv(x_dict=x_dict, edge_index_dict=edge_index_dict, tensor_slice=tensor_slice, slices=slices)
 
         return self.lin(x_dict['author'])
 
 
 model = HGT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 data, model = data.to(device), model.to(device)
+tensor_slice, slices = tensor_slice_gen(data)
 
 with torch.no_grad():  # Initialize lazy modules.
-    out = model(data.x_dict, data.edge_index_dict)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
@@ -63,12 +74,10 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 def train():
     model.train()
     optimizer.zero_grad()
-    with marker(["wall_clock"], key="forward"):
-        out = model(data.x_dict, data.edge_index_dict)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
     mask = data['author'].train_mask
     loss = F.cross_entropy(out[mask], data['author'].y[mask])
-    with marker(["wall_clock"], key="backward"):
-        loss.backward()
+    loss.backward()
     optimizer.step()
     return float(loss)
 
@@ -76,7 +85,7 @@ def train():
 @torch.no_grad()
 def test():
     model.eval()
-    pred = model(data.x_dict, data.edge_index_dict).argmax(dim=-1)
+    pred = model(data.x_dict, data.edge_index_dict, tensor_slice, slices).argmax(dim=-1)
 
     accs = []
     for split in ['train_mask', 'val_mask', 'test_mask']:
@@ -86,10 +95,8 @@ def test():
     return accs
 
 
-for epoch in range(1, 101):
-    with marker(["wall_clock"], key="train"):
-        loss = train()
-    with marker(["wall_clock"], key="test"):
-        train_acc, val_acc, test_acc = test()
+for epoch in range(1, 5):
+    loss = train()
+    train_acc, val_acc, test_acc = test()
     print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
           f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
