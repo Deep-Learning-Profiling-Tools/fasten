@@ -198,6 +198,59 @@ def _dispatch(
         )
 
 
+@triton.jit
+def _small_block(
+    input_tiles,
+    next_id, pid_n,
+    input, other, output,
+    K, N,
+    stride_input_m, stride_input_k,
+    stride_other_b, stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    NUM_TILES: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr
+):
+    next_next_id = 0
+    for i in range(0, BLOCK_SIZE):
+        if i == 0:
+            next_next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
+        if next_id < NUM_TILES and next_id != -1:
+            # TODO: large tensors
+            # Use int32 to reduce register usage
+            start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+            end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+            length = end_off - start_off
+
+            if length > 0:
+                type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+                cur_start_off = start_off
+                cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
+                _dispatch(
+                    pid_n, type_id,
+                    cur_start_off, cur_end_off,
+                    input, other, output,
+                    K, N,
+                    stride_input_m, stride_input_k,
+                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_output_m, stride_output_n,
+                    out_dtype=out_dtype,
+                    MASK_M=True,
+                    EVEN_K=EVEN_K,
+                    BLOCK_M=BLOCK_SIZE_M,
+                    BLOCK_N=BLOCK_N,
+                    BLOCK_K=BLOCK_K,
+                    DYNAMIC_TILING=DYNAMIC_TILING,
+                )
+            next_id = next_next_id
+            next_next_id += 1
+
+
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
@@ -242,12 +295,12 @@ def segment_matmul_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
-    next_id = pid_m * BLOCK_SIZE
+    next_id = pid_m
     contiguous = tl.load(input_tiles + 5 * next_id + 4)
-    if contiguous == 1:
-        # large tiles
-        start_off = tl.load(input_tiles + 5 * next_id + 2)
-        type_id = tl.load(input_tiles + 5 * next_id + 1)
+    if contiguous == 0:
+        # large tiles, only load once
+        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
+        type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
         if EQUAL_K and BLOCK_SIZE_K <= 32:
             _blocked_matmul(
                 pid_n, type_id,
@@ -284,31 +337,22 @@ def segment_matmul_kernel(
                     DYNAMIC_TILING=DYNAMIC_TILING,
                 )
     else:
-        for i in range(0, BLOCK_SIZE):
-            next_id = pid_m * BLOCK_SIZE + i
-            if next_id < NUM_TILES:
-                start_off = tl.load(input_tiles + 5 * next_id + 2)
-                end_off = tl.load(input_tiles + 5 * next_id + 3)
-                length = end_off - start_off
-
-                if length > 0:
-                    type_id = tl.load(input_tiles + 5 * next_id + 1)
-                    _dispatch(
-                        pid_n, type_id,
-                        start_off, end_off,
-                        input, other, output,
-                        K, N,
-                        stride_input_m, stride_input_k,
-                        stride_other_b, stride_other_k, stride_other_n,
-                        stride_output_m, stride_output_n,
-                        out_dtype=out_dtype,
-                        MASK_M=True,
-                        EVEN_K=EVEN_K,
-                        BLOCK_M=BLOCK_SIZE_M,
-                        BLOCK_N=BLOCK_N,
-                        BLOCK_K=BLOCK_K,
-                        DYNAMIC_TILING=DYNAMIC_TILING,
-                    )
+        _small_block(
+            input_tiles,
+            next_id, pid_n,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_SIZE_M=BLOCK_SIZE_M,
+            BLOCK_SIZE=BLOCK_SIZE,
+            NUM_TILES=NUM_TILES,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K,
+            EVEN_K=EVEN_K,
+            DYNAMIC_TILING=DYNAMIC_TILING)
 
 
 # TODO(Keren): split_matmul_kernel
