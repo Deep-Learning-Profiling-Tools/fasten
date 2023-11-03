@@ -218,17 +218,17 @@ def _small_block(
 ):
     next_next_id = 0
     for i in range(0, BLOCK_SIZE):
-        if i == 0:
-            next_next_id = tl.load(input_tiles + 5 * next_id + 4).to(tl.int32)
         if next_id < NUM_TILES and next_id != -1:
+            if i == 0:
+                next_next_id = tl.load(input_tiles + 5 * next_id + 4)
             # TODO: large tensors
             # Use int32 to reduce register usage
-            start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-            end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+            start_off = tl.load(input_tiles + 5 * next_id + 2)
+            end_off = tl.load(input_tiles + 5 * next_id + 3)
             length = end_off - start_off
 
             if length > 0:
-                type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+                type_id = tl.load(input_tiles + 5 * next_id + 1)
                 cur_start_off = start_off
                 cur_end_off = min(cur_start_off + BLOCK_SIZE_M, end_off)
                 _dispatch(
@@ -299,8 +299,8 @@ def segment_matmul_kernel(
     contiguous = tl.load(input_tiles + 5 * next_id + 4)
     if contiguous == 0:
         # large tiles, only load once
-        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-        type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        type_id = tl.load(input_tiles + 5 * next_id + 1)
         if EQUAL_K and BLOCK_SIZE_K <= 32:
             _blocked_matmul(
                 pid_n, type_id,
