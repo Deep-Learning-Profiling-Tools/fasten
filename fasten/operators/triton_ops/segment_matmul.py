@@ -287,8 +287,6 @@ def segment_matmul_kernel(
         for i in range(0, BLOCK_SIZE):
             next_id = pid_m * BLOCK_SIZE + i
             if next_id < NUM_TILES:
-                # TODO: large tensors
-                # Use int32 to reduce register usage
                 start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
                 end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
                 length = end_off - start_off

@@ -28,17 +28,17 @@ class TensorSlice:
 
         if type(slices) is int:
             # each slice is a single type
-            self._slices = torch.zeros((slices, 5), dtype=torch.long, device='cpu')
+            self._slices = torch.zeros((slices, 5), dtype=torch.int, device='cpu')
             for i in range(0, slices):
-                self._slices[i][0] = i
-                self._slices[i][1] = i
-                self._slices[i][2] = i
-                self._slices[i][3] = i + 1
-                self._slices[i][4] = -1
+                self._slices[i][0] = i  # slice index
+                self._slices[i][1] = i  # type
+                self._slices[i][2] = i  # start
+                self._slices[i][3] = i + 1  # end
+                self._slices[i][4] = -1  # contiguous
             self._slices = self._slices.to(device)
         elif type(slices) is list:
             # 2d list, nx5
-            self._slices = torch.as_tensor(slices, dtype=torch.long, device=device)
+            self._slices = torch.as_tensor(slices, dtype=torch.int, device=device)
         else:
             self._slices = slices.to(device)
         # Don't backpropagate on slice tensors
