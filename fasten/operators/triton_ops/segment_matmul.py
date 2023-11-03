@@ -246,8 +246,8 @@ def segment_matmul_kernel(
     contiguous = tl.load(input_tiles + 5 * next_id + 4)
     if contiguous == 1:
         # large tiles
-        start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-        type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        type_id = tl.load(input_tiles + 5 * next_id + 1)
         if EQUAL_K and BLOCK_SIZE_K <= 32:
             _blocked_matmul(
                 pid_n, type_id,
@@ -287,12 +287,12 @@ def segment_matmul_kernel(
         for i in range(0, BLOCK_SIZE):
             next_id = pid_m * BLOCK_SIZE + i
             if next_id < NUM_TILES:
-                start_off = tl.load(input_tiles + 5 * next_id + 2).to(tl.int32)
-                end_off = tl.load(input_tiles + 5 * next_id + 3).to(tl.int32)
+                start_off = tl.load(input_tiles + 5 * next_id + 2)
+                end_off = tl.load(input_tiles + 5 * next_id + 3)
                 length = end_off - start_off
 
                 if length > 0:
-                    type_id = tl.load(input_tiles + 5 * next_id + 1).to(tl.int32)
+                    type_id = tl.load(input_tiles + 5 * next_id + 1)
                     _dispatch(
                         pid_n, type_id,
                         start_off, end_off,
