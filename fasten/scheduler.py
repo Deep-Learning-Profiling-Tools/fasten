@@ -44,54 +44,51 @@ class Scheduler:
         return configs
 
 
-def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
-    subslices = []
-    for slice in slices:
-        index = slice[0]
-        type = slice[1]
-        start = slice[2]
-        end = slice[3]
-        for off in range(start, end, tile_size):
-            subslices.append([index, type, off, min(off + tile_size, end), -1])
-    num_blocks = triton.cdiv(len(subslices), block_size)
+def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num_blocks: int) -> Tuple[list[list], list[list]]:
+    """Compress subslices into large and small blocks."""
     compressed_subslices = []
     small_subslices = []
     for i in range(num_blocks):
-        last_subslice_idx = (i + 1) * block_size - 1
-        first_subslice = subslices[i * block_size]
-        if last_subslice_idx >= len(subslices):
-            compressed_subslices.append(first_subslice)
-            last_subslice = compressed_subslices[-1]
-            for j in range(0, block_size - 1):
-                subslice_idx = i * block_size + j + 1
-                if subslice_idx >= len(subslices):
-                    break
-                # continued blocks, must be > 0
-                last_subslice[4] = len(small_subslices) + num_blocks
-                small_subslices.append(subslices[subslice_idx])
-                last_subslice = small_subslices[-1]
-            continue
-        last_subslice = subslices[last_subslice_idx]
-        slice_index = first_subslice[0]
-        first_subslice_start = first_subslice[2]
-        last_subslice_end = last_subslice[3]
-        first_subslice_type = first_subslice[1]
-        last_subslice_type = last_subslice[1]
-        if first_subslice_type == last_subslice_type and first_subslice_start + tile_size * block_size == last_subslice_end:
-            # large block
-            compressed_subslices.append([slice_index, first_subslice_type, first_subslice_start, last_subslice_end, 0])
+        block_start_idx = i * block_size
+        block_end_idx = min((i + 1) * block_size, len(subslices))
+
+        # Extract the first and last subslice for comparison
+        first_subslice = subslices[block_start_idx]
+        last_subslice = subslices[block_end_idx - 1] if block_end_idx - 1 < len(subslices) else None
+
+        # Determine if we can create a large block
+        if last_subslice and first_subslice[1] == last_subslice[1] \
+                and first_subslice[2] + tile_size * block_size == last_subslice[3]:
+            compressed_subslices.append([first_subslice[0], first_subslice[1], first_subslice[2], last_subslice[3], 0])
         else:
-            # small block
-            compressed_subslices.append(first_subslice)
-            last_subslice = compressed_subslices[-1]
-            for j in range(0, block_size - 1):
-                subslice_idx = i * block_size + j + 1
-                if subslice_idx >= len(subslices):
-                    break
-                # continued blocks, must be > 0
-                last_subslice[4] = len(small_subslices) + num_blocks
-                small_subslices.append(subslices[subslice_idx])
-                last_subslice = small_subslices[-1]
+            for j in range(block_start_idx, block_end_idx):
+                subslice = subslices[j]
+                # Set continuation index for small blocks
+                subslice[4] = len(small_subslices) + num_blocks if j != block_start_idx else -1
+                if j == block_start_idx:
+                    compressed_subslices.append(subslice)
+                else:
+                    small_subslices.append(subslice)
+
+    return compressed_subslices, small_subslices
+
+
+def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tuple[list[list], int]:
+    """Create subslices based on the tile size and compress them into blocks."""
+    # Generate subslices
+    subslices = [
+        [index, type, off, min(off + tile_size, end), -1]
+        for index, type, start, end in slices
+        for off in range(start, end, tile_size)
+    ]
+
+    # Calculate the number of blocks
+    num_blocks = triton.cdiv(len(subslices), block_size)
+
+    # Compress subslices into large and small blocks
+    compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks)
+
+    # Combine all subslices and return
     compressed_subslices.extend(small_subslices)
     return compressed_subslices, num_blocks
 
