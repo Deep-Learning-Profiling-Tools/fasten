@@ -197,6 +197,7 @@ def _contiguous_block(
                 BLOCK_M=BLOCK_M,
                 BLOCK_N=BLOCK_N,
                 BLOCK_K=BLOCK_K,
+                DYNAMIC_TILING=False,
             )
 
 
