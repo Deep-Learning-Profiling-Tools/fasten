@@ -13,6 +13,7 @@ def _reg_matmul(
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    EVEN_N: tl.constexpr,
     TILE_M: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr
@@ -40,11 +41,15 @@ def _reg_matmul(
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += TILE_M * stride_input_m
 
-    mask_n = offs_n[None, :] < N
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
-    tl.store(c_ptrs, acc, mask=mask_n)
+
+    if EVEN_N:
+        tl.store(c_ptrs, acc)
+    else:
+        mask_n = offs_n[None, :] < N
+        tl.store(c_ptrs, acc, mask=mask_n)
 
 
 @triton.jit
@@ -61,6 +66,7 @@ def _matmul(
     TILE_M: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
     EVEN_K: tl.constexpr
 ):
     offs_m = start_off + tl.arange(0, TILE_M)
@@ -96,11 +102,17 @@ def _matmul(
         input_ptrs += TILE_K * stride_input_k
         other_ptrs += TILE_K * stride_other_k
 
-    mask_n = offs_n[None, :] < N
     acc = acc.to(output.dtype.element_ty)
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
-    if MASK_M:
-        tl.store(c_ptrs, acc, mask=mask_m & mask_n)
+    if EVEN_N:
+        if MASK_M:
+            tl.store(c_ptrs, acc, mask=mask_m)
+        else:
+            tl.store(c_ptrs, acc)
     else:
-        tl.store(c_ptrs, acc, mask_n)
+        mask_n = offs_n[None, :] < N
+        if MASK_M:
+            tl.store(c_ptrs, acc, mask=mask_m & mask_n)
+        else:
+            tl.store(c_ptrs, acc, mask_n)

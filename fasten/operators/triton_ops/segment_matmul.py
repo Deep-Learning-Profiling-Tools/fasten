@@ -23,6 +23,7 @@ def _dispatch(
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr
 ):
     TILE_M_16: tl.constexpr = 16
@@ -41,6 +42,7 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=True,
             EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
             TILE_M=TILE_M_16,
             TILE_N=TILE_N,
             TILE_K=TILE_K
@@ -56,6 +58,7 @@ def _dispatch(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
             MASK_M=True,
             TILE_M=TILE_M_32,
             TILE_N=TILE_N,
@@ -73,6 +76,7 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=True,
             EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
             TILE_M=TILE_M_64,
             TILE_N=TILE_N,
             TILE_K=TILE_K
@@ -89,6 +93,7 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=MASK_M,
             EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
             TILE_M=TILE_M,
             TILE_N=TILE_N,
             TILE_K=TILE_K
@@ -110,7 +115,8 @@ def _noncontiguous_block(
     TILE_M: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr,
-    EVEN_K: tl.constexpr
+    EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr
 ):
     next_next_id = 0
     for i in range(0, BLOCK_SIZE):
@@ -136,6 +142,7 @@ def _noncontiguous_block(
                     out_dtype=out_dtype,
                     MASK_M=True,
                     EVEN_K=EVEN_K,
+                    EVEN_N=EVEN_N,
                     TILE_M=TILE_M,
                     TILE_N=TILE_N,
                     TILE_K=TILE_K,
@@ -160,6 +167,7 @@ def _contiguous_block(
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
 ):
     start_off = tl.load(input_tiles + 5 * next_id + 2)
@@ -178,6 +186,7 @@ def _contiguous_block(
             TILE_M=TILE_M,
             TILE_N=TILE_N,
             TILE_K=TILE_K,
+            EVEN_N=EVEN_N,
         )
     else:
         for i in range(0, BLOCK_SIZE):
@@ -194,6 +203,7 @@ def _contiguous_block(
                 out_dtype=out_dtype,
                 MASK_M=False,
                 EVEN_K=EVEN_K,
+                EVEN_N=EVEN_N,
                 TILE_M=TILE_M,
                 TILE_N=TILE_N,
                 TILE_K=TILE_K,
@@ -216,6 +226,7 @@ def _contiguous_block(
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0,
     'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
@@ -231,6 +242,7 @@ def segment_matmul_kernel(
     NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
@@ -260,6 +272,7 @@ def segment_matmul_kernel(
             TILE_N=TILE_N,
             TILE_K=TILE_K,
             EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
             EQUAL_K=EQUAL_K,
         )
     else:
@@ -277,7 +290,8 @@ def segment_matmul_kernel(
             TILE_M=TILE_M,
             TILE_N=TILE_N,
             TILE_K=TILE_K,
-            EVEN_K=EVEN_K)
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N)
 
 
 # TODO(Keren): split_matmul_kernel
