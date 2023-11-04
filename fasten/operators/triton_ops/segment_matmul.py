@@ -213,8 +213,7 @@ def _small_block(
     NUM_TILES: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
-    EVEN_K: tl.constexpr,
-    DYNAMIC_TILING: tl.constexpr
+    EVEN_K: tl.constexpr
 ):
     next_next_id = 0
     for i in range(0, BLOCK_SIZE):
@@ -261,8 +260,6 @@ def _small_block(
         triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
         triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32, 'DYNAMIC_TILING': True}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
