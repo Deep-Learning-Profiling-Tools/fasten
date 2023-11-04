@@ -5,110 +5,7 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-
-
-@triton.jit
-def _blocked_matmul(
-    pid_n, type_id,
-    start_off,
-    input, other, output,
-    K, N,
-    stride_input_m, stride_input_k,
-    stride_other_b, stride_other_k, stride_other_n,
-    stride_output_m, stride_output_n,
-    out_dtype: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_K: tl.constexpr
-):
-    offs_m = start_off + tl.arange(0, BLOCK_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
-    rn = tl.max_contiguous(tl.multiple_of(offs_n % N, BLOCK_N), BLOCK_N)
-
-    # [M, K] x [K, N] -> [M, N]
-    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + type_id * stride_other_b + \
-        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
-
-    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
-    a = tl.zeros((BLOCK_M, BLOCK_K), dtype=input.dtype.element_ty)
-    b = tl.zeros((BLOCK_K, BLOCK_N), dtype=other.dtype.element_ty)
-
-    for i in range(0, BLOCK_SIZE):
-        if i == 0:
-            a = tl.load(input_ptrs)
-            b = tl.load(other_ptrs)
-        else:
-            a = tl.load(input_ptrs)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_M * stride_input_m
-
-    mask_n = offs_n[None, :] < N
-    acc = acc.to(output.dtype.element_ty)
-    c_ptrs = output + stride_output_m * \
-        offs_m[:, None] + stride_output_n * offs_n[None, :]
-    tl.store(c_ptrs, acc, mask=mask_n)
-
-
-@triton.jit
-def _matmul(
-    pid_n, type_id,
-    start_off, end_off,
-    input, other, output,
-    K, N,
-    stride_input_m, stride_input_k,
-    stride_other_b, stride_other_k, stride_other_n,
-    stride_output_m, stride_output_n,
-    out_dtype: tl.constexpr,
-    MASK_M: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_K: tl.constexpr,
-    EVEN_K: tl.constexpr
-):
-    offs_m = start_off + tl.arange(0, BLOCK_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
-    rn = tl.max_contiguous(tl.multiple_of(offs_n % N, BLOCK_N), BLOCK_N)
-
-    # [M, K] x [K, N] -> [M, N]
-    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + type_id * stride_other_b + \
-        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
-
-    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=out_dtype)
-    mask_m = offs_m[:, None] < end_off if MASK_M else True
-
-    k_iter = K // BLOCK_K if EVEN_K else tl.cdiv(K, BLOCK_K)
-    for k in range(0, k_iter):
-        if EVEN_K:
-            if MASK_M:
-                a = tl.load(input_ptrs, mask=mask_m, other=0.0)
-                b = tl.load(other_ptrs)
-            else:
-                a = tl.load(input_ptrs)
-                b = tl.load(other_ptrs)
-        else:
-            if MASK_M:
-                a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * BLOCK_K < K), other=0.0)
-                b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
-            else:
-                a = tl.load(input_ptrs, mask=(offs_k[None, :] + k * BLOCK_K < K), other=0.0)
-                b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * BLOCK_K < K), other=0.0)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_K * stride_input_k
-        other_ptrs += BLOCK_K * stride_other_k
-
-    mask_n = offs_n[None, :] < N
-    acc = acc.to(output.dtype.element_ty)
-    c_ptrs = output + stride_output_m * \
-        offs_m[:, None] + stride_output_n * offs_n[None, :]
-    if MASK_M:
-        tl.store(c_ptrs, acc, mask=mask_m & mask_n)
-    else:
-        tl.store(c_ptrs, acc, mask_n)
+from .kernels.matmul import _matmul, _reg_matmul
 
 
 @triton.jit
@@ -199,7 +96,7 @@ def _dispatch(
 
 
 @triton.jit(noinline=True)
-def _small_block(
+def _noncontiguous_block(
     input_tiles,
     next_id, pid_n,
     input, other, output,
@@ -250,6 +147,61 @@ def _small_block(
             next_next_id += 1
 
 
+@triton.jit
+def _contiguous_block(
+    input_tiles,
+    next_id, pid_n,
+    input, other, output,
+    K, N,
+    stride_input_m, stride_input_k,
+    stride_other_b, stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EQUAL_K: tl.constexpr,
+):
+    start_off = tl.load(input_tiles + 5 * next_id + 2)
+    type_id = tl.load(input_tiles + 5 * next_id + 1)
+    if EQUAL_K and BLOCK_K <= 32:
+        _reg_matmul(
+            pid_n, type_id,
+            start_off,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_SIZE=BLOCK_SIZE,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K,
+        )
+    else:
+        for i in range(0, BLOCK_SIZE):
+            cur_start_off = start_off + i * BLOCK_M
+            cur_end_off = cur_start_off + BLOCK_M
+            _dispatch(
+                pid_n, type_id,
+                cur_start_off, cur_end_off,
+                input, other, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_b, stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=False,
+                EVEN_K=EVEN_K,
+                BLOCK_M=BLOCK_M,
+                BLOCK_N=BLOCK_N,
+                BLOCK_K=BLOCK_K,
+            )
+
+
 @triton.autotune(
     configs=[
         triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'DYNAMIC_TILING': False}, num_warps=4, num_stages=3),
@@ -276,9 +228,8 @@ def segment_matmul_kernel(
     stride_output_m, stride_output_n,
     other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
-    DYNAMIC_TILING: tl.constexpr,
     NUM_TILES: tl.constexpr,
-    NUM_BLOCKS: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
     EQUAL_K: tl.constexpr,
@@ -288,6 +239,7 @@ def segment_matmul_kernel(
 ):
     BLOCK_N: tl.constexpr = BLOCK_SIZE_K if other_transposed else BLOCK_SIZE_N
     BLOCK_K: tl.constexpr = BLOCK_SIZE_N if other_transposed else BLOCK_SIZE_K
+    BLOCK_M: tl.constexpr = BLOCK_SIZE_M
 
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
@@ -295,46 +247,7 @@ def segment_matmul_kernel(
     next_id = pid_m
     contiguous = tl.load(input_tiles + 5 * next_id + 4)
     if contiguous == 0:
-        # large tiles, only load once
-        start_off = tl.load(input_tiles + 5 * next_id + 2)
-        type_id = tl.load(input_tiles + 5 * next_id + 1)
-        if EQUAL_K and BLOCK_SIZE_K <= 32:
-            _blocked_matmul(
-                pid_n, type_id,
-                start_off,
-                input, other, output,
-                K, N,
-                stride_input_m, stride_input_k,
-                stride_other_b, stride_other_k, stride_other_n,
-                stride_output_m, stride_output_n,
-                out_dtype=out_dtype,
-                BLOCK_SIZE=BLOCK_SIZE,
-                BLOCK_M=BLOCK_SIZE_M,
-                BLOCK_N=BLOCK_N,
-                BLOCK_K=BLOCK_K,
-            )
-        else:
-            for i in range(0, BLOCK_SIZE):
-                cur_start_off = start_off + i * BLOCK_SIZE_M
-                cur_end_off = cur_start_off + BLOCK_SIZE_M
-                _dispatch(
-                    pid_n, type_id,
-                    cur_start_off, cur_end_off,
-                    input, other, output,
-                    K, N,
-                    stride_input_m, stride_input_k,
-                    stride_other_b, stride_other_k, stride_other_n,
-                    stride_output_m, stride_output_n,
-                    out_dtype=out_dtype,
-                    MASK_M=False,
-                    EVEN_K=EVEN_K,
-                    BLOCK_M=BLOCK_SIZE_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
-                    DYNAMIC_TILING=DYNAMIC_TILING,
-                )
-    else:
-        _small_block(
+        _contiguous_block(
             input_tiles,
             next_id, pid_n,
             input, other, output,
@@ -343,13 +256,29 @@ def segment_matmul_kernel(
             stride_other_b, stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
-            BLOCK_SIZE_M=BLOCK_SIZE_M,
             BLOCK_SIZE=BLOCK_SIZE,
-            NUM_TILES=NUM_TILES,
+            BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K,
             EVEN_K=EVEN_K,
-            DYNAMIC_TILING=DYNAMIC_TILING)
+            EQUAL_K=EQUAL_K,
+        )
+    else:
+        _noncontiguous_block(
+            input_tiles,
+            next_id, pid_n,
+            input, other, output,
+            K, N,
+            stride_input_m, stride_input_k,
+            stride_other_b, stride_other_k, stride_other_n,
+            stride_output_m, stride_output_n,
+            out_dtype=out_dtype,
+            BLOCK_SIZE=BLOCK_SIZE,
+            NUM_TILES=NUM_TILES,
+            BLOCK_M=BLOCK_M,
+            BLOCK_N=BLOCK_N,
+            BLOCK_K=BLOCK_K,
+            EVEN_K=EVEN_K)
 
 
 # TODO(Keren): split_matmul_kernel
