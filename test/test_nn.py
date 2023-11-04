@@ -16,7 +16,7 @@ MUTAG = read_slices_from_csv('MUTAG.csv')
 
 
 def slices_to_tensor(tensor_slice: TensorSlice):
-    tensor = torch.zeros((tensor_slice.data_size,), dtype=torch.long, device=tensor_slice.data.device)
+    tensor = torch.zeros((tensor_slice.data_size,), dtype=torch.int, device=tensor_slice.data.device)
     for i in range(len(tensor_slice)):
         s = tensor_slice.get_slice_from_index(i, is_tensor=False)
         t = tensor_slice.get_type_from_index(i, is_tensor=False)

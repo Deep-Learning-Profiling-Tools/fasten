@@ -9,7 +9,7 @@ from fasten import compact_tensor_types
 @pytest.mark.parametrize('dim', [0, 1])
 def test_compact_tensor_types(device: str, dim: int):
     data = torch.tensor([[1, 2, 3], [3, 4, 5], [5, 6, 7]], device=device)
-    types = torch.tensor([2, 1, 2], dtype=torch.long, device=device)
+    types = torch.tensor([2, 1, 2], dtype=torch.int, device=device)
     tensor_slice = compact_tensor_types(data, types, dim=dim, device=device)
     if dim == 0:
         assert tensor_slice.data[0].tolist() == [3, 4, 5]
@@ -29,7 +29,7 @@ def test_compact_tensor_types(device: str, dim: int):
 @pytest.mark.parametrize('block_size', [1])
 def test_tiling_default(tile_size: int, block_size: int, device: str):
     data = torch.ones((128, 128), device=device)
-    types = torch.zeros(128, dtype=torch.long, device=device)
+    types = torch.zeros(128, dtype=torch.int, device=device)
     types[63:90] = 2
     types[90:128] = 3
     types[0:63] = 1
