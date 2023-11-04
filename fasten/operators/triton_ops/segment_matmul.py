@@ -228,7 +228,7 @@ def segment_matmul_kernel(
     out_dtype: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr,
     NUM_TILES: tl.constexpr,
-    NUM_BLOCKS: tl.constexpr,  # it is not used but we need it as a key to differentiate between default and balanced tiling
+    NUM_BLOCKS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
     EQUAL_K: tl.constexpr,

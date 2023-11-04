@@ -9,7 +9,6 @@ from .operators import torch_ops, triton_ops
 
 class TilingMethod(Enum):
     DEFAULT = 'default'
-    BALANCED = 'balanced'
 
 
 class Engine(Enum):
