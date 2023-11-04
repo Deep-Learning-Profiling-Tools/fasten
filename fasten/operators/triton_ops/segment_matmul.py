@@ -19,17 +19,17 @@ def _dispatch(
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     MASK_M: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_K: tl.constexpr,
+    TILE_M: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
     DYNAMIC_TILING: tl.constexpr
 ):
-    BLOCK_M_16: tl.constexpr = 16
-    BLOCK_M_32: tl.constexpr = 32
-    BLOCK_M_64: tl.constexpr = 64
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
 
-    if end_off - start_off <= BLOCK_M_16 and DYNAMIC_TILING:
+    if end_off - start_off <= TILE_M_16 and DYNAMIC_TILING:
         _matmul(
             pid_n, type_id,
             start_off, end_off,
@@ -41,11 +41,11 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=True,
             EVEN_K=EVEN_K,
-            BLOCK_M=BLOCK_M_16,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
+            TILE_M=TILE_M_16,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K
         )
-    elif end_off - start_off <= BLOCK_M_32 and DYNAMIC_TILING:
+    elif end_off - start_off <= TILE_M_32 and DYNAMIC_TILING:
         _matmul(
             pid_n, type_id,
             start_off, end_off,
@@ -57,11 +57,11 @@ def _dispatch(
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
             MASK_M=True,
-            BLOCK_M=BLOCK_M_32,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
+            TILE_M=TILE_M_32,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K
         )
-    elif end_off - start_off <= BLOCK_M_64 and DYNAMIC_TILING:
+    elif end_off - start_off <= TILE_M_64 and DYNAMIC_TILING:
         _matmul(
             pid_n, type_id,
             start_off, end_off,
@@ -73,9 +73,9 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=True,
             EVEN_K=EVEN_K,
-            BLOCK_M=BLOCK_M_64,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
+            TILE_M=TILE_M_64,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K
         )
     else:
         _matmul(
@@ -89,9 +89,9 @@ def _dispatch(
             out_dtype=out_dtype,
             MASK_M=MASK_M,
             EVEN_K=EVEN_K,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K
+            TILE_M=TILE_M,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K
         )
 
 
@@ -107,9 +107,9 @@ def _noncontiguous_block(
     out_dtype: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     NUM_TILES: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_K: tl.constexpr,
+    TILE_M: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr
 ):
     next_next_id = 0
@@ -136,9 +136,9 @@ def _noncontiguous_block(
                     out_dtype=out_dtype,
                     MASK_M=True,
                     EVEN_K=EVEN_K,
-                    BLOCK_M=BLOCK_M,
-                    BLOCK_N=BLOCK_N,
-                    BLOCK_K=BLOCK_K,
+                    TILE_M=TILE_M,
+                    TILE_N=TILE_N,
+                    TILE_K=TILE_K,
                     DYNAMIC_TILING=True,
                 )
             next_id = next_next_id
@@ -156,15 +156,15 @@ def _contiguous_block(
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_K: tl.constexpr,
+    TILE_M: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
     EQUAL_K: tl.constexpr,
 ):
     start_off = tl.load(input_tiles + 5 * next_id + 2)
     type_id = tl.load(input_tiles + 5 * next_id + 1)
-    if EQUAL_K and BLOCK_K <= 32:
+    if EQUAL_K and TILE_K <= 32:
         _reg_matmul(
             pid_n, type_id,
             start_off,
@@ -175,14 +175,14 @@ def _contiguous_block(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             BLOCK_SIZE=BLOCK_SIZE,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K,
+            TILE_M=TILE_M,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K,
         )
     else:
         for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off + i * BLOCK_M
-            cur_end_off = cur_start_off + BLOCK_M
+            cur_start_off = start_off + i * TILE_M
+            cur_end_off = cur_start_off + TILE_M
             _dispatch(
                 pid_n, type_id,
                 cur_start_off, cur_end_off,
@@ -194,29 +194,29 @@ def _contiguous_block(
                 out_dtype=out_dtype,
                 MASK_M=False,
                 EVEN_K=EVEN_K,
-                BLOCK_M=BLOCK_M,
-                BLOCK_N=BLOCK_N,
-                BLOCK_K=BLOCK_K,
+                TILE_M=TILE_M,
+                TILE_N=TILE_N,
+                TILE_K=TILE_K,
                 DYNAMIC_TILING=False,
             )
 
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 16, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['BLOCK_SIZE_K'] == 0,
-    'EQUAL_K': lambda args: args['K'] == args['BLOCK_SIZE_K']
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
+    'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
 def segment_matmul_kernel(
@@ -232,13 +232,13 @@ def segment_matmul_kernel(
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
     EQUAL_K: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_K: tl.constexpr
+    TILE_SIZE_M: tl.constexpr,
+    TILE_SIZE_N: tl.constexpr,
+    TILE_SIZE_K: tl.constexpr
 ):
-    BLOCK_N: tl.constexpr = BLOCK_SIZE_K if other_transposed else BLOCK_SIZE_N
-    BLOCK_K: tl.constexpr = BLOCK_SIZE_N if other_transposed else BLOCK_SIZE_K
-    BLOCK_M: tl.constexpr = BLOCK_SIZE_M
+    TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
+    TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
+    TILE_M: tl.constexpr = TILE_SIZE_M
 
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
@@ -256,9 +256,9 @@ def segment_matmul_kernel(
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             BLOCK_SIZE=BLOCK_SIZE,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K,
+            TILE_M=TILE_M,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K,
             EVEN_K=EVEN_K,
             EQUAL_K=EQUAL_K,
         )
@@ -274,9 +274,9 @@ def segment_matmul_kernel(
             out_dtype=out_dtype,
             BLOCK_SIZE=BLOCK_SIZE,
             NUM_TILES=NUM_TILES,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
-            BLOCK_K=BLOCK_K,
+            TILE_M=TILE_M,
+            TILE_N=TILE_N,
+            TILE_K=TILE_K,
             EVEN_K=EVEN_K)
 
 
@@ -289,7 +289,7 @@ def segment_matmul_kernel(
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'BLOCK_SIZE_M': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
     ],
     key=['N', 'K'],
 )
@@ -302,9 +302,9 @@ def batch_matmul_kernel(
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
     B: tl.constexpr,
-    BLOCK_SIZE_M: tl.constexpr,
-    BLOCK_SIZE_N: tl.constexpr,
-    BLOCK_SIZE_K: tl.constexpr
+    TILE_SIZE_M: tl.constexpr,
+    TILE_SIZE_N: tl.constexpr,
+    TILE_SIZE_K: tl.constexpr
 ):
     # TODO(Keren): a different block grouping scheme
     pid_k = tl.program_id(axis=0)
@@ -317,26 +317,26 @@ def batch_matmul_kernel(
         return
 
     type_id = tl.load(input_slices + 5 * bid + 1)
-    offs_k = pid_k * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
-    offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
-    offs_m = tl.arange(0, BLOCK_SIZE_M)
+    offs_k = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)
+    offs_n = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)
+    offs_m = tl.arange(0, TILE_SIZE_M)
 
     # [M, K] -> [K, M]
     input_ptrs = input + ((offs_m[None, :] + start_off) * stride_input_m + offs_k[:, None] * stride_input_k)
     # [M, N]
     grad_output_ptrs = grad_output + ((offs_m[:, None] + start_off) * stride_grad_output_m + offs_n[None, :] * stride_grad_output_n)
 
-    acc = tl.zeros((BLOCK_SIZE_K, BLOCK_SIZE_N), dtype=out_dtype)
+    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=out_dtype)
     mask_k = offs_k[:, None] < K
     mask_n = offs_n[None, :] < N
     M = end_off - start_off
 
-    for m in range(0, tl.cdiv(M, BLOCK_SIZE_M)):
-        a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * BLOCK_SIZE_M < M), other=0.0)
-        b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * BLOCK_SIZE_M < M), other=0.0)
+    for m in range(0, tl.cdiv(M, TILE_SIZE_M)):
+        a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_SIZE_M < M), other=0.0)
+        b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_SIZE_M < M), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += BLOCK_SIZE_M * stride_input_m
-        grad_output_ptrs += BLOCK_SIZE_M * stride_grad_output_m
+        input_ptrs += TILE_SIZE_M * stride_input_m
+        grad_output_ptrs += TILE_SIZE_M * stride_grad_output_m
 
     acc = acc.to(grad_other.dtype.element_ty)
     c_ptrs = grad_other + type_id * stride_grad_other_b + \
@@ -362,7 +362,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
     def grid(meta):
-        return (num_blocks, triton.cdiv(N, meta['BLOCK_SIZE_N']))
+        return (num_blocks, triton.cdiv(N, meta['TILE_SIZE_N']))
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,
@@ -375,7 +375,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         BLOCK_SIZE=block_size,
         other_transposed=False,
         out_dtype=out_dtype,
-        BLOCK_SIZE_M=tile_size,
+        TILE_SIZE_M=tile_size,
     )
     return output
 
@@ -401,7 +401,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (num_blocks, triton.cdiv(K, meta['BLOCK_SIZE_K']))
+            return (num_blocks, triton.cdiv(K, meta['TILE_SIZE_K']))
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
@@ -414,7 +414,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             BLOCK_SIZE=block_size,
             other_transposed=True,
             out_dtype=out_dtype,
-            BLOCK_SIZE_M=tile_size,
+            TILE_SIZE_M=tile_size,
         )
         return grad_input
 
@@ -425,7 +425,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_other = torch.zeros_like(other)
 
         def grid(meta):
-            return (triton.cdiv(K, meta['BLOCK_SIZE_K']), triton.cdiv(N, meta['BLOCK_SIZE_N']), B)
+            return (triton.cdiv(K, meta['TILE_SIZE_K']), triton.cdiv(N, meta['TILE_SIZE_N']), B)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
         batch_matmul_kernel[grid](
             input, input_slices, grad_output, grad_other,
