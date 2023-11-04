@@ -70,53 +70,6 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
     return subslices, num_blocks
 
 
-# XXX(Keren): balanced tiling is disabled for performance issues
-def balanced_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list, int]:
-    slice_pool = []
-    large_tile_size = tile_size * block_size
-    for slice in slices:
-        index = slice[0]
-        type = slice[1]
-        start = slice[2]
-        end = slice[3]
-        for off in range(start, end, large_tile_size):
-            if off + large_tile_size <= end:
-                slice_pool.append([index, type, off, off + large_tile_size, -1])
-            else:
-                slice_pool.append([index, type, off, end, -1])
-
-    last_small_slice_idx = -1
-    last_block_size = 0
-    subslices = []
-    small_slice_pool = []
-    small_slice_indices = []
-    for slice in slice_pool:
-        slice_size = slice[3] - slice[2]
-        if slice_size == large_tile_size:
-            # large slice => single block
-            subslices.append(slice)
-        else:
-            # small slice => a chain of blocks
-            if last_small_slice_idx == -1 or slice_size + last_block_size > 2 * large_tile_size:
-                last_small_slice_idx = len(subslices)
-                last_block_size = slice_size
-                subslices.append(slice)
-            else:
-                last_block_size += slice_size
-                small_slice_pool.append(slice)
-                small_slice_indices.append(last_small_slice_idx)
-
-    num_blocks = len(subslices)
-    for i, index in enumerate(small_slice_indices):
-        if i == 0 or index != small_slice_indices[i - 1]:
-            subslices[index][4] = len(subslices)
-        else:
-            subslices[num_blocks + i - 1][4] = len(subslices)
-        subslices.append(small_slice_pool.pop(0))
-
-    return subslices, num_blocks
-
-
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
