@@ -1,11 +1,14 @@
 import argparse
 import os.path as osp
+from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
 import torch_geometric.transforms as T
+from torch import Tensor
 from torch_geometric.datasets import DBLP
 from torch_geometric.nn import Linear
+from torch_geometric.utils.sparse import index2ptr
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
@@ -21,7 +24,9 @@ args = parser.parse_args()
 device = torch.device(args.device)
 
 
-def tensor_slice_gen(data) -> TensorSlice:
+def tensor_slice_gen(data, num_heads) -> Tuple[TensorSlice, Tensor, TensorSlice, List]:
+
+    # Generating tensor_slice for HeteroDictLinear
     ptr = [0]
     for key, _ in data.x_dict.items():
         ptr.append(ptr[-1] + data.x_dict[key].shape[0])
@@ -29,8 +34,34 @@ def tensor_slice_gen(data) -> TensorSlice:
     types = torch.zeros((ptr[-1],), dtype=torch.int)
     for i, s in enumerate(slices):
         types[s] = i
-    tensor_slice = compact_tensor_types(data=None, types=types, is_sorted=True, device=device)
-    return tensor_slice, slices
+    tensor_slice_hdl = compact_tensor_types(data=None, types=types, is_sorted=True, device=device)
+    slices_hdl = slices
+
+    # Generating tensor_slice for HeteroLinear
+    edge_types = data.metadata()[1]
+    num_edge_types = len(edge_types)
+    H = num_heads   # No of heads
+    type_list = []
+    edge_map = {edge_type: i for i, edge_type in enumerate(data.metadata()[1])}
+
+    for key, _ in data.edge_index_dict.items():
+        N = data.x_dict[key[0]].shape[0]
+        edge_type_offset = edge_map[key]
+        type_vec = torch.arange(H, dtype=torch.long).view(-1, 1).repeat(1, N) * num_edge_types + edge_type_offset
+        type_list.append(type_vec)
+
+    type_vec = torch.cat(type_list, dim=1).flatten()
+    num_types = H * len(edge_types)
+    ptr = index2ptr(type_vec, num_types)
+    slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
+    types = torch.zeros((ptr[-1],), dtype=torch.int)
+
+    for i, s in enumerate(slices):
+        types[s] = i
+
+    tensor_slice_hl = compact_tensor_types(data=None, types=types, is_sorted=True, device=device)
+
+    return tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl
 
 
 class HGT(torch.nn.Module):
@@ -49,24 +80,25 @@ class HGT(torch.nn.Module):
 
         self.lin = Linear(hidden_channels, out_channels)
 
-    def forward(self, x_dict, edge_index_dict, tensor_slice, slices):
+    def forward(self, x_dict, edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl):
         x_dict = {
             node_type: self.lin_dict[node_type](x).relu_()
             for node_type, x in x_dict.items()
         }
 
         for conv in self.convs:
-            x_dict = conv(x_dict=x_dict, edge_index_dict=edge_index_dict, tensor_slice=tensor_slice, slices=slices)
+            x_dict = conv(x_dict=x_dict, edge_index_dict=edge_index_dict, tensor_slice_hl=tensor_slice_hl,
+                          type_vec=type_vec, tensor_slice_hdl=tensor_slice_hdl, slices_hdl=slices_hdl)
 
         return self.lin(x_dict['author'])
 
 
 model = HGT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
 data, model = data.to(device), model.to(device)
-tensor_slice, slices = tensor_slice_gen(data)
+tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl = tensor_slice_gen(data, 2)  # last argument num_heads
 
 with torch.no_grad():  # Initialize lazy modules.
-    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
@@ -74,7 +106,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 def train():
     model.train()
     optimizer.zero_grad()
-    out = model(data.x_dict, data.edge_index_dict, tensor_slice, slices)
+    out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
     mask = data['author'].train_mask
     loss = F.cross_entropy(out[mask], data['author'].y[mask])
     loss.backward()
@@ -85,7 +117,7 @@ def train():
 @torch.no_grad()
 def test():
     model.eval()
-    pred = model(data.x_dict, data.edge_index_dict, tensor_slice, slices).argmax(dim=-1)
+    pred = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl).argmax(dim=-1)
 
     accs = []
     for split in ['train_mask', 'val_mask', 'test_mask']:
