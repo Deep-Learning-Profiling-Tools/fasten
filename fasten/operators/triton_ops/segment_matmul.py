@@ -297,7 +297,7 @@ def segment_matmul_kernel(
     next_id = pid_m
     contiguous = -1
     if TRUNCED:
-        contiguous_entry = tl.load(contiguous_flags + tl.cdiv(next_id, 32)).to(tl.int32)
+        contiguous_entry = tl.load(contiguous_flags + next_id // 32).to(tl.int32)
         contiguous = (contiguous_entry >> (next_id % 32)) & 1
     else:
         contiguous = tl.load(input_tiles + 5 * next_id + 4)
