@@ -103,6 +103,7 @@ def _dispatch(
 @triton.jit(noinline=True)
 def _noncontiguous_block(
     input_tiles,
+    start_and_type, end_and_next,
     next_id, pid_n,
     input, other, output,
     K, N,
@@ -116,21 +117,33 @@ def _noncontiguous_block(
     TILE_N: tl.constexpr,
     TILE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
-    EVEN_N: tl.constexpr
+    EVEN_N: tl.constexpr,
+    TRUNCED: tl.constexpr,
 ):
     next_next_id = 0
     for i in range(0, BLOCK_SIZE):
         if next_id < NUM_TILES and next_id != -1:
-            if i == 0:
-                next_next_id = tl.load(input_tiles + 5 * next_id + 4)
-            # TODO: large tensors
-            # Use int32 to reduce register usage
-            start_off = tl.load(input_tiles + 5 * next_id + 2)
-            end_off = tl.load(input_tiles + 5 * next_id + 3)
+            start_off = 0
+            end_off = 0
+            type_id = 0
+            if TRUNCED:
+                if i == 0:
+                    end_and_next_entry = tl.load(end_and_next + 5 * next_id + 4)
+                    end_off = ((end_and_next_entry >> 32) & 0xffffffff).to(tl.int32)
+                    next_next_id = (end_and_next_entry & 0xffffffff).to(tl.int32)
+                start_and_type_entry = tl.load(start_and_type + 5 * next_id + 4)
+                start_off = ((start_and_type_entry >> 32) & 0xffffffff).to(tl.int32)
+                type_id = (start_and_type_entry & 0xffffffff).to(tl.int32)
+            else:
+                if i == 0:
+                    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
+                # TODO: large tensors
+                # Use int32 to reduce register usage
+                start_off = tl.load(input_tiles + 5 * next_id + 2)
+                end_off = tl.load(input_tiles + 5 * next_id + 3)
             length = end_off - start_off
 
             if length > 0:
-                type_id = tl.load(input_tiles + 5 * next_id + 1)
                 _dispatch(
                     pid_n, type_id,
                     start_off, end_off,
@@ -155,6 +168,7 @@ def _noncontiguous_block(
 @triton.jit
 def _contiguous_block(
     input_tiles,
+    start_and_type,
     next_id, pid_n,
     input, other, output,
     K, N,
@@ -169,9 +183,17 @@ def _contiguous_block(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
+    TRUNCED: tl.constexpr,
 ):
-    start_off = tl.load(input_tiles + 5 * next_id + 2)
-    type_id = tl.load(input_tiles + 5 * next_id + 1)
+    start_off = 0
+    type_id = 0
+    if TRUNCED:
+        start_and_type_entry = tl.load(start_and_type + 5 * next_id + 4)
+        start_off = ((start_and_type_entry >> 32) & 0xffffffff).to(tl.int32)
+        type_id = (start_and_type_entry & 0xffffffff).to(tl.int32)
+    else:
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        type_id = tl.load(input_tiles + 5 * next_id + 1)
     if EQUAL_K and TILE_K <= 32:
         _reg_matmul(
             pid_n, type_id,
@@ -239,7 +261,10 @@ def _contiguous_block(
 })
 @triton.jit
 def segment_matmul_kernel(
-    input, input_tiles, other, output,
+    input, input_tiles,
+    start_and_type, end_and_next,
+    contiguous_flags,
+    other, output,
     K, N,
     stride_input_m, stride_input_k,
     stride_other_b, stride_other_k, stride_other_n,
@@ -254,7 +279,8 @@ def segment_matmul_kernel(
     EQUAL_K: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-    TILE_SIZE_K: tl.constexpr
+    TILE_SIZE_K: tl.constexpr,
+    TRUNCED: tl.constexpr,
 ):
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
@@ -271,10 +297,16 @@ def segment_matmul_kernel(
     pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
-    contiguous = tl.load(input_tiles + 5 * next_id + 4)
+    contiguous = -1
+    if TRUNCED:
+        contiguous_entry = tl.load(contiguous_flags + tl.cdiv(next_id, 32)).to(tl.int32)
+        contiguous = (contiguous_entry >> (next_id % 32)) & 1
+    else:
+        contiguous = tl.load(input_tiles + 5 * next_id + 4)
     if contiguous == 0:
         _contiguous_block(
             input_tiles,
+            start_and_type,
             next_id, pid_n,
             input, other, output,
             K, N,
@@ -289,10 +321,12 @@ def segment_matmul_kernel(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EQUAL_K=EQUAL_K,
+            TRUNCED=TRUNCED,
         )
     else:
         _noncontiguous_block(
             input_tiles,
+            start_and_type, end_and_next,
             next_id, pid_n,
             input, other, output,
             K, N,
@@ -306,7 +340,9 @@ def segment_matmul_kernel(
             TILE_N=TILE_N,
             TILE_K=TILE_K,
             EVEN_K=EVEN_K,
-            EVEN_N=EVEN_N)
+            EVEN_N=EVEN_N,
+            TRUNCED=TRUNCED,
+        )
 
 
 # TODO(Keren): split_matmul_kernel
@@ -377,6 +413,8 @@ def batch_matmul_kernel(
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
+                           start_and_type: torch.Tensor = None, end_and_next: torch.Tensor = None,
+                           contiguous_flags: torch.Tensor = None,
                            num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64, out_dtype: torch.dtype = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
@@ -394,7 +432,10 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']),)
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
-        input, input_tiles, other, output,
+        input, input_tiles,
+        start_and_type, end_and_next,
+        contiguous_flags,
+        other, output,
         K, N,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
@@ -405,6 +446,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         other_transposed=False,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
+        TRUNCED=start_and_type is not None,
     )
     return output
 
@@ -412,6 +454,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                             input_tiles: torch.Tensor, input_slices: torch.Tensor,
                             grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
+                            start_and_type: torch.Tensor = None, end_and_next: torch.Tensor = None,
+                            contiguous_flags: torch.Tensor = None,
                             num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
@@ -433,7 +477,10 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']),)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
-            grad_output, input_tiles, other, grad_input,
+            grad_output, input_tiles,
+            start_and_type, end_and_next,
+            contiguous_flags,
+            other, grad_input,
             N, K,
             grad_output.stride(0), grad_output.stride(1),
             other.stride(0), other.stride(2), other.stride(1),  # swap K and N
@@ -444,6 +491,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             other_transposed=True,
             out_dtype=out_dtype,
             TILE_SIZE_M=tile_size,
+            TRUNCED=start_and_type is not None,
         )
         return grad_input
 

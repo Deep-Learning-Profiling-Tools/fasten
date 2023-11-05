@@ -13,6 +13,9 @@ class BestConfig:
     block_size: int = None  # the number of tiles belong to a block, -1: dynamic block size
     num_blocks: int = None  # number of blocks that group the tiles
     input_tiles: torch.Tensor = None
+    start_and_type: torch.Tensor = None
+    end_and_next: torch.Tensor = None
+    contiguous_flags: torch.Tensor = None
 
     def asdict(self):
         return asdict(self)
@@ -34,13 +37,16 @@ class Scheduler:
     tiling_methods: list[TilingMethod] = field(default_factory=lambda: [Scheduler.default_tiling_method])
     default_block_size: int = 1
     block_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
+    default_trunc: bool = False
+    trunc_flags: list[bool] = field(default_factory=lambda: [Scheduler.default_trunc])
 
     def get_configs(self):
         configs = []
         for tile_size in self.tile_sizes:
             for tiling_method in self.tiling_methods:
                 for block_size in self.block_sizes:
-                    configs.append((tile_size, tiling_method, block_size))
+                    for trunc in self.trunc_flags:
+                        configs.append((tile_size, tiling_method, block_size, trunc))
         return configs
 
 
@@ -91,6 +97,22 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
     # Combine all subslices and return
     compressed_subslices.extend(small_subslices)
     return compressed_subslices, num_blocks
+
+
+def trunc_slices(slices: torch.Tensor):
+    start_and_type = torch.zeros((slices.size(0),), dtype=torch.long, device=slices.device)
+    start_and_type.fill_(slices[:, 1] << 32)
+    start_and_type |= slices[:, 3]
+    end_and_next = torch.zeros((slices.size(0),), dtype=torch.long, device=slices.device)
+    end_and_next.fill_(slices[:, 2] << 32)
+    end_and_next |= slices[:, 4]
+    # TODO: optimize this
+    slices_cpu = slices.cpu()
+    contiguous_flags = torch.zeros((triton.cdiv(slices.size(0), 32),), dtype=torch.int, device='cpu')
+    for i in range(slices.size(0)):
+        contiguous_flags[i // 32] |= (slices_cpu[i, 4] == 0).int() << (i % 32)
+    contiguous_flags = contiguous_flags.to(slices.device)
+    return start_and_type, end_and_next, contiguous_flags
 
 
 def _init_segment_matmul_forward_scheduler():

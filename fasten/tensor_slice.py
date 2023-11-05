@@ -2,6 +2,7 @@ from collections import OrderedDict
 from typing import Optional, Tuple, Union
 
 import torch
+import triton
 from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
@@ -154,6 +155,21 @@ class TensorSlice:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
 
+    def trunc(self):
+        start_and_type = torch.zeros((self.slices.size(0),), dtype=torch.long, device=self.slices.device)
+        start_and_type.fill_(self.slices[:, 1] << 32)
+        start_and_type |= self.slices[:, 3]
+        end_and_next = torch.zeros((self.slices.size(0),), dtype=torch.long, device=self.slices.device)
+        end_and_next.fill_(self.slices[:, 2] << 32)
+        end_and_next |= self.slices[:, 4]
+        # TODO: optimize this
+        slices_cpu = self.slices.cpu()
+        contiguous_flags = torch.zeros((triton.cdiv(self.slices.size(0), 32),), dtype=torch.int, device='cpu')
+        for i in range(self.slices.size(0)):
+            contiguous_flags[i // 32] |= (slices_cpu[i, 4] == 0).int() << (i % 32)
+        contiguous_flags = contiguous_flags.to(self.slices.device)
+        return start_and_type, end_and_next, contiguous_flags
+
     def schedule(self, op_name: str, *args, autotune: bool = False) -> CacheEntry:
         scheduler = schedulers[op_name]
         key = scheduler.get_key(*args)
@@ -178,14 +194,22 @@ class TensorSlice:
         debug = is_debug()
 
         triton_op = getattr(triton_ops, op_name)
-        for tile_size, tiling_method, block_size in scheduler.get_configs():
+        for tile_size, tiling_method, block_size, trunc in scheduler.get_configs():
             input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
+            start_and_type = None
+            end_and_next = None
+            contiguous_flags = None
+            if trunc:
+                start_and_type, end_and_next, contiguous_flags = input_tiles.trunc()
             try:
                 ms = do_bench(
                     lambda: triton_op(
                         *args,
                         input_slices=self.slices,
                         input_tiles=input_tiles.slices,
+                        start_and_type=start_and_type,
+                        end_and_next=end_and_next,
+                        contiguous_flags=contiguous_flags,
                         num_blocks=input_tiles.num_blocks,
                         block_size=input_tiles.block_size,
                         tile_size=tile_size
@@ -194,17 +218,18 @@ class TensorSlice:
                     rep=1 if debug else 10
                 )
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, trunc={trunc}, ms={ms}')
                 if ms < best_ms:
-                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
+                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, start_and_type=start_and_type, end_and_next=end_and_next, contiguous_flags=contiguous_flags, num_blocks=input_tiles.num_blocks)
             except OutOfResources:
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, out of resources')
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, trunc={trunc}, out of resources')
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}')
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, trunc={trunc}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
+        assert scheduler.default_trunc is False, "Default trunc is not supported yet"
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks), getattr(triton_ops, op_name)
 
