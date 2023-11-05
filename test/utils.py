@@ -1,5 +1,7 @@
 import csv
 
+import torch
+
 
 def read_slices_from_csv(csv_file):
     slices = []
@@ -12,3 +14,11 @@ def read_slices_from_csv(csv_file):
             slices.append(slice(start, end))
 
     return slices
+
+
+def count_bits(x) -> int:
+    count = torch.zeros_like(x)
+    while x.any():
+        count += x & 1
+        x >>= 1
+    return count.item()

@@ -1,6 +1,7 @@
 import pytest
 import torch
 import triton
+from utils import count_bits
 
 from fasten import compact_tensor_types
 from fasten.analysis import get_num_contiguous_slices
@@ -52,9 +53,9 @@ def test_trunc(device: str, tile_size: int, block_size: int):
     tensor_slice = compact_tensor_types(data, types, device=device)
     tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
     start_and_type, end_and_next, contiguous_flags = tensor_tile.trunc()
-    # count number of 1s in contiguous_flags
+    # count number of bits in contiguous_flags
     num_contiguous_slices = get_num_contiguous_slices(tensor_tile.slices)
-    assert num_contiguous_slices == torch.sum(contiguous_flags).item()
+    assert num_contiguous_slices == count_bits(contiguous_flags)
     assert torch.all(start_and_type >> 32 == tensor_tile.slices[:, 2])
     assert torch.all(start_and_type & 0xffffffff == tensor_tile.slices[:, 1])
     assert torch.all(end_and_next >> 32 == tensor_tile.slices[:, 3])
