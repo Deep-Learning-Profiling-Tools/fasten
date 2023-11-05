@@ -144,6 +144,8 @@ def _noncontiguous_block(
             length = end_off - start_off
 
             if length > 0:
+                if not TRUNCED:
+                    type_id = tl.load(input_tiles + 5 * next_id + 1)
                 _dispatch(
                     pid_n, type_id,
                     start_off, end_off,
@@ -235,10 +237,6 @@ def _contiguous_block(
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
