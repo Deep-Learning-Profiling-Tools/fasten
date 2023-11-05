@@ -3,6 +3,7 @@ import torch
 import triton
 
 from fasten import compact_tensor_types
+from fasten.analysis import get_num_contiguous_slices
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
@@ -45,14 +46,16 @@ def test_trunc(device: str):
     block_size = 4
     data = torch.ones((128, 128), device=device)
     types = torch.zeros(128, dtype=torch.int, device=device)
-    types[0:63] = 1
-    types[63:90] = 2
+    types[0:64] = 1
+    types[64:90] = 2
     types[90:128] = 3
     tensor_slice = compact_tensor_types(data, types, device=device)
     tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
     start_and_type, end_and_next, contiguous_flags = tensor_tile.trunc()
-    print("start: ", start_and_type >> 32)
-    print("type: ", start_and_type & 0xffffffff)
-    print("end: ", end_and_next >> 32)
-    print("next: ", end_and_next & 0xffffffff)
-    print("contiguous: ", contiguous_flags)
+    # count number of 1s in contiguous_flags
+    num_contiguous_slices = get_num_contiguous_slices(tensor_tile.slices)
+    assert num_contiguous_slices == torch.sum(contiguous_flags).item()
+    assert torch.all(start_and_type >> 32 == tensor_slice.slices[:, 2])
+    assert torch.all(start_and_type & 0xffffffff == tensor_slice.slices[:, 1])
+    assert torch.all(end_and_next >> 32 == tensor_slice.slices[:, 3])
+    assert torch.all(end_and_next & 0xffffffff == tensor_slice.slices[:, 4])
