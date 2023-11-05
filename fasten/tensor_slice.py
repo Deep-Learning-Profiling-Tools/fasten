@@ -155,7 +155,7 @@ class TensorSlice:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
 
-    def trunc(self):
+    def trunc(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         start_and_type = (self.slices[:, 1].long() << 32) | self.slices[:, 3].long()
         end_and_next = (self.slices[:, 2].long() << 32) | self.slices[:, 4].long()
         # TODO: optimize this

@@ -37,3 +37,20 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
     assert len(tensor_tile) == num_slices
+
+
+@pytest.mark.parametrize('device', ['cpu', 'cuda'])
+def test_trunc(device: str):
+    tile_size = 16
+    block_size = 4
+    data = torch.ones((128, 128), device=device)
+    types = torch.zeros(128, dtype=torch.int, device=device)
+    types[0:63] = 1
+    types[63:90] = 2
+    types[90:128] = 3
+    tensor_slice = compact_tensor_types(data, types, device=device)
+    tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
+    start_and_type, end_and_next, contiguous_flags = tensor_tile.trunc()
+    print(start_and_type)
+    print(end_and_next)
+    print(contiguous_flags)
