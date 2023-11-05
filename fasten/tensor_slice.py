@@ -156,12 +156,8 @@ class TensorSlice:
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
 
     def trunc(self):
-        start_and_type = torch.zeros((self.slices.size(0),), dtype=torch.long, device=self.slices.device)
-        start_and_type.fill_(self.slices[:, 1] << 32)
-        start_and_type |= self.slices[:, 3]
-        end_and_next = torch.zeros((self.slices.size(0),), dtype=torch.long, device=self.slices.device)
-        end_and_next.fill_(self.slices[:, 2] << 32)
-        end_and_next |= self.slices[:, 4]
+        start_and_type = (self.slices[:, 1].long() << 32) | self.slices[:, 3].long()
+        end_and_next = (self.slices[:, 2].long() << 32) | self.slices[:, 4].long()
         # TODO: optimize this
         slices_cpu = self.slices.cpu()
         contiguous_flags = torch.zeros((triton.cdiv(self.slices.size(0), 32),), dtype=torch.int, device='cpu')
