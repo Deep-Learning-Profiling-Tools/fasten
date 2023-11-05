@@ -227,7 +227,7 @@ def _contiguous_block(
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
     'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0,
-    'GRID_N': lambda args: args['N'] // args['TILE_SIZE_N'],
+    'GRID_N': lambda args: triton.cdiv(args['N'], args['TILE_SIZE_N']),
     'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
