@@ -300,8 +300,8 @@ def segment_matmul_kernel(
         contiguous_entry = tl.load(contiguous_flags + next_id // 32).to(tl.int32)
         contiguous = (contiguous_entry >> (next_id % 32)) & 1
     else:
-        contiguous = tl.load(input_tiles + 5 * next_id + 4)
-    if contiguous == 0:
+        contiguous = tl.load(input_tiles + 5 * next_id + 4) == 0
+    if contiguous:
         _contiguous_block(
             input_tiles,
             start_and_type,
