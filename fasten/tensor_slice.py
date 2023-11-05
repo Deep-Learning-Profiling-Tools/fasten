@@ -34,7 +34,7 @@ class TensorSlice:
                 self._slices[i][1] = i  # type
                 self._slices[i][2] = i  # start
                 self._slices[i][3] = i + 1  # end
-                self._slices[i][4] = -1  # contiguous
+                self._slices[i][4] = -1  # next
             self._slices = self._slices.to(device)
         elif type(slices) is list:
             # 2d list, nx5
