@@ -227,7 +227,6 @@ def _contiguous_block(
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
     'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0,
-    'GRID_N': lambda args: triton.cdiv(args['N'], args['TILE_SIZE_N']),
     'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
@@ -244,7 +243,6 @@ def segment_matmul_kernel(
     BLOCK_SIZE: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
-    GRID_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
@@ -257,7 +255,8 @@ def segment_matmul_kernel(
 
     # Global grouping
     pid = tl.program_id(axis=0)
-    width = GROUP_M * GRID_N
+    grid_n = tl.cdiv(N, TILE_N)
+    width = GROUP_M * grid_n
     group_id = pid // width
     group_size = min(NUM_BLOCKS - group_id * GROUP_M, GROUP_M)
     pid_m = group_id * GROUP_M + (pid % group_size)
