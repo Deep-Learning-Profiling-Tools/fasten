@@ -384,7 +384,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
     def grid(meta):
-        return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']))
+        return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']),)
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,
@@ -423,7 +423,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']))
+            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']),)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
