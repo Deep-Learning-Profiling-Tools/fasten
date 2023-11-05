@@ -54,20 +54,46 @@ def default_tiling(slices: list, tile_size: int, block_size: int) -> Tuple[list,
         for off in range(start, end, tile_size):
             subslices.append([index, type, off, min(off + tile_size, end), -1])
     num_blocks = triton.cdiv(len(subslices), block_size)
+    compressed_subslices = []
+    small_subslices = []
     for i in range(num_blocks):
         last_subslice_idx = (i + 1) * block_size - 1
-        if last_subslice_idx >= len(subslices):
-            continue
         first_subslice = subslices[i * block_size]
+        if last_subslice_idx >= len(subslices):
+            compressed_subslices.append(first_subslice)
+            last_subslice = compressed_subslices[-1]
+            for j in range(0, block_size - 1):
+                subslice_idx = i * block_size + j + 1
+                if subslice_idx >= len(subslices):
+                    break
+                # continued blocks, must be > 0
+                last_subslice[4] = len(small_subslices) + num_blocks
+                small_subslices.append(subslices[subslice_idx])
+                last_subslice = small_subslices[-1]
+            continue
         last_subslice = subslices[last_subslice_idx]
+        slice_index = first_subslice[0]
         first_subslice_start = first_subslice[2]
         last_subslice_end = last_subslice[3]
         first_subslice_type = first_subslice[1]
         last_subslice_type = last_subslice[1]
         if first_subslice_type == last_subslice_type and first_subslice_start + tile_size * block_size == last_subslice_end:
-            first_subslice[4] = 1  # large block
-        # else small block
-    return subslices, num_blocks
+            # large block
+            compressed_subslices.append([slice_index, first_subslice_type, first_subslice_start, last_subslice_end, 0])
+        else:
+            # small block
+            compressed_subslices.append(first_subslice)
+            last_subslice = compressed_subslices[-1]
+            for j in range(0, block_size - 1):
+                subslice_idx = i * block_size + j + 1
+                if subslice_idx >= len(subslices):
+                    break
+                # continued blocks, must be > 0
+                last_subslice[4] = len(small_subslices) + num_blocks
+                small_subslices.append(subslices[subslice_idx])
+                last_subslice = small_subslices[-1]
+    compressed_subslices.extend(small_subslices)
+    return compressed_subslices, num_blocks
 
 
 def _init_segment_matmul_forward_scheduler():
