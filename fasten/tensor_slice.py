@@ -2,6 +2,7 @@ from collections import OrderedDict
 from typing import Optional, Tuple, Union
 
 import torch
+from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
@@ -179,23 +180,26 @@ class TensorSlice:
         triton_op = getattr(triton_ops, op_name)
         for tile_size, tiling_method, block_size in scheduler.get_configs():
             input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
-            ms = do_bench(
-                lambda: triton_op(
-                    *args,
-                    input_slices=self.slices,
-                    input_tiles=input_tiles.slices,
-                    num_blocks=input_tiles.num_blocks,
-                    block_size=input_tiles.block_size,
-                    tile_size=tile_size
-                ),
-                warmup=1 if debug else 5,
-                rep=1 if debug else 10
-            )
-            if debug:
-                print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
-            if ms < best_ms:
-                best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
-
+            try:
+                ms = do_bench(
+                    lambda: triton_op(
+                        *args,
+                        input_slices=self.slices,
+                        input_tiles=input_tiles.slices,
+                        num_blocks=input_tiles.num_blocks,
+                        block_size=input_tiles.block_size,
+                        tile_size=tile_size
+                    ),
+                    warmup=1 if debug else 5,
+                    rep=1 if debug else 10
+                )
+                if debug:
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
+                if ms < best_ms:
+                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
+            except OutOfResources:
+                if debug:
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, out of resources')
         if debug:
             print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}')
         return best_ms, best_config, best_op
