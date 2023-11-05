@@ -78,7 +78,7 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
     # Generate subslices
     subslices = [
         [index, type, off, min(off + tile_size, end), -1]
-        for index, type, start, end in slices
+        for index, type, start, end, _ in slices
         for off in range(start, end, tile_size)
     ]
 
