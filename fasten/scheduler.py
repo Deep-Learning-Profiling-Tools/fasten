@@ -64,7 +64,7 @@ def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num
             for j in range(block_start_idx, block_end_idx):
                 subslice = subslices[j]
                 # Set continuation index for small blocks
-                subslice[4] = len(small_subslices) + num_blocks if j != block_start_idx else -1
+                subslice[4] = len(small_subslices) + num_blocks
                 if j == block_start_idx:
                     compressed_subslices.append(subslice)
                 else:
