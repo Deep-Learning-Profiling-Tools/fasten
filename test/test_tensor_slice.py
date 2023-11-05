@@ -41,9 +41,9 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
-def test_trunc(device: str):
-    tile_size = 16
-    block_size = 4
+@pytest.mark.parametrize('tile_size', [3, 16])
+@pytest.mark.parametrize('block_size', [1, 4])
+def test_trunc(device: str, tile_size: int, block_size: int):
     data = torch.ones((128, 128), device=device)
     types = torch.zeros(128, dtype=torch.int, device=device)
     types[0:64] = 1
@@ -55,7 +55,7 @@ def test_trunc(device: str):
     # count number of 1s in contiguous_flags
     num_contiguous_slices = get_num_contiguous_slices(tensor_tile.slices)
     assert num_contiguous_slices == torch.sum(contiguous_flags).item()
-    assert torch.all(start_and_type >> 32 == tensor_slice.slices[:, 2])
-    assert torch.all(start_and_type & 0xffffffff == tensor_slice.slices[:, 1])
-    assert torch.all(end_and_next >> 32 == tensor_slice.slices[:, 3])
-    assert torch.all(end_and_next & 0xffffffff == tensor_slice.slices[:, 4])
+    assert torch.all(start_and_type >> 32 == tensor_tile.slices[:, 2])
+    assert torch.all(start_and_type & 0xffffffff == tensor_tile.slices[:, 1])
+    assert torch.all(end_and_next >> 32 == tensor_tile.slices[:, 3])
+    assert torch.all(end_and_next & 0xffffffff == tensor_tile.slices[:, 4])
