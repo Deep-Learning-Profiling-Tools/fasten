@@ -255,7 +255,7 @@ def segment_matmul_kernel(
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
-    GROUP_M: tl.constexpr = 2
+    GROUP_M: tl.constexpr = 4
 
     # Global grouping
     pid = tl.program_id(axis=0)
