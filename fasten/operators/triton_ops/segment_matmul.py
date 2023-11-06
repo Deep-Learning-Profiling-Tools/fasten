@@ -8,7 +8,7 @@ from ...utils import torch_dtype_to_triton_dtype
 from .kernels.matmul import _matmul, _reg_matmul
 
 
-@triton.jit
+@triton.jit(noinline=True)
 def _dispatch(
     pid_n, type_id,
     start_off, end_off,
@@ -100,7 +100,7 @@ def _dispatch(
         )
 
 
-@triton.jit(noinline=True)
+@triton.jit
 def _noncontiguous_block(
     input_tiles,
     next_id, next_next_id, pid_n,
@@ -253,10 +253,16 @@ def segment_matmul_kernel(
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
 
+    GROUP_M: tl.constexpr = 8
+
+    # Global grouping
     pid = tl.program_id(axis=0)
     grid_n = tl.cdiv(N, TILE_N)
-    pid_m = pid // grid_n
-    pid_n = pid % grid_n
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(NUM_BLOCKS - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
