@@ -191,7 +191,7 @@ def _contiguous_block(
             cur_start_off = start_off + i * TILE_M
             cur_end_off = cur_start_off + TILE_M
             if EVEN_K and EVEN_N:
-                if BLOCK_SIZE == 1 or (TILE_K * TILE_M + TILE_K * TILE_N) <= (64 * 32 * 2):
+                if BLOCK_SIZE == 1 or (TILE_K * TILE_M + TILE_K * TILE_N) <= (64 * 64 * 2):
                     _fast_matmul_inline(
                         cur_start_off, pid_n * TILE_N,
                         input, other + type_id * stride_other_b, output,
@@ -251,7 +251,7 @@ def _contiguous_block(
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
-    key=['N', 'K'],
+    key=['N', 'K'],  # Tune for each N and K, high latency
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
