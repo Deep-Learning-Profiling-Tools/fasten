@@ -127,13 +127,13 @@ def _noncontiguous_block(
             end_off = 0
             type_id = 0
             if TRUNCED:
-                if i == 0:
-                    end_and_next_entry = tl.load(end_and_next + next_id)
-                    end_off = ((end_and_next_entry >> 32) & 0xffffffff).to(tl.int32)
-                    next_next_id = (end_and_next_entry & 0xffffffff).to(tl.int32)
+                end_and_next_entry = tl.load(end_and_next + next_id)
+                end_off = ((end_and_next_entry >> 32) & 0xffffffff).to(tl.int32)
                 start_and_type_entry = tl.load(start_and_type + next_id)
                 start_off = ((start_and_type_entry >> 32) & 0xffffffff).to(tl.int32)
                 type_id = (start_and_type_entry & 0xffffffff).to(tl.int32)
+                if i == 0:
+                    next_next_id = (end_and_next_entry & 0xffffffff).to(tl.int32)
             else:
                 if i == 0:
                     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
