@@ -35,7 +35,7 @@ def _dispatch(
         _matmul(
             pid_n,
             start_off, end_off,
-            input, output,
+            input, other, output,
             K, N,
             stride_input_m, stride_input_k,
             stride_other_k, stride_other_n,
@@ -252,6 +252,7 @@ def _contiguous_block(
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],  # Tune for each N and K, high latency
+    # TODO: Employ another performance model
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
