@@ -264,6 +264,8 @@ def early_config_prune(configs, named_args):
     ],
     prune_configs_by={
         'early_config_prune': early_config_prune,
+        'perf_model': None,
+        'top_k': 10,
     },
     key=['N', 'K'],  # Tune for each N and K, high latency
 )
