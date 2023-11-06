@@ -213,14 +213,22 @@ def _contiguous_block(
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
@@ -251,9 +259,16 @@ def segment_matmul_kernel(
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
+    GROUP_M: tl.constexpr = 4
 
-    pid_m = tl.program_id(axis=0)
-    pid_n = tl.program_id(axis=1)
+    # Global grouping
+    pid = tl.program_id(axis=0)
+    grid_n = tl.cdiv(N, TILE_N)
+    width = GROUP_M * grid_n
+    group_id = pid // width
+    group_size = min(NUM_BLOCKS - group_id * GROUP_M, GROUP_M)
+    pid_m = group_id * GROUP_M + (pid % group_size)
+    pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
     contiguous = tl.load(input_tiles + 5 * next_id + 4)
@@ -376,7 +391,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         output = torch.empty(M, N, dtype=input.dtype, device=input.device)
 
     def grid(meta):
-        return (num_blocks, triton.cdiv(N, meta['TILE_SIZE_N']))
+        return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']),)
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,
@@ -415,7 +430,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (num_blocks, triton.cdiv(K, meta['TILE_SIZE_K']))
+            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']),)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
