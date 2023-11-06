@@ -5,7 +5,7 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import _matmul, _reg_matmul
+from .kernels.matmul import _fast_matmul, _matmul, _reg_matmul
 
 
 @triton.jit(noinline=True)
@@ -189,23 +189,37 @@ def _contiguous_block(
         for i in range(0, BLOCK_SIZE):
             cur_start_off = start_off + i * TILE_M
             cur_end_off = cur_start_off + TILE_M
-            _dispatch(
-                pid_n, type_id,
-                cur_start_off, cur_end_off,
-                input, other, output,
-                K, N,
-                stride_input_m, stride_input_k,
-                stride_other_b, stride_other_k, stride_other_n,
-                stride_output_m, stride_output_n,
-                out_dtype=out_dtype,
-                MASK_M=False,
-                EVEN_K=EVEN_K,
-                EVEN_N=EVEN_N,
-                TILE_M=TILE_M,
-                TILE_N=TILE_N,
-                TILE_K=TILE_K,
-                DYNAMIC_TILING=False,
-            )
+            if EVEN_K and EVEN_N:
+                _fast_matmul(
+                    cur_start_off, pid_n * TILE_N,
+                    input, other + type_id * stride_other_b, output,
+                    stride_input_m, stride_input_k,
+                    stride_other_k, stride_other_n,
+                    stride_output_m, stride_output_n,
+                    out_dtype=out_dtype,
+                    K_ITER=K // TILE_K,
+                    TILE_M=TILE_M,
+                    TILE_N=TILE_N,
+                    TILE_K=TILE_K
+                )
+            else:
+                _dispatch(
+                    pid_n, type_id,
+                    cur_start_off, cur_end_off,
+                    input, other, output,
+                    K, N,
+                    stride_input_m, stride_input_k,
+                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_output_m, stride_output_n,
+                    out_dtype=out_dtype,
+                    MASK_M=False,
+                    EVEN_K=EVEN_K,
+                    EVEN_N=EVEN_N,
+                    TILE_M=TILE_M,
+                    TILE_N=TILE_N,
+                    TILE_K=TILE_K,
+                    DYNAMIC_TILING=False,
+                )
 
 
 @triton.autotune(
