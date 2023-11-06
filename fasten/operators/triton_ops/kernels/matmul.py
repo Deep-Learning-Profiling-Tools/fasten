@@ -186,9 +186,9 @@ def _fast_matmul_inline(
 def _fast_matmul_noinline(
     start_off_m, start_off_n,
     input, other, output,
-    stride_input_m,
+    stride_input_m, stride_input_k,
     stride_other_k, stride_other_n,
-    stride_output_m,
+    stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     K_ITER: tl.constexpr,
     TILE_M: tl.constexpr,
@@ -198,9 +198,9 @@ def _fast_matmul_noinline(
     _fast_matmul_core(
         start_off_m, start_off_n,
         input, other, output,
-        stride_input_m, 1,
+        stride_input_m, stride_input_k,
         stride_other_k, stride_other_n,
-        stride_output_m, 1,
+        stride_output_m, stride_output_n,
         out_dtype=out_dtype,
         K_ITER=K_ITER,
         TILE_M=TILE_M,

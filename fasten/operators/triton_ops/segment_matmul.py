@@ -208,9 +208,9 @@ def _contiguous_block(
                     _fast_matmul_noinline(
                         cur_start_off, pid_n * TILE_N,
                         input, other + type_id * stride_other_b, output,
-                        stride_input_m,
+                        stride_input_m, stride_input_k,
                         stride_other_k, stride_other_n,
-                        stride_output_m,
+                        stride_output_m, stride_output_n,
                         out_dtype=out_dtype,
                         K_ITER=K // TILE_K,
                         TILE_M=TILE_M,
