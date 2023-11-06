@@ -54,12 +54,12 @@ def _reg_matmul(
 
 @triton.jit
 def _matmul(
-    pid_n, type_id,
+    pid_n,
     start_off, end_off,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
-    stride_other_b, stride_other_k, stride_other_n,
+    stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     MASK_M: tl.constexpr,
@@ -76,7 +76,7 @@ def _matmul(
 
     # [M, K] x [K, N] -> [M, N]
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + type_id * stride_other_b + \
+    other_ptrs = other + \
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
