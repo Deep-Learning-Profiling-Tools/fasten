@@ -28,6 +28,7 @@ class CacheEntry:
 @dataclass
 class Scheduler:
     get_key: callable
+    prune: callable = None
     default_tile_size: int = 32
     tile_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
     default_tiling_method = TilingMethod.DEFAULT
@@ -96,6 +97,16 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))
+
+    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+        tile_size, tiling_method, block_size = config
+        if tile_size >= 64 and block_size >= 4:
+            # High noinline function invocation cost
+            return True
+        if key[1] >= 128 and tile_size <= 32:
+            # When K is large, we should use larger tile size
+            return True
+        return False
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
 
 

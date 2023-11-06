@@ -175,11 +175,15 @@ class TensorSlice:
         best_op = getattr(torch_ops, op_name)
         best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
         best_config = BestConfig()
+        key = scheduler.get_key(*args)
         debug = is_debug()
 
         triton_op = getattr(triton_ops, op_name)
-        for tile_size, tiling_method, block_size in scheduler.get_configs():
+        for config in scheduler.get_configs():
+            tile_size, tiling_method, block_size = config
             input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
+            if scheduler.prune and scheduler.prune(input_tiles, key, config):
+                continue
             try:
                 ms = do_bench(
                     lambda: triton_op(
