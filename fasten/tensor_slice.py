@@ -5,6 +5,7 @@ import torch
 from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
+from .analysis import get_contiguous_ratio
 from .operators import torch_ops, triton_ops
 from .scheduler import BestConfig, CacheEntry, Scheduler, default_tiling, schedulers
 from .utils import TilingMethod, is_debug
@@ -35,7 +36,7 @@ class TensorSlice:
                 self._slices[i][1] = i  # type
                 self._slices[i][2] = i  # start
                 self._slices[i][3] = i + 1  # end
-                self._slices[i][4] = -1  # next
+                self._slices[i][4] = 0  # next
             self._slices = self._slices.to(device)
         elif type(slices) is list:
             # 2d list, nx5
@@ -47,6 +48,7 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
+        self._contiguous_ratio = get_contiguous_ratio(self._slices)
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -98,6 +100,10 @@ class TensorSlice:
     @property
     def block_size(self):
         return self._block_size
+
+    @property
+    def contiguous_ratio(self):
+        return self._contiguous_ratio
 
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
@@ -182,7 +188,7 @@ class TensorSlice:
         for config in scheduler.get_configs():
             tile_size, tiling_method, block_size = config
             input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
-            if scheduler.prune and scheduler.prune(input_tiles, key, config):
+            if scheduler.prune and scheduler.prune(input_tiles.slices, key, config):
                 continue
             try:
                 ms = do_bench(
@@ -192,25 +198,26 @@ class TensorSlice:
                         input_tiles=input_tiles.slices,
                         num_blocks=input_tiles.num_blocks,
                         block_size=input_tiles.block_size,
-                        tile_size=tile_size
+                        contiguous_ratio=input_tiles.contiguous_ratio,
+                        tile_size=tile_size,
                     ),
                     warmup=1 if debug else 5,
                     rep=1 if debug else 10
                 )
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, ms={ms}')
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}')
                 if ms < best_ms:
-                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks)
+                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio)
             except OutOfResources:
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, tiling_method={tiling_method}, out of resources')
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, out of resources')
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}')
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, contiguous_ratio={input_tiles.contiguous_ratio}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
-        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks), getattr(triton_ops, op_name)
+        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,

@@ -276,7 +276,8 @@ def segment_matmul_kernel(
     EQUAL_K: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-    TILE_SIZE_K: tl.constexpr
+    TILE_SIZE_K: tl.constexpr,
+    FAST_SLOW_PATH: tl.constexpr
 ):
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
@@ -295,7 +296,7 @@ def segment_matmul_kernel(
 
     next_id = pid_m
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
-    if next_next_id == 0:
+    if FAST_SLOW_PATH and next_next_id == 0:
         _contiguous_block(
             input_tiles,
             next_id, pid_n,
@@ -400,7 +401,7 @@ def batch_matmul_kernel(
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
-                           num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64, out_dtype: torch.dtype = None):
+                           num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64, out_dtype: torch.dtype = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -428,6 +429,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         other_transposed=False,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
+        FAST_SLOW_PATH=K <= 32 or contiguous_ratio < 0.5,
     )
     return output
 
@@ -435,7 +437,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                             input_tiles: torch.Tensor, input_slices: torch.Tensor,
                             grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
-                            num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64):
+                            num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -467,6 +469,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             other_transposed=True,
             out_dtype=out_dtype,
             TILE_SIZE_M=tile_size,
+            FAST_SLOW_PATH=K <= 32 or contiguous_ratio < 0.5,
         )
         return grad_input
 

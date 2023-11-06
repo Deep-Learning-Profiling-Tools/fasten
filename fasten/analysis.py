@@ -14,3 +14,8 @@ def get_num_contiguous_slices(slices: torch.Tensor) -> int:
 def get_num_non_contiguous_slices(slices: torch.Tensor) -> int:
     """Get the number of contiguous slices."""
     return torch.sum(slices[:, 4] != 0).item()
+
+
+def get_contiguous_ratio(slices: torch.Tensor) -> float:
+    """Get the ratio of contiguous slices."""
+    return get_num_contiguous_slices(slices) / float(slices.size(0))
