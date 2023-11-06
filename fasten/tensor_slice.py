@@ -210,9 +210,9 @@ class TensorSlice:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio)
             except OutOfResources:
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, out of resources')
+                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, contiguous_ratio={input_tiles.contiguous_ratio}')
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, contiguous_ratio={best_config.contiguous_ratio}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
