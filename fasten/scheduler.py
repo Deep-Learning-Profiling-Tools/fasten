@@ -107,7 +107,7 @@ def _init_segment_matmul_forward_scheduler():
             # When K is large, we should use larger tile size
             return True
         return False
-    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
 
 
 def _init_segment_matmul_backward_scheduler():
