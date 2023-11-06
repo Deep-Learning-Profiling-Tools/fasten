@@ -11,12 +11,12 @@ from .kernels.matmul import (_fast_matmul_inline, _fast_matmul_noinline, _matmul
 
 @triton.jit(noinline=True)
 def _dispatch(
-    pid_n, type_id,
+    pid_n,
     start_off, end_off,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
-    stride_other_b, stride_other_k, stride_other_n,
+    stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     MASK_M: tl.constexpr,
@@ -33,12 +33,12 @@ def _dispatch(
 
     if end_off - start_off <= TILE_M_16 and DYNAMIC_TILING:
         _matmul(
-            pid_n, type_id,
+            pid_n,
             start_off, end_off,
-            input, other, output,
+            input, output,
             K, N,
             stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
+            stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             MASK_M=True,
@@ -50,12 +50,12 @@ def _dispatch(
         )
     elif end_off - start_off <= TILE_M_32 and DYNAMIC_TILING:
         _matmul(
-            pid_n, type_id,
+            pid_n,
             start_off, end_off,
             input, other, output,
             K, N,
             stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
+            stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             EVEN_K=EVEN_K,
@@ -67,12 +67,12 @@ def _dispatch(
         )
     elif end_off - start_off <= TILE_M_64 and DYNAMIC_TILING:
         _matmul(
-            pid_n, type_id,
+            pid_n,
             start_off, end_off,
             input, other, output,
             K, N,
             stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
+            stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             MASK_M=True,
@@ -84,12 +84,12 @@ def _dispatch(
         )
     else:
         _matmul(
-            pid_n, type_id,
+            pid_n,
             start_off, end_off,
             input, other, output,
             K, N,
             stride_input_m, stride_input_k,
-            stride_other_b, stride_other_k, stride_other_n,
+            stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
             out_dtype=out_dtype,
             MASK_M=MASK_M,
@@ -130,12 +130,12 @@ def _noncontiguous_block(
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
                 _dispatch(
-                    pid_n, type_id,
+                    pid_n,
                     start_off, end_off,
-                    input, other, output,
+                    input, other + type_id * stride_other_b, output,
                     K, N,
                     stride_input_m, stride_input_k,
-                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_other_k, stride_other_n,
                     stride_output_m, stride_output_n,
                     out_dtype=out_dtype,
                     MASK_M=True,
@@ -219,12 +219,12 @@ def _contiguous_block(
                     )
             else:
                 _matmul(
-                    pid_n, type_id,
+                    pid_n,
                     cur_start_off, cur_end_off,
-                    input, other, output,
+                    input, other + type_id * stride_other_b, output,
                     K, N,
                     stride_input_m, stride_input_k,
-                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_other_k, stride_other_n,
                     stride_output_m, stride_output_n,
                     out_dtype=out_dtype,
                     MASK_M=False,
