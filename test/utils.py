@@ -16,9 +16,10 @@ def read_slices_from_csv(csv_file):
     return slices
 
 
-def count_bits(x) -> int:
+def count_bits(x: torch.Tensor) -> int:
     count = torch.zeros_like(x)
-    while x.any():
-        count += x & 1
+    bit_length = x.byte() * 8
+    for _ in range(bit_length):
+        count += torch.sum(x & 1)
         x >>= 1
     return count.item()
