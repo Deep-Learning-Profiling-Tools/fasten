@@ -5,10 +5,11 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import _matmul, _reg_matmul
+from .kernels.matmul import (_fast_matmul_inline, _fast_matmul_noinline, _matmul,
+                             _reg_matmul)
 
 
-@triton.jit
+@triton.jit(noinline=True)
 def _dispatch(
     pid_n, type_id,
     start_off, end_off,
@@ -100,10 +101,10 @@ def _dispatch(
         )
 
 
-@triton.jit(noinline=True)
+@triton.jit
 def _noncontiguous_block(
     input_tiles,
-    next_id, pid_n,
+    next_id, next_next_id, pid_n,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
@@ -118,11 +119,8 @@ def _noncontiguous_block(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
-    next_next_id = 0
-    for i in range(0, BLOCK_SIZE):
+    for _ in range(0, BLOCK_SIZE):
         if next_id < NUM_TILES and next_id != -1:
-            if i == 0:
-                next_next_id = tl.load(input_tiles + 5 * next_id + 4)
             # TODO: large tensors
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
@@ -192,31 +190,54 @@ def _contiguous_block(
         for i in range(0, BLOCK_SIZE):
             cur_start_off = start_off + i * TILE_M
             cur_end_off = cur_start_off + TILE_M
-            _dispatch(
-                pid_n, type_id,
-                cur_start_off, cur_end_off,
-                input, other, output,
-                K, N,
-                stride_input_m, stride_input_k,
-                stride_other_b, stride_other_k, stride_other_n,
-                stride_output_m, stride_output_n,
-                out_dtype=out_dtype,
-                MASK_M=False,
-                EVEN_K=EVEN_K,
-                EVEN_N=EVEN_N,
-                TILE_M=TILE_M,
-                TILE_N=TILE_N,
-                TILE_K=TILE_K,
-                DYNAMIC_TILING=False,
-            )
+            if EVEN_K and EVEN_N:
+                if BLOCK_SIZE == 1:
+                    _fast_matmul_inline(
+                        cur_start_off, pid_n * TILE_N,
+                        input, other + type_id * stride_other_b, output,
+                        stride_input_m, stride_input_k,
+                        stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        K_ITER=K // TILE_K,
+                        TILE_M=TILE_M,
+                        TILE_N=TILE_N,
+                        TILE_K=TILE_K
+                    )
+                else:
+                    _fast_matmul_noinline(
+                        cur_start_off, pid_n * TILE_N,
+                        input, other + type_id * stride_other_b, output,
+                        stride_input_m, stride_input_k,
+                        stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        K_ITER=K // TILE_K,
+                        TILE_M=TILE_M,
+                        TILE_N=TILE_N,
+                        TILE_K=TILE_K
+                    )
+            else:
+                _matmul(
+                    pid_n, type_id,
+                    cur_start_off, cur_end_off,
+                    input, other, output,
+                    K, N,
+                    stride_input_m, stride_input_k,
+                    stride_other_b, stride_other_k, stride_other_n,
+                    stride_output_m, stride_output_n,
+                    out_dtype=out_dtype,
+                    MASK_M=False,
+                    EVEN_K=EVEN_K,
+                    EVEN_N=EVEN_N,
+                    TILE_M=TILE_M,
+                    TILE_N=TILE_N,
+                    TILE_K=TILE_K
+                )
 
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
@@ -259,6 +280,7 @@ def segment_matmul_kernel(
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
+
     GROUP_M: tl.constexpr = 4
 
     # Global grouping
@@ -271,8 +293,8 @@ def segment_matmul_kernel(
     pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
-    contiguous = tl.load(input_tiles + 5 * next_id + 4)
-    if contiguous == 0:
+    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
+    if next_next_id == 0:
         _contiguous_block(
             input_tiles,
             next_id, pid_n,
@@ -293,7 +315,7 @@ def segment_matmul_kernel(
     else:
         _noncontiguous_block(
             input_tiles,
-            next_id, pid_n,
+            next_id, next_next_id, pid_n,
             input, other, output,
             K, N,
             stride_input_m, stride_input_k,
