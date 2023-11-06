@@ -210,10 +210,6 @@ def _contiguous_block(
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 16, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
