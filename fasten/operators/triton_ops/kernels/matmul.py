@@ -119,7 +119,7 @@ def _matmul(
 
 
 @triton.jit
-def _fast_matmul(
+def _fast_matmul_core(
     start_off_m, start_off_n,
     input, other, output,
     stride_input_m, stride_input_k,
@@ -153,3 +153,57 @@ def _fast_matmul(
     c_ptrs = output + stride_output_m * \
         offs_m[:, None] + stride_output_n * offs_n[None, :]
     tl.store(c_ptrs, acc)
+
+
+@triton.jit
+def _fast_matmul_inline(
+    start_off_m, start_off_n,
+    input, other, output,
+    stride_input_m, stride_input_k,
+    stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    K_ITER: tl.constexpr,
+    TILE_M: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_K: tl.constexpr
+):
+    _fast_matmul_core(
+        start_off_m, start_off_n,
+        input, other, output,
+        stride_input_m, stride_input_k,
+        stride_other_k, stride_other_n,
+        stride_output_m, stride_output_n,
+        out_dtype=out_dtype,
+        K_ITER=K_ITER,
+        TILE_M=TILE_M,
+        TILE_N=TILE_N,
+        TILE_K=TILE_K
+    )
+
+
+@triton.jit(noinline=True)
+def _fast_matmul_noinline(
+    start_off_m, start_off_n,
+    input, other, output,
+    stride_input_m, stride_input_k,
+    stride_other_k, stride_other_n,
+    stride_output_m, stride_output_n,
+    out_dtype: tl.constexpr,
+    K_ITER: tl.constexpr,
+    TILE_M: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_K: tl.constexpr
+):
+    _fast_matmul_core(
+        start_off_m, start_off_n,
+        input, other, output,
+        stride_input_m, stride_input_k,
+        stride_other_k, stride_other_n,
+        stride_output_m, stride_output_n,
+        out_dtype=out_dtype,
+        K_ITER=K_ITER,
+        TILE_M=TILE_M,
+        TILE_N=TILE_N,
+        TILE_K=TILE_K
+    )
