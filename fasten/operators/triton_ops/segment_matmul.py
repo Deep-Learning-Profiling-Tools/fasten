@@ -236,17 +236,6 @@ def _contiguous_block(
                 )
 
 
-def early_config_prune(configs, named_args):
-    K = named_args['K']
-    N = named_args['N']
-
-    pruned_configs = []
-    for config in configs:
-        if K >= config.kwargs['TILE_SIZE_K'] and N >= config.kwargs['TILE_SIZE_N']:
-            pruned_configs.append(config)
-    return pruned_configs
-
-
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -262,11 +251,6 @@ def early_config_prune(configs, named_args):
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
-    prune_configs_by={
-        'early_config_prune': early_config_prune,
-        'perf_model': None,
-        'top_k': 10,
-    },
     key=['N', 'K'],  # Tune for each N and K, high latency
 )
 @triton.heuristics({
