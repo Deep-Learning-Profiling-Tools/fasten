@@ -128,10 +128,10 @@ def _noncontiguous_block(
             type_id = 0
             if TRUNCED:
                 if i == 0:
-                    end_and_next_entry = tl.load(end_and_next + 5 * next_id + 4)
+                    end_and_next_entry = tl.load(end_and_next + next_id)
                     end_off = ((end_and_next_entry >> 32) & 0xffffffff).to(tl.int32)
                     next_next_id = (end_and_next_entry & 0xffffffff).to(tl.int32)
-                start_and_type_entry = tl.load(start_and_type + 5 * next_id + 4)
+                start_and_type_entry = tl.load(start_and_type + next_id)
                 start_off = ((start_and_type_entry >> 32) & 0xffffffff).to(tl.int32)
                 type_id = (start_and_type_entry & 0xffffffff).to(tl.int32)
             else:
@@ -190,7 +190,7 @@ def _contiguous_block(
     start_off = 0
     type_id = 0
     if TRUNCED:
-        start_and_type_entry = tl.load(start_and_type + 5 * next_id + 4)
+        start_and_type_entry = tl.load(start_and_type + next_id)
         start_off = ((start_and_type_entry >> 32) & 0xffffffff).to(tl.int32)
         type_id = (start_and_type_entry & 0xffffffff).to(tl.int32)
     else:
