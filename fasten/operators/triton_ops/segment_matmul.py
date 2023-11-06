@@ -103,7 +103,7 @@ def _dispatch(
 @triton.jit(noinline=True)
 def _noncontiguous_block(
     input_tiles,
-    next_id, pid_n,
+    next_id, next_next_id, pid_n,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
@@ -118,11 +118,8 @@ def _noncontiguous_block(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
-    next_next_id = 0
     for i in range(0, BLOCK_SIZE):
         if next_id < NUM_TILES and next_id != -1:
-            if i == 0:
-                next_next_id = tl.load(input_tiles + 5 * next_id + 4)
             # TODO: large tensors
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
@@ -271,8 +268,8 @@ def segment_matmul_kernel(
     pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
-    contiguous = tl.load(input_tiles + 5 * next_id + 4)
-    if contiguous == 0:
+    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
+    if next_next_id == 0:
         _contiguous_block(
             input_tiles,
             next_id, pid_n,
@@ -293,7 +290,7 @@ def segment_matmul_kernel(
     else:
         _noncontiguous_block(
             input_tiles,
-            next_id, pid_n,
+            next_id, next_next_id, pid_n,
             input, other, output,
             K, N,
             stride_input_m, stride_input_k,
