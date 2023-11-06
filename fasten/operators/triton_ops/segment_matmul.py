@@ -252,16 +252,11 @@ def segment_matmul_kernel(
     TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
-    GROUP_M: tl.constexpr = 4
 
-    # Global grouping
     pid = tl.program_id(axis=0)
     grid_n = tl.cdiv(N, TILE_N)
-    width = GROUP_M * grid_n
-    group_id = pid // width
-    group_size = min(NUM_BLOCKS - group_id * GROUP_M, GROUP_M)
-    pid_m = group_id * GROUP_M + (pid % group_size)
-    pid_n = (pid % width) // (group_size)
+    pid_m = pid // grid_n
+    pid_n = pid % grid_n
 
     next_id = pid_m
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
