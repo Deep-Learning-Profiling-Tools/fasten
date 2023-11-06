@@ -48,7 +48,7 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
-        self._contiguous_ratio = get_contiguous_ratio(self._slices)
+        self._contiguous_ratio = get_contiguous_ratio(self._slices, self.num_blocks)
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
