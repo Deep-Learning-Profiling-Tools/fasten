@@ -429,7 +429,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         other_transposed=False,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
-        FAST_SLOW_PATH=K <= 32 or contiguous_ratio < 0.7,
+        FAST_SLOW_PATH=(K <= 32 or contiguous_ratio < 0.7) or (K >= 128 and contiguous_ratio < 0.95)
     )
     return output
 
@@ -469,7 +469,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             other_transposed=True,
             out_dtype=out_dtype,
             TILE_SIZE_M=tile_size,
-            FAST_SLOW_PATH=K <= 32 or contiguous_ratio < 0.7,
+            FAST_SLOW_PATH=(K <= 32 or contiguous_ratio < 0.7) or (K >= 128 and contiguous_ratio < 0.95)
         )
         return grad_input
 
