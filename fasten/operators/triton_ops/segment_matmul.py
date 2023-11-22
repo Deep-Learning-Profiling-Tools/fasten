@@ -347,78 +347,86 @@ def segment_matmul_kernel(
 )
 @triton.jit
 def batch_matmul_kernel(
-    input, input_slices, grad_output, grad_other,
+    input, input_tiles, grad_output, grad_other,
     K, N,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
     B: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr
 ):
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
     # TODO(Keren): a different block grouping scheme
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
-    bid = pid // (grid_k * grid_n)
+    next_id = pid // (grid_k * grid_n)
     tile_id = pid % (grid_k * grid_n)
     pid_k = tile_id // grid_n
     pid_n = tile_id % grid_n
+    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
 
-    start_off = tl.load(input_slices + 5 * bid + 2)
-    end_off = tl.load(input_slices + 5 * bid + 3)
-    if end_off <= start_off:
-        return
-    type_id = tl.load(input_slices + 5 * bid + 1)
+    for _ in range(0, BLOCK_SIZE):
+        if next_id < B and next_id != -1:
+            # TODO: large tensors
+            # Use int32 to reduce register usage
+            start_off = tl.load(input_tiles + 5 * next_id + 2)
+            end_off = tl.load(input_tiles + 5 * next_id + 3)
+            length = end_off - start_off
 
-    M = end_off - start_off
-    TILE_M_16: tl.constexpr = 16
-    TILE_M_32: tl.constexpr = 32
-    TILE_M_64: tl.constexpr = 64
+            if length > 0:
+                type_id = tl.load(input_tiles + 5 * next_id + 1)
+            M = end_off - start_off
 
-    input = input + start_off * stride_input_m
-    grad_output = grad_output + start_off * stride_grad_output_m
-    grad_other = grad_other + type_id * stride_grad_other_b
-    if M <= TILE_M_16:
-        _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
-            stride_input_m, stride_input_k,
-            stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
-            out_dtype=out_dtype,
-            TILE_K=TILE_SIZE_K,
-            TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_16,
-        )
-    elif M <= TILE_M_32:
-        _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
-            stride_input_m, stride_input_k,
-            stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
-            out_dtype=out_dtype,
-            TILE_K=TILE_SIZE_K,
-            TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_32,
-        )
-    else:
-        _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
-            stride_input_m, stride_input_k,
-            stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
-            out_dtype=out_dtype,
-            TILE_K=TILE_SIZE_K,
-            TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_64,
-        )
+            input = input + start_off * stride_input_m
+            grad_output = grad_output + start_off * stride_grad_output_m
+            grad_other = grad_other + type_id * stride_grad_other_b
+            if M <= TILE_M_16:
+                _dynamic_k_matmul(
+                    pid_k, pid_n, type_id,
+                    input, grad_output, grad_other,
+                    stride_input_m, stride_input_k,
+                    stride_grad_output_m, stride_grad_output_n,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    K, N, M,
+                    out_dtype=out_dtype,
+                    TILE_K=TILE_SIZE_K,
+                    TILE_N=TILE_SIZE_N,
+                    TILE_M=TILE_M_16,
+                )
+            elif M <= TILE_M_32:
+                _dynamic_k_matmul(
+                    pid_k, pid_n, type_id,
+                    input, grad_output, grad_other,
+                    stride_input_m, stride_input_k,
+                    stride_grad_output_m, stride_grad_output_n,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    K, N, M,
+                    out_dtype=out_dtype,
+                    TILE_K=TILE_SIZE_K,
+                    TILE_N=TILE_SIZE_N,
+                    TILE_M=TILE_M_32,
+                )
+            else:
+                _dynamic_k_matmul(
+                    pid_k, pid_n, type_id,
+                    input, grad_output, grad_other,
+                    stride_input_m, stride_input_k,
+                    stride_grad_output_m, stride_grad_output_n,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    K, N, M,
+                    out_dtype=out_dtype,
+                    TILE_K=TILE_SIZE_K,
+                    TILE_N=TILE_SIZE_N,
+                    TILE_M=TILE_M_64,
+                )
+            next_id = next_next_id
+            next_next_id += 1
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
@@ -501,7 +509,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_other = torch.zeros_like(other)
 
         def grid(meta):
-            return ((B * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
+            return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
         batch_matmul_kernel[grid](
             input, input_slices, grad_output, grad_other,
@@ -510,7 +518,8 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_output.stride(0), grad_output.stride(1),
             grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
             out_dtype=out_dtype,
-            B=B
+            B=B,
+            BLOCK_SIZE=block_size,
         )
         return grad_other
 

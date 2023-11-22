@@ -245,4 +245,4 @@ def _dynamic_k_matmul(
     c_ptrs = grad_other + \
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
     c_mask = mask_k & mask_n
-    tl.store(c_ptrs, acc, mask=c_mask)
+    tl.atomic_add(c_ptrs, acc, mask=c_mask)
