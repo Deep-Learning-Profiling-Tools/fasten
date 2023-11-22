@@ -5,8 +5,8 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import (_fast_matmul_inline, _fast_matmul_noinline, _matmul,
-                             _reg_matmul)
+from .kernels.matmul import (_dynamic_k_matmul, _fast_matmul_inline,
+                             _fast_matmul_noinline, _matmul, _reg_matmul)
 
 
 @triton.jit(noinline=True)
@@ -342,14 +342,14 @@ def segment_matmul_kernel(
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
@@ -362,7 +362,6 @@ def batch_matmul_kernel(
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
     B: tl.constexpr,
-    TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr
 ):
@@ -379,34 +378,55 @@ def batch_matmul_kernel(
     end_off = tl.load(input_slices + 5 * bid + 3)
     if end_off <= start_off:
         return
-
     type_id = tl.load(input_slices + 5 * bid + 1)
-    offs_k = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)
-    offs_n = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)
-    offs_m = tl.arange(0, TILE_SIZE_M)
 
-    # [M, K] -> [K, M]
-    input_ptrs = input + ((offs_m[None, :] + start_off) * stride_input_m + offs_k[:, None] * stride_input_k)
-    # [M, N]
-    grad_output_ptrs = grad_output + ((offs_m[:, None] + start_off) * stride_grad_output_m + offs_n[None, :] * stride_grad_output_n)
-
-    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=out_dtype)
-    mask_k = offs_k[:, None] < K
-    mask_n = offs_n[None, :] < N
     M = end_off - start_off
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
 
-    for m in range(0, tl.cdiv(M, TILE_SIZE_M)):
-        a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_SIZE_M < M), other=0.0)
-        b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_SIZE_M < M), other=0.0)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += TILE_SIZE_M * stride_input_m
-        grad_output_ptrs += TILE_SIZE_M * stride_grad_output_m
-
-    acc = acc.to(grad_other.dtype.element_ty)
-    c_ptrs = grad_other + type_id * stride_grad_other_b + \
-        stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-    c_mask = mask_k & mask_n
-    tl.store(c_ptrs, acc, mask=c_mask)
+    input = input + start_off * stride_input_m
+    grad_output = grad_output + start_off * stride_grad_output_m
+    grad_other = grad_other + bid * stride_grad_other_b
+    if M <= TILE_M_16:
+        _dynamic_k_matmul(
+            pid_k, pid_n, type_id,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M,
+            out_dtype=out_dtype,
+            TILE_K=TILE_SIZE_K,
+            TILE_N=TILE_SIZE_N,
+            TILE_M=TILE_M_16,
+        )
+    elif M <= TILE_M_32:
+        _dynamic_k_matmul(
+            pid_k, pid_n, type_id,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M,
+            out_dtype=out_dtype,
+            TILE_K=TILE_SIZE_K,
+            TILE_N=TILE_SIZE_N,
+            TILE_M=TILE_M_32,
+        )
+    else:
+        _dynamic_k_matmul(
+            pid_k, pid_n, type_id,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M,
+            out_dtype=out_dtype,
+            TILE_K=TILE_SIZE_K,
+            TILE_N=TILE_SIZE_N,
+            TILE_M=TILE_M_64,
+        )
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
