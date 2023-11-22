@@ -55,11 +55,9 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
     elif phase == "backward":
         tensor_slice.data.requires_grad = True
         other.requires_grad = True
-        other.grad.zero_()
         output = ops.fasten_segment_matmul(tensor_slice.data, other, tensor_slice, engine)
         output_grad = torch.randn_like(output)
         output.backward(output_grad)
-        output.grad.zero_()
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)
         for i in range(len(tensor_slice)):
