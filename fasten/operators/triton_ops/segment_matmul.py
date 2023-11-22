@@ -343,7 +343,6 @@ def segment_matmul_kernel(
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
