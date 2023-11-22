@@ -333,13 +333,6 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
-# TODO(Keren): split_matmul_kernel
-# We should be able to autotune between split matmul and batch matmul
-# with an algorithm selector.
-# split matmul uses persistent loops
-# batch matmul uses parallel loops
-
-
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
