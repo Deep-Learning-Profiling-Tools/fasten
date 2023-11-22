@@ -381,50 +381,50 @@ def batch_matmul_kernel(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
-            M = end_off - start_off
+                M = end_off - start_off
 
-            input = input + start_off * stride_input_m
-            grad_output = grad_output + start_off * stride_grad_output_m
-            grad_other = grad_other + type_id * stride_grad_other_b
-            if M <= TILE_M_16:
-                _dynamic_k_matmul(
-                    pid_k, pid_n, type_id,
-                    input, grad_output, grad_other,
-                    stride_input_m, stride_input_k,
-                    stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                    K, N, M,
-                    out_dtype=out_dtype,
-                    TILE_K=TILE_SIZE_K,
-                    TILE_N=TILE_SIZE_N,
-                    TILE_M=TILE_M_16,
-                )
-            elif M <= TILE_M_32:
-                _dynamic_k_matmul(
-                    pid_k, pid_n, type_id,
-                    input, grad_output, grad_other,
-                    stride_input_m, stride_input_k,
-                    stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                    K, N, M,
-                    out_dtype=out_dtype,
-                    TILE_K=TILE_SIZE_K,
-                    TILE_N=TILE_SIZE_N,
-                    TILE_M=TILE_M_32,
-                )
-            else:
-                _dynamic_k_matmul(
-                    pid_k, pid_n, type_id,
-                    input, grad_output, grad_other,
-                    stride_input_m, stride_input_k,
-                    stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                    K, N, M,
-                    out_dtype=out_dtype,
-                    TILE_K=TILE_SIZE_K,
-                    TILE_N=TILE_SIZE_N,
-                    TILE_M=TILE_M_64,
-                )
+                input = input + start_off * stride_input_m
+                grad_output = grad_output + start_off * stride_grad_output_m
+                grad_other = grad_other + type_id * stride_grad_other_b
+                if M <= TILE_M_16:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        input, grad_output, grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                        K, N, M,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_SIZE_K,
+                        TILE_N=TILE_SIZE_N,
+                        TILE_M=TILE_M_16,
+                    )
+                elif M <= TILE_M_32:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        input, grad_output, grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                        K, N, M,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_SIZE_K,
+                        TILE_N=TILE_SIZE_N,
+                        TILE_M=TILE_M_32,
+                    )
+                else:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        input, grad_output, grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                        K, N, M,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_SIZE_K,
+                        TILE_N=TILE_SIZE_N,
+                        TILE_M=TILE_M_64,
+                    )
             next_id = next_next_id
             next_next_id += 1
 
