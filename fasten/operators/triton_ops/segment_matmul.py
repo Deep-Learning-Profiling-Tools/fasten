@@ -255,9 +255,9 @@ def _contiguous_block(
     # TODO: Employ another performance model
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
-    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0,
-    'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_N'] == 0 if args['other_transposed'] else args['K'] % args['TILE_SIZE_K'] == 0,
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_K'] == 0 if args['other_transposed'] else args['N'] % args['TILE_SIZE_N'] == 0,
+    'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_N'] if args['other_transposed'] else args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
 def segment_matmul_kernel(
@@ -479,7 +479,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']),)
+            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
