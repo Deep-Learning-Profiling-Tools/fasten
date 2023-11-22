@@ -353,7 +353,7 @@ def batch_matmul_kernel(
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
-    B: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr
@@ -372,7 +372,7 @@ def batch_matmul_kernel(
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
 
     for _ in range(0, BLOCK_SIZE):
-        if next_id < B and next_id != -1:
+        if next_id < NUM_BLOCKS and next_id != -1:
             # TODO: large tensors
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
@@ -474,7 +474,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
     assert other.dim() == 3
     K: int = input.size(1)
     N: int = other.size(2)
-    B: int = input_slices.size(0)
     num_tiles = input_tiles.size(0)
     num_blocks = num_blocks or num_tiles
     grad_output = grad_output.contiguous()
@@ -518,7 +517,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_output.stride(0), grad_output.stride(1),
             grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
             out_dtype=out_dtype,
-            B=B,
+            NUM_BLOCKS=num_blocks,
             BLOCK_SIZE=block_size,
         )
         return grad_other
