@@ -255,9 +255,9 @@ def _contiguous_block(
     # TODO: Employ another performance model
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_N'] == 0 if args['other_transposed'] else args['K'] % args['TILE_SIZE_K'] == 0,
-    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_K'] == 0 if args['other_transposed'] else args['N'] % args['TILE_SIZE_N'] == 0,
-    'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_N'] if args['other_transposed'] else args['K'] == args['TILE_SIZE_K']
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'],
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'],
+    'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
 def segment_matmul_kernel(
@@ -279,8 +279,8 @@ def segment_matmul_kernel(
     TILE_SIZE_K: tl.constexpr,
     FAST_SLOW_PATH: tl.constexpr
 ):
-    TILE_N: tl.constexpr = TILE_SIZE_K if other_transposed else TILE_SIZE_N
-    TILE_K: tl.constexpr = TILE_SIZE_N if other_transposed else TILE_SIZE_K
+    TILE_N: tl.constexpr = TILE_SIZE_N
+    TILE_K: tl.constexpr = TILE_SIZE_K
     TILE_M: tl.constexpr = TILE_SIZE_M
 
     GROUP_M: tl.constexpr = 4
