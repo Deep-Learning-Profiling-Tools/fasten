@@ -361,12 +361,12 @@ def batch_matmul_kernel(
 ):
     # TODO(Keren): a different block grouping scheme
     pid = tl.program_id(axis=0)
-    tile_num_k = tl.cdiv(K, TILE_SIZE_K)
-    tile_num_n = tl.cdiv(N, TILE_SIZE_N)
-    bid = pid // (tile_num_k * tile_num_n)
-    tile_id = pid % (tile_num_k * tile_num_n)
-    pid_k = tile_id // tile_num_n
-    pid_n = tile_id % tile_num_n
+    grid_k = tl.cdiv(K, TILE_SIZE_K)
+    grid_n = tl.cdiv(N, TILE_SIZE_N)
+    bid = pid // (grid_k * grid_n)
+    tile_id = pid % (grid_k * grid_n)
+    pid_k = tile_id // grid_n
+    pid_n = tile_id % grid_n
 
     start_off = tl.load(input_slices + 5 * bid + 2)
     end_off = tl.load(input_slices + 5 * bid + 3)
