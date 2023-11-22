@@ -360,9 +360,13 @@ def batch_matmul_kernel(
     TILE_SIZE_K: tl.constexpr
 ):
     # TODO(Keren): a different block grouping scheme
-    pid_k = tl.program_id(axis=0)
-    pid_n = tl.program_id(axis=1)
-    bid = tl.program_id(axis=2)
+    pid = tl.program_id(axis=0)
+    tile_num_k = tl.cdiv(K, TILE_SIZE_K)
+    tile_num_n = tl.cdiv(N, TILE_SIZE_N)
+    bid = pid // (tile_num_k * tile_num_n)
+    tile_id = pid % (tile_num_k * tile_num_n)
+    pid_k = tile_id // tile_num_n
+    pid_n = tile_id % tile_num_n
 
     start_off = tl.load(input_slices + 5 * bid + 2)
     end_off = tl.load(input_slices + 5 * bid + 3)
@@ -480,7 +484,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_other = torch.zeros_like(other)
 
         def grid(meta):
-            return (triton.cdiv(K, meta['TILE_SIZE_K']), triton.cdiv(N, meta['TILE_SIZE_N']), B)
+            return ((B * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
         batch_matmul_kernel[grid](
             input, input_slices, grad_output, grad_other,
