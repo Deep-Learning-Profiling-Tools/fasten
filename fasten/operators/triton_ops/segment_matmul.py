@@ -391,7 +391,7 @@ def batch_matmul_kernel(
                 out_dtype=out_dtype,
                 TILE_K=TILE_SIZE_K,
                 TILE_N=TILE_SIZE_N,
-                TILE_M=TILE_M_16,
+                TILE_M=TILE_SIZE_M,
             )
     else:
         for _ in range(0, BLOCK_SIZE):
