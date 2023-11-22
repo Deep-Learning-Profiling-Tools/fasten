@@ -255,8 +255,8 @@ def _contiguous_block(
     # TODO: Employ another performance model
 )
 @triton.heuristics({
-    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'],
-    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'],
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0,
     'EQUAL_K': lambda args: args['K'] == args['TILE_SIZE_K']
 })
 @triton.jit
