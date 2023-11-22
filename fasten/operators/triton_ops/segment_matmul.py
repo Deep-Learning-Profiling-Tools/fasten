@@ -276,7 +276,6 @@ def segment_matmul_kernel(
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
-    FAST_SLOW_PATH: tl.constexpr
 ):
     TILE_N: tl.constexpr = TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_K
@@ -295,7 +294,7 @@ def segment_matmul_kernel(
 
     next_id = pid_m
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
-    if FAST_SLOW_PATH and next_next_id == 0:
+    if next_next_id == 0:
         _contiguous_block(
             input_tiles,
             next_id, pid_n,
@@ -451,7 +450,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         BLOCK_SIZE=block_size,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
-        FAST_SLOW_PATH=(K <= 32 or contiguous_ratio < 0.7) or (K >= 128 and contiguous_ratio < 0.95)
     )
     return output
 
@@ -490,7 +488,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             BLOCK_SIZE=block_size,
             out_dtype=out_dtype,
             TILE_SIZE_M=tile_size,
-            FAST_SLOW_PATH=(N <= 32 or contiguous_ratio < 0.7) or (N >= 128 and contiguous_ratio < 0.95)
         )
         return grad_input
 
