@@ -377,7 +377,6 @@ def batch_matmul_kernel(
         for i in range(0, BLOCK_SIZE):
             cur_start_off = start_off + i * TILE_SIZE_M
             cur_end_off = cur_start_off + TILE_SIZE_M
-            length = cur_end_off - cur_start_off
             input = input + cur_start_off * stride_input_m
             grad_output = grad_output + cur_start_off * stride_grad_output_m
             grad_other = grad_other + type_id * stride_grad_other_b
@@ -387,7 +386,7 @@ def batch_matmul_kernel(
                 stride_input_m, stride_input_k,
                 stride_grad_output_m, stride_grad_output_n,
                 stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                K, N, length,
+                K, N, cur_end_off,
                 out_dtype=out_dtype,
                 TILE_K=TILE_SIZE_K,
                 TILE_N=TILE_SIZE_N,
@@ -415,7 +414,7 @@ def batch_matmul_kernel(
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
+                            K, N, end_off,
                             out_dtype=out_dtype,
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
@@ -428,7 +427,7 @@ def batch_matmul_kernel(
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
+                            K, N, end_off,
                             out_dtype=out_dtype,
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
@@ -441,7 +440,7 @@ def batch_matmul_kernel(
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
+                            K, N, end_off,
                             out_dtype=out_dtype,
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
