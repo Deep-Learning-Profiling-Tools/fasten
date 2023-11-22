@@ -92,7 +92,7 @@ def benchmark_results(format: str = "csv"):
                 writer.writerow(row)
 
 
-@pytest.mark.parametrize("phase", ["forward", "backward", "full"])
+@pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
@@ -110,7 +110,7 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
-    if phase == "backward" or phase == "full":
+    if phase == "backward":
         data.requires_grad = True
         other.requires_grad = True
 
@@ -121,19 +121,13 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
     grad_pyg = torch.empty_like(output_pyg)
 
     def fasten_fn():
-        if phase == "full":
-            output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
-            output.backward(grad_fasten)
-        elif phase == "forward":
+        if phase == "forward":
             ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
             output_fasten.backward(grad_fasten, retain_graph=True)
 
     def pyg_fn():
-        if phase == "full":
-            output = pyg_lib.ops.segment_matmul(data, ptr, other)
-            output.backward(grad_pyg)
-        elif phase == "forward":
+        if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
