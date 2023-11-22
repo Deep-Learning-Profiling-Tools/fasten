@@ -266,7 +266,6 @@ def segment_matmul_kernel(
     stride_input_m, stride_input_k,
     stride_other_b, stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
-    other_transposed: tl.constexpr,
     out_dtype: tl.constexpr,
     NUM_TILES: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
@@ -450,7 +449,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
-        other_transposed=False,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
         FAST_SLOW_PATH=(K <= 32 or contiguous_ratio < 0.7) or (K >= 128 and contiguous_ratio < 0.95)
@@ -490,7 +488,6 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             NUM_TILES=num_tiles,
             NUM_BLOCKS=num_blocks,
             BLOCK_SIZE=block_size,
-            other_transposed=True,
             out_dtype=out_dtype,
             TILE_SIZE_M=tile_size,
             FAST_SLOW_PATH=(N <= 32 or contiguous_ratio < 0.7) or (N >= 128 and contiguous_ratio < 0.95)
