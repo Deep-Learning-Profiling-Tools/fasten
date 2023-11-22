@@ -387,7 +387,7 @@ def batch_matmul_kernel(
 
     input = input + start_off * stride_input_m
     grad_output = grad_output + start_off * stride_grad_output_m
-    grad_other = grad_other + bid * stride_grad_other_b
+    grad_other = grad_other + type_id * stride_grad_other_b
     if M <= TILE_M_16:
         _dynamic_k_matmul(
             pid_k, pid_n, type_id,
