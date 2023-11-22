@@ -242,7 +242,7 @@ def _dynamic_k_matmul(
         grad_output_ptrs += TILE_M * stride_grad_output_m
 
     acc = acc.to(grad_other.dtype.element_ty)
-    c_ptrs = grad_other + type_id * stride_grad_other_b + \
+    c_ptrs = grad_other + \
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
     c_mask = mask_k & mask_n
     tl.store(c_ptrs, acc, mask=c_mask)
