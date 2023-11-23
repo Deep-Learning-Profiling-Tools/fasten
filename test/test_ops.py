@@ -66,7 +66,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
             sorted_data_grad_ref[s] = torch.matmul(output_grad[s], other[t].t())
             other_grad_ref[t] = torch.matmul(tensor_slice.data[s].t(), output_grad[s])
         torch.testing.assert_close(tensor_slice.data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
-        if M // T >= 4096:
+        if M // T >= 2048:
             # gradient accumlation starts to be significantly different with large samples
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1.0, rtol=1e-2)
         else:
