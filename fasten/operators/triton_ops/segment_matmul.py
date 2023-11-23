@@ -343,6 +343,13 @@ def segment_matmul_kernel(
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32, 'TILE_SIZE_M': 32}, num_warps=4, num_stages=4),
     ],
     key=['N', 'K'],
 )
@@ -360,9 +367,13 @@ def batch_matmul_kernel(
     TILE_SIZE_K: tl.constexpr
 ):
     # TODO(Keren): a different block grouping scheme
-    pid_k = tl.program_id(axis=0)
-    pid_n = tl.program_id(axis=1)
-    bid = tl.program_id(axis=2)
+    pid = tl.program_id(axis=0)
+    grid_k = tl.cdiv(K, TILE_SIZE_K)
+    grid_n = tl.cdiv(N, TILE_SIZE_N)
+    bid = pid // (grid_k * grid_n)
+    tile_id = pid % (grid_k * grid_n)
+    pid_k = tile_id // grid_n
+    pid_n = tile_id % grid_n
 
     start_off = tl.load(input_slices + 5 * bid + 2)
     end_off = tl.load(input_slices + 5 * bid + 3)
@@ -455,7 +466,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_input = torch.empty_like(input)
 
         def grid(meta):
-            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
+            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']),)
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
         segment_matmul_kernel[grid](
             grad_output, input_tiles, other, grad_input,
@@ -480,7 +491,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
             grad_other = torch.zeros_like(other)
 
         def grid(meta):
-            return (triton.cdiv(K, meta['TILE_SIZE_K']), triton.cdiv(N, meta['TILE_SIZE_N']), B)
+            return ((B * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
         batch_matmul_kernel[grid](
             input, input_slices, grad_output, grad_other,
