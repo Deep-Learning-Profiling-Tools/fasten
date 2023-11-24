@@ -215,7 +215,7 @@ def _dynamic_k_matmul(
     input, grad_output, grad_other,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
-    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    stride_grad_other_k, stride_grad_other_n,
     K, N, M,
     out_dtype: tl.constexpr,
     TILE_K: tl.constexpr,
