@@ -267,12 +267,12 @@ def _dynamic_k_matmul(
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
     c_mask = mask_k & mask_n
     if tl.cdiv(M, TILE_M) == 1:
-        if EVEN_N and EVEN_M:
+        if EVEN_N and EVEN_K:
             tl.store(c_ptrs, acc)
         else:
             tl.store(c_ptrs, acc, mask=c_mask)
     else:
-        if EVEN_N and EVEN_M:
+        if EVEN_N and EVEN_K:
             tl.atomic_add(c_ptrs, acc)
         else:
             tl.atomic_add(c_ptrs, acc, mask=c_mask)
