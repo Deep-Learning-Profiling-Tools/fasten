@@ -174,8 +174,7 @@ def _contiguous_block(
         _reg_matmul(
             pid_n, type_id,
             start_off,
-            input, other, output,
-            K, N,
+            input, other, output, N,
             stride_input_m, stride_input_k,
             stride_other_b, stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
@@ -345,8 +344,12 @@ def segment_matmul_kernel(
     reset_to_zero=['grad_other'],
     key=['N', 'K'],
 )
+@triton.heuristics({
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0
+})
 @triton.jit
-def batch_matmul_kernel(
+def split_matmul_kernel(
     input, input_tiles, grad_output, grad_other,
     K, N,
     stride_input_m, stride_input_k,
@@ -357,7 +360,9 @@ def batch_matmul_kernel(
     BLOCK_SIZE: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-    TILE_SIZE_K: tl.constexpr
+    TILE_SIZE_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr
 ):
     TILE_M_16: tl.constexpr = 16
     TILE_M_32: tl.constexpr = 32
@@ -388,6 +393,8 @@ def batch_matmul_kernel(
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
             TILE_M=TILE_SIZE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
         )
     else:
         for _ in range(0, BLOCK_SIZE):
@@ -416,6 +423,8 @@ def batch_matmul_kernel(
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
                             TILE_M=TILE_M_16,
+                            EVEN_K=EVEN_K,
+                            EVEN_N=EVEN_N,
                         )
                     elif length <= TILE_M_32:
                         _dynamic_k_matmul(
@@ -429,6 +438,8 @@ def batch_matmul_kernel(
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
                             TILE_M=TILE_M_32,
+                            EVEN_K=EVEN_K,
+                            EVEN_N=EVEN_N,
                         )
                     else:
                         _dynamic_k_matmul(
@@ -442,6 +453,8 @@ def batch_matmul_kernel(
                             TILE_K=TILE_SIZE_K,
                             TILE_N=TILE_SIZE_N,
                             TILE_M=TILE_SIZE_M,
+                            EVEN_K=EVEN_K,
+                            EVEN_N=EVEN_N,
                         )
                 next_id = next_next_id
                 next_next_id += 1
@@ -526,7 +539,7 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
         def grid(meta):
             return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
         out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
-        batch_matmul_kernel[grid](
+        split_matmul_kernel[grid](
             input, input_tiles, grad_output, grad_other,
             K, N,
             input.stride(0), input.stride(1),
