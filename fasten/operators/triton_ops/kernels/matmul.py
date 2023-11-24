@@ -244,9 +244,9 @@ def _dynamic_k_matmul(
                 a = tl.load(input_ptrs, mask=offs_m[None, :] + m * TILE_M < M, other=0.0)
         else:
             if EVEN_M:
-                a = tl.load(input_ptrs, mask=offs_k[:, None], other=0.0)
+                a = tl.load(input_ptrs, mask=mask_k, other=0.0)
             else:
-                a = tl.load(input_ptrs, mask=offs_k[:, None] & (offs_m[None, :] + m * TILE_M < M), other=0.0)
+                a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_M < M), other=0.0)
         if EVEN_N:
             if EVEN_M:
                 b = tl.load(grad_output_ptrs)
@@ -254,9 +254,9 @@ def _dynamic_k_matmul(
                 b = tl.load(grad_output_ptrs, mask=offs_m[:, None] + m * TILE_M < M, other=0.0)
         else:
             if EVEN_M:
-                b = tl.load(grad_output_ptrs, mask=offs_n[None, :], other=0.0)
+                b = tl.load(grad_output_ptrs, mask=mask_n, other=0.0)
             else:
-                b = tl.load(grad_output_ptrs, mask=offs_n[None, :] & (offs_m[:, None] + m * TILE_M < M), other=0.0)
+                b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_M < M), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += TILE_M * stride_input_m
         grad_output_ptrs += TILE_M * stride_grad_output_m
