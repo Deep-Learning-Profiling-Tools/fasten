@@ -330,7 +330,7 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
-@triton.jit(noinline=True)
+@triton.jit
 def _split_noncontiguous_block(
     pid_k, pid_n,
     input, input_tiles, grad_output, grad_other,
@@ -347,9 +347,6 @@ def _split_noncontiguous_block(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
 ):
-    TILE_M_16: tl.constexpr = 16
-    TILE_M_32: tl.constexpr = 32
-    TILE_M_64: tl.constexpr = 64
     for _ in range(0, BLOCK_SIZE):
         if next_id < NUM_BLOCKS and next_id != -1:
             # TODO: large tensors
@@ -364,70 +361,21 @@ def _split_noncontiguous_block(
                 cur_input = input + start_off * stride_input_m
                 cur_grad_output = grad_output + start_off * stride_grad_output_m
                 cur_grad_other = grad_other + type_id * stride_grad_other_b
-                if length <= TILE_M_16:
-                    _dynamic_k_matmul(
-                        pid_k, pid_n, type_id,
-                        cur_input, cur_grad_output, cur_grad_other,
-                        stride_input_m, stride_input_k,
-                        stride_grad_output_m, stride_grad_output_n,
-                        stride_grad_other_k, stride_grad_other_n,
-                        K, N, length,
-                        out_dtype=out_dtype,
-                        TILE_K=TILE_K,
-                        TILE_N=TILE_N,
-                        TILE_M=TILE_M_16,
-                        EVEN_K=EVEN_K,
-                        EVEN_N=EVEN_N,
-                        EVEN_M=False,
-                    )
-                elif length <= TILE_M_32:
-                    _dynamic_k_matmul(
-                        pid_k, pid_n, type_id,
-                        cur_input, cur_grad_output, cur_grad_other,
-                        stride_input_m, stride_input_k,
-                        stride_grad_output_m, stride_grad_output_n,
-                        stride_grad_other_k, stride_grad_other_n,
-                        K, N, length,
-                        out_dtype=out_dtype,
-                        TILE_K=TILE_K,
-                        TILE_N=TILE_N,
-                        TILE_M=TILE_M_32,
-                        EVEN_K=EVEN_K,
-                        EVEN_N=EVEN_N,
-                        EVEN_M=False,
-                    )
-                elif length <= TILE_M_64:
-                    _dynamic_k_matmul(
-                        pid_k, pid_n, type_id,
-                        cur_input, cur_grad_output, cur_grad_other,
-                        stride_input_m, stride_input_k,
-                        stride_grad_output_m, stride_grad_output_n,
-                        stride_grad_other_k, stride_grad_other_n,
-                        K, N, length,
-                        out_dtype=out_dtype,
-                        TILE_K=TILE_K,
-                        TILE_N=TILE_N,
-                        TILE_M=TILE_M_64,
-                        EVEN_K=EVEN_K,
-                        EVEN_N=EVEN_N,
-                        EVEN_M=False,
-                    )
-                else:
-                    _dynamic_k_matmul(
-                        pid_k, pid_n, type_id,
-                        cur_input, cur_grad_output, cur_grad_other,
-                        stride_input_m, stride_input_k,
-                        stride_grad_output_m, stride_grad_output_n,
-                        stride_grad_other_k, stride_grad_other_n,
-                        K, N, length,
-                        out_dtype=out_dtype,
-                        TILE_K=TILE_K,
-                        TILE_N=TILE_N,
-                        TILE_M=TILE_M,
-                        EVEN_K=EVEN_K,
-                        EVEN_N=EVEN_N,
-                        EVEN_M=False,
-                    )
+                _dynamic_k_matmul(
+                    pid_k, pid_n, type_id,
+                    cur_input, cur_grad_output, cur_grad_other,
+                    stride_input_m, stride_input_k,
+                    stride_grad_output_m, stride_grad_output_n,
+                    stride_grad_other_k, stride_grad_other_n,
+                    K, N, length,
+                    out_dtype=out_dtype,
+                    TILE_K=TILE_K,
+                    TILE_N=TILE_N,
+                    TILE_M=TILE_M,
+                    EVEN_K=EVEN_K,
+                    EVEN_N=EVEN_N,
+                    EVEN_M=False,
+                )
             next_id = next_next_id
             next_next_id += 1
 

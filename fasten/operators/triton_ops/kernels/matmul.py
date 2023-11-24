@@ -236,7 +236,8 @@ def _dynamic_k_matmul(
     # [M, N]
     grad_output_ptrs = grad_output + (offs_m[:, None] * stride_grad_output_m + offs_n[None, :] * stride_grad_output_n)
 
-    for m in range(0, tl.cdiv(M, TILE_M)):
+    m_iter = M // TILE_M if EVEN_M else tl.cdiv(M, TILE_M)
+    for m in range(0, m_iter):
         if EVEN_K:
             if EVEN_M:
                 a = tl.load(input_ptrs)
