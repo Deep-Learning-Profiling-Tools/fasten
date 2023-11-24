@@ -330,6 +330,108 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
+@triton.jit(noinline=True)
+def _split_noncontiguous_block(
+    pid_k, pid_n, type_id,
+    input, input_tiles, grad_output, grad_other,
+    stride_input_m, stride_input_k,
+    stride_grad_output_m, stride_grad_output_n,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N, next_id, next_next_id,
+    out_dtype: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
+    TILE_K: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_M: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
+):
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
+    for _ in range(0, BLOCK_SIZE):
+        if next_id < NUM_BLOCKS and next_id != -1:
+            # TODO: large tensors
+            # Use int32 to reduce register usage
+            start_off = tl.load(input_tiles + 5 * next_id + 2)
+            end_off = tl.load(input_tiles + 5 * next_id + 3)
+            length = end_off - start_off
+
+            if length > 0:
+                type_id = tl.load(input_tiles + 5 * next_id + 1)
+
+                cur_input = input + start_off * stride_input_m
+                cur_grad_output = grad_output + start_off * stride_grad_output_m
+                cur_grad_other = grad_other + type_id * stride_grad_other_b
+                if length <= TILE_M_16:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        cur_input, cur_grad_output, cur_grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_k, stride_grad_other_n,
+                        K, N, length,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_K,
+                        TILE_N=TILE_N,
+                        TILE_M=TILE_M_16,
+                        EVEN_K=EVEN_K,
+                        EVEN_N=EVEN_N,
+                        EVEN_M=False,
+                    )
+                elif length <= TILE_M_32:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        cur_input, cur_grad_output, cur_grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_k, stride_grad_other_n,
+                        K, N, length,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_K,
+                        TILE_N=TILE_N,
+                        TILE_M=TILE_M_32,
+                        EVEN_K=EVEN_K,
+                        EVEN_N=EVEN_N,
+                        EVEN_M=False,
+                    )
+                elif length <= TILE_M_64:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        cur_input, cur_grad_output, cur_grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_k, stride_grad_other_n,
+                        K, N, length,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_K,
+                        TILE_N=TILE_N,
+                        TILE_M=TILE_M_64,
+                        EVEN_K=EVEN_K,
+                        EVEN_N=EVEN_N,
+                        EVEN_M=False,
+                    )
+                else:
+                    _dynamic_k_matmul(
+                        pid_k, pid_n, type_id,
+                        cur_input, cur_grad_output, cur_grad_other,
+                        stride_input_m, stride_input_k,
+                        stride_grad_output_m, stride_grad_output_n,
+                        stride_grad_other_k, stride_grad_other_n,
+                        K, N, length,
+                        out_dtype=out_dtype,
+                        TILE_K=TILE_K,
+                        TILE_N=TILE_N,
+                        TILE_M=TILE_M,
+                        EVEN_K=EVEN_K,
+                        EVEN_N=EVEN_N,
+                        EVEN_M=False,
+                    )
+            next_id = next_next_id
+            next_next_id += 1
+
+
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -364,8 +466,6 @@ def split_matmul_kernel(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
-    TILE_M_16: tl.constexpr = 16
-    TILE_M_32: tl.constexpr = 32
     # TODO(Keren): a different block grouping scheme
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
@@ -398,70 +498,22 @@ def split_matmul_kernel(
             EVEN_M=True,
         )
     else:
-        for _ in range(0, BLOCK_SIZE):
-            if next_id < NUM_BLOCKS and next_id != -1:
-                # TODO: large tensors
-                # Use int32 to reduce register usage
-                start_off = tl.load(input_tiles + 5 * next_id + 2)
-                end_off = tl.load(input_tiles + 5 * next_id + 3)
-                length = end_off - start_off
-
-                if length > 0:
-                    type_id = tl.load(input_tiles + 5 * next_id + 1)
-
-                    cur_input = input + start_off * stride_input_m
-                    cur_grad_output = grad_output + start_off * stride_grad_output_m
-                    cur_grad_other = grad_other + type_id * stride_grad_other_b
-                    if length <= TILE_M_16:
-                        _dynamic_k_matmul(
-                            pid_k, pid_n, type_id,
-                            cur_input, cur_grad_output, cur_grad_other,
-                            stride_input_m, stride_input_k,
-                            stride_grad_output_m, stride_grad_output_n,
-                            stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
-                            out_dtype=out_dtype,
-                            TILE_K=TILE_SIZE_K,
-                            TILE_N=TILE_SIZE_N,
-                            TILE_M=TILE_M_16,
-                            EVEN_K=EVEN_K,
-                            EVEN_N=EVEN_N,
-                            EVEN_M=False,
-                        )
-                    elif length <= TILE_M_32:
-                        _dynamic_k_matmul(
-                            pid_k, pid_n, type_id,
-                            cur_input, cur_grad_output, cur_grad_other,
-                            stride_input_m, stride_input_k,
-                            stride_grad_output_m, stride_grad_output_n,
-                            stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
-                            out_dtype=out_dtype,
-                            TILE_K=TILE_SIZE_K,
-                            TILE_N=TILE_SIZE_N,
-                            TILE_M=TILE_M_32,
-                            EVEN_K=EVEN_K,
-                            EVEN_N=EVEN_N,
-                            EVEN_M=False,
-                        )
-                    else:
-                        _dynamic_k_matmul(
-                            pid_k, pid_n, type_id,
-                            cur_input, cur_grad_output, cur_grad_other,
-                            stride_input_m, stride_input_k,
-                            stride_grad_output_m, stride_grad_output_n,
-                            stride_grad_other_k, stride_grad_other_n,
-                            K, N, length,
-                            out_dtype=out_dtype,
-                            TILE_K=TILE_SIZE_K,
-                            TILE_N=TILE_SIZE_N,
-                            TILE_M=TILE_SIZE_M,
-                            EVEN_K=EVEN_K,
-                            EVEN_N=EVEN_N,
-                            EVEN_M=False,
-                        )
-                next_id = next_next_id
-                next_next_id += 1
+        _split_noncontiguous_block(
+            pid_k, pid_n, type_id,
+            input, input_tiles, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, next_id, next_next_id,
+            out_dtype=out_dtype,
+            BLOCK_SIZE=BLOCK_SIZE,
+            NUM_BLOCKS=NUM_BLOCKS,
+            TILE_K=TILE_SIZE_K,
+            TILE_N=TILE_SIZE_N,
+            TILE_M=TILE_SIZE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=False,
+        )
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
