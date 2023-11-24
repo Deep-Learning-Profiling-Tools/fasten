@@ -395,6 +395,7 @@ def split_matmul_kernel(
             TILE_M=TILE_SIZE_M,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
+            EVEN_M=True,
         )
     else:
         for _ in range(0, BLOCK_SIZE):
@@ -425,6 +426,7 @@ def split_matmul_kernel(
                             TILE_M=TILE_M_16,
                             EVEN_K=EVEN_K,
                             EVEN_N=EVEN_N,
+                            EVEN_M=False,
                         )
                     elif length <= TILE_M_32:
                         _dynamic_k_matmul(
@@ -440,6 +442,7 @@ def split_matmul_kernel(
                             TILE_M=TILE_M_32,
                             EVEN_K=EVEN_K,
                             EVEN_N=EVEN_N,
+                            EVEN_M=False,
                         )
                     else:
                         _dynamic_k_matmul(
@@ -455,6 +458,7 @@ def split_matmul_kernel(
                             TILE_M=TILE_SIZE_M,
                             EVEN_K=EVEN_K,
                             EVEN_N=EVEN_N,
+                            EVEN_M=False,
                         )
                 next_id = next_next_id
                 next_next_id += 1
