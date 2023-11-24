@@ -376,21 +376,19 @@ def batch_matmul_kernel(
         start_off = tl.load(input_tiles + 5 * next_id + 2)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
         grad_other = grad_other + type_id * stride_grad_other_b
-        for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off + i * TILE_SIZE_M
-            _dynamic_k_matmul(
-                pid_k, pid_n, type_id,
-                input + cur_start_off * stride_input_m,
-                grad_output + cur_start_off * stride_grad_output_m, grad_other,
-                stride_input_m, stride_input_k,
-                stride_grad_output_m, stride_grad_output_n,
-                stride_grad_other_k, stride_grad_other_n,
-                K, N, TILE_SIZE_M,
-                out_dtype=out_dtype,
-                TILE_K=TILE_SIZE_K,
-                TILE_N=TILE_SIZE_N,
-                TILE_M=TILE_SIZE_M,
-            )
+        _dynamic_k_matmul(
+            pid_k, pid_n, type_id,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, TILE_SIZE_M * BLOCK_SIZE,
+            out_dtype=out_dtype,
+            TILE_K=TILE_SIZE_K,
+            TILE_N=TILE_SIZE_N,
+            TILE_M=TILE_SIZE_M,
+        )
     else:
         for _ in range(0, BLOCK_SIZE):
             if next_id < NUM_BLOCKS and next_id != -1:
