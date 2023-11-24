@@ -342,6 +342,7 @@ def segment_matmul_kernel(
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
     ],
+    reset_to_zero=['grad_other'],
     key=['N', 'K'],
 )
 @triton.jit
