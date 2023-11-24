@@ -378,11 +378,10 @@ def batch_matmul_kernel(
         grad_other = grad_other + type_id * stride_grad_other_b
         for i in range(0, BLOCK_SIZE):
             cur_start_off = start_off + i * TILE_SIZE_M
-            input = input + cur_start_off * stride_input_m
-            grad_output = grad_output + cur_start_off * stride_grad_output_m
             _dynamic_k_matmul(
                 pid_k, pid_n, type_id,
-                input, grad_output, grad_other,
+                input + cur_start_off * stride_input_m,
+                grad_output + cur_start_off * stride_grad_output_m, grad_other,
                 stride_input_m, stride_input_k,
                 stride_grad_output_m, stride_grad_output_n,
                 stride_grad_other_k, stride_grad_other_n,
@@ -404,13 +403,13 @@ def batch_matmul_kernel(
                 if length > 0:
                     type_id = tl.load(input_tiles + 5 * next_id + 1)
 
-                    input = input + start_off * stride_input_m
-                    grad_output = grad_output + start_off * stride_grad_output_m
-                    grad_other = grad_other + type_id * stride_grad_other_b
+                    cur_input = input + start_off * stride_input_m
+                    cur_grad_output = grad_output + start_off * stride_grad_output_m
+                    cur_grad_other = grad_other + type_id * stride_grad_other_b
                     if length <= TILE_M_16:
                         _dynamic_k_matmul(
                             pid_k, pid_n, type_id,
-                            input, grad_output, grad_other,
+                            cur_input, cur_grad_output, cur_grad_other,
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_k, stride_grad_other_n,
@@ -423,7 +422,7 @@ def batch_matmul_kernel(
                     elif length <= TILE_M_32:
                         _dynamic_k_matmul(
                             pid_k, pid_n, type_id,
-                            input, grad_output, grad_other,
+                            cur_input, cur_grad_output, cur_grad_other,
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_k, stride_grad_other_n,
@@ -436,7 +435,7 @@ def batch_matmul_kernel(
                     else:
                         _dynamic_k_matmul(
                             pid_k, pid_n, type_id,
-                            input, grad_output, grad_other,
+                            cur_input, cur_grad_output, cur_grad_other,
                             stride_input_m, stride_input_k,
                             stride_grad_output_m, stride_grad_output_n,
                             stride_grad_other_k, stride_grad_other_n,
