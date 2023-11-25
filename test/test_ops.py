@@ -124,21 +124,21 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         if phase == "forward":
             ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
-            output_fasten.backward(grad_fasten, retain_graph=True, grad_to_none=[data])
+            output_fasten.backward(grad_fasten, retain_graph=True)
 
     def pyg_fn():
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
-            output_pyg.backward(grad_pyg, retain_graph=True, grad_to_none=[data])
+            output_pyg.backward(grad_pyg, retain_graph=True)
 
     if use_cudagraph:
         stream = torch.cuda.Stream()
         torch.cuda.set_stream(stream)
         fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
     else:
-        fasten_ms = triton.testing.do_bench(fasten_fn)
-    pyg_ms = triton.testing.do_bench(pyg_fn)
+        fasten_ms = triton.testing.do_bench(fasten_fn, grad_to_none=[data])
+    pyg_ms = triton.testing.do_bench(pyg_fn, grad_to_none=[data])
     print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
     benchmark_results.append({
