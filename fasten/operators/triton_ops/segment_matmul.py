@@ -341,6 +341,7 @@ def _split_noncontiguous_block(
     out_dtype: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
+    NUM_TILES: tl.constexpr,
     TILE_K: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_M: tl.constexpr,
@@ -348,7 +349,7 @@ def _split_noncontiguous_block(
     EVEN_N: tl.constexpr,
 ):
     for _ in range(0, BLOCK_SIZE):
-        if next_id < NUM_BLOCKS and next_id != -1:
+        if next_id < NUM_TILES and next_id != -1:
             # TODO: large tensors
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
@@ -406,6 +407,7 @@ def split_matmul_kernel(
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
+    NUM_TILES: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
@@ -455,6 +457,7 @@ def split_matmul_kernel(
             out_dtype=out_dtype,
             BLOCK_SIZE=BLOCK_SIZE,
             NUM_BLOCKS=NUM_BLOCKS,
+            NUM_TILES=NUM_TILES,
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
             TILE_M=TILE_SIZE_M,
@@ -561,6 +564,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
         out_dtype=out_dtype,
         NUM_BLOCKS=num_blocks,
+        NUM_TILES=num_tiles,
         TILE_SIZE_M=tile_size,
         BLOCK_SIZE=block_size,
     )
