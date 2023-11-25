@@ -210,7 +210,7 @@ def _fast_matmul_noinline(
 
 @triton.jit
 def _dynamic_k_matmul(
-    pid_k, pid_n, type_id,
+    pid_k, pid_n,
     input, grad_output, grad_other,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
