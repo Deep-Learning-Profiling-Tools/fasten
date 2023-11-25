@@ -16,8 +16,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor, input_slice
     return output
 
 
-def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
-                            input_slices: torch.Tensor, grad_other: torch.Tensor = None, grad_input: torch.Tensor = None):
+def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_slices: torch.Tensor, grad_input: torch.Tensor = None):
     assert input.device == other.device, 'input, other and output must be on the same device'
     input_slices = input_slices.to('cpu')
     grad_output = grad_output.contiguous()
@@ -29,6 +29,14 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
         b = other[t]
         c = grad_input[input_slices[i, 2]:input_slices[i, 3]]
         torch.matmul(a, b.t(), out=c)
+    return grad_input
+
+
+def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_slices: torch.Tensor, grad_other: torch.Tensor = None):
+    assert input.device == other.device, 'input, other and output must be on the same device'
+    input_slices = input_slices.to('cpu')
+    grad_output = grad_output.contiguous()
     if grad_other is None:
         # grad_other might be sparse
         grad_other = torch.zeros_like(other)
@@ -38,4 +46,4 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
         b = grad_output[input_slices[i, 2]:input_slices[i, 3]]
         c = grad_other[t]
         torch.matmul(a.t(), b, out=c)
-    return grad_input, grad_other
+    return grad_other

@@ -498,10 +498,10 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     return output
 
 
-def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
-                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
-                            grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
-                            num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+def segment_matmul_backward_input(grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_tiles: torch.Tensor, input_slices: torch.Tensor,
+                                  grad_input: torch.Tensor = None,
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -512,48 +512,59 @@ def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, othe
     num_blocks = num_blocks or num_tiles
     grad_output = grad_output.contiguous()
 
-    def dx(grad_input):
-        # [M, N] x [K, N]^T -> [M, K]
-        if grad_input is None:
-            grad_input = torch.empty_like(input)
+    # [M, N] x [K, N]^T -> [M, K]
+    if grad_input is None:
+        grad_input = torch.empty_like(input)
 
-        def grid(meta):
-            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
-        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
-        segment_matmul_kernel[grid](
-            grad_output, input_tiles, other, grad_input,
-            N, K,
-            grad_output.stride(0), grad_output.stride(1),
-            other.stride(0), other.stride(2), other.stride(1),  # swap K and N
-            grad_input.stride(0), grad_input.stride(1),
-            NUM_TILES=num_tiles,
-            NUM_BLOCKS=num_blocks,
-            BLOCK_SIZE=block_size,
-            out_dtype=out_dtype,
-            TILE_SIZE_M=tile_size,
-        )
-        return grad_input
+    def grid(meta):
+        return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
+    out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
+    segment_matmul_kernel[grid](
+        grad_output, input_tiles, other, grad_input,
+        N, K,
+        grad_output.stride(0), grad_output.stride(1),
+        other.stride(0), other.stride(2), other.stride(1),  # swap K and N
+        grad_input.stride(0), grad_input.stride(1),
+        NUM_TILES=num_tiles,
+        NUM_BLOCKS=num_blocks,
+        BLOCK_SIZE=block_size,
+        out_dtype=out_dtype,
+        TILE_SIZE_M=tile_size,
+    )
+    return grad_input
 
-    def dw(grad_other):
-        #  [M, K]^T x [M, N]-> [K, N]
-        if grad_other is None:
-            # grad_other might be sparse
-            grad_other = torch.zeros_like(other)
 
-        def grid(meta):
-            return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
-        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
-        split_matmul_kernel[grid](
-            input, input_tiles, grad_output, grad_other,
-            K, N,
-            input.stride(0), input.stride(1),
-            grad_output.stride(0), grad_output.stride(1),
-            grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
-            out_dtype=out_dtype,
-            NUM_BLOCKS=num_blocks,
-            TILE_SIZE_M=tile_size,
-            BLOCK_SIZE=block_size,
-        )
-        return grad_other
+def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_tiles: torch.Tensor, input_slices: torch.Tensor,
+                                  grad_other: torch.Tensor = None,
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+    assert input.size(1) == other.size(1)
+    assert input_tiles.device == input_slices.device == input.device == other.device
+    assert input.dim() == 2
+    assert other.dim() == 3
+    K: int = input.size(1)
+    N: int = other.size(2)
+    num_tiles = input_tiles.size(0)
+    num_blocks = num_blocks or num_tiles
+    grad_output = grad_output.contiguous()
 
-    return dx(grad_input), dw(grad_other)
+    #  [M, K]^T x [M, N]-> [K, N]
+    if grad_other is None:
+        # grad_other might be sparse
+        grad_other = torch.zeros_like(other)
+
+    def grid(meta):
+        return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
+    out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
+    split_matmul_kernel[grid](
+        input, input_tiles, grad_output, grad_other,
+        K, N,
+        input.stride(0), input.stride(1),
+        grad_output.stride(0), grad_output.stride(1),
+        grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+        out_dtype=out_dtype,
+        NUM_BLOCKS=num_blocks,
+        TILE_SIZE_M=tile_size,
+        BLOCK_SIZE=block_size,
+    )
+    return grad_other
