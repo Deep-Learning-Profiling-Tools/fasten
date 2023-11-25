@@ -124,13 +124,13 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         if phase == "forward":
             ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
-            output_fasten.backward(grad_fasten, retain_graph=True)
+            output_fasten.backward(grad_fasten, retain_graph=True, grad_to_none=[data])
 
     def pyg_fn():
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
-            output_pyg.backward(grad_pyg, retain_graph=True)
+            output_pyg.backward(grad_pyg, retain_graph=True, grad_to_none=[data])
 
     if use_cudagraph:
         stream = torch.cuda.Stream()
