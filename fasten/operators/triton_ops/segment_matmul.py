@@ -358,12 +358,11 @@ def _split_noncontiguous_block(
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
 
-                cur_input = input + start_off * stride_input_m
-                cur_grad_output = grad_output + start_off * stride_grad_output_m
-                cur_grad_other = grad_other + type_id * stride_grad_other_b
                 _dynamic_k_matmul(
                     pid_k, pid_n,
-                    cur_input, cur_grad_output, cur_grad_other,
+                    input + start_off * stride_input_m,
+                    grad_output + start_off * stride_grad_output_m,
+                    grad_other + type_id * stride_grad_other_b,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
                     stride_grad_other_k, stride_grad_other_n,
