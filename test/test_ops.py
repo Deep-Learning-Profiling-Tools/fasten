@@ -135,10 +135,10 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
     if use_cudagraph:
         stream = torch.cuda.Stream()
         torch.cuda.set_stream(stream)
-        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
+        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn, grad_to_none=[data, other])
     else:
-        fasten_ms = triton.testing.do_bench(fasten_fn, grad_to_none=[data])
-    pyg_ms = triton.testing.do_bench(pyg_fn, grad_to_none=[data])
+        fasten_ms = triton.testing.do_bench(fasten_fn, grad_to_none=[data, other])
+    pyg_ms = triton.testing.do_bench(pyg_fn, grad_to_none=[data, other])
     print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
     benchmark_results.append({
