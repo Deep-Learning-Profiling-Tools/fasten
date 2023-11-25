@@ -428,11 +428,11 @@ def split_matmul_kernel(
     if next_next_id == 0:
         start_off = tl.load(input_tiles + 5 * next_id + 2)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
-        grad_other = grad_other + type_id * stride_grad_other_b
         _dynamic_k_matmul(
             pid_k, pid_n,
             input + start_off * stride_input_m,
-            grad_output + start_off * stride_grad_output_m, grad_other,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
