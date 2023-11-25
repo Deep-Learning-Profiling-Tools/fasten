@@ -502,11 +502,9 @@ def segment_matmul_backward_input(grad_output: torch.Tensor, other: torch.Tensor
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_input: torch.Tensor = None,
                                   num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
-    assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
-    assert input.dim() == 2
     assert other.dim() == 3
-    K: int = input.size(1)
+    K: int = other.size(1)
     N: int = other.size(2)
     num_tiles = input_tiles.size(0)
     num_blocks = num_blocks or num_tiles
