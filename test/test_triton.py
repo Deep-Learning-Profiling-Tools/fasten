@@ -35,7 +35,7 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         input_tiles = tensor_slice.tiling(tile_size, method=tiling_method, block_size=block_size)
         output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
         output_grad = torch.randn_like(output)
-        grad_input = triton_ops.segment_matmul_backward_input(output_grad, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
+        grad_input = triton_ops.segment_matmul_backward_input(tensor_slice.data, output_grad, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
         grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, input_tiles.slices, input_slices=tensor_slice.slices, tile_size=tile_size, num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)

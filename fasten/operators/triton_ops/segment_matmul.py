@@ -498,7 +498,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     return output
 
 
-def segment_matmul_backward_input(grad_output: torch.Tensor, other: torch.Tensor,
+def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_input: torch.Tensor = None,
                                   num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
