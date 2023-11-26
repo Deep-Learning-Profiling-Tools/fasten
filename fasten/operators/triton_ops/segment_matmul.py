@@ -469,7 +469,7 @@ def _split_noncontiguous_block(
                     EVEN_K=EVEN_K,
                     EVEN_N=EVEN_N,
                     EVEN_M=False,
-                    DYNAMIC_TILEING=True,
+                    DYNAMIC_TILING=True,
                 )
             next_id = next_next_id
             next_next_id += 1
