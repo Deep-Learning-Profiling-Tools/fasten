@@ -330,7 +330,7 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
-@triton.jit(noinline=True)
+@triton.jit(noinline=False)
 def _split_dispatch(
     start_off, type_id,
     pid_k, pid_n,
@@ -460,7 +460,7 @@ def _split_noncontiguous_block(
                     input, grad_output, grad_other,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_k, stride_grad_other_n,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
                     K, N, length,
                     out_dtype=out_dtype,
                     TILE_K=TILE_K,
