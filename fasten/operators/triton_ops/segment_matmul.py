@@ -245,7 +245,7 @@ def _early_config_prune(configs, named_args):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) and (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
+        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
             continue
         pruned_configs.append(config)
     return pruned_configs
@@ -551,13 +551,18 @@ def split_matmul_kernel(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
+    GROUP_K: tl.constexpr = 2
+
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
     next_id = pid // (grid_k * grid_n)
     tile_id = pid % (grid_k * grid_n)
-    pid_k = tile_id // grid_n
-    pid_n = tile_id % grid_n
+    width = GROUP_K * grid_n
+    group_id = tile_id // width
+    group_size = min(grid_k - group_id * GROUP_K, GROUP_K)
+    pid_k = group_id * GROUP_K + (tile_id % group_size)
+    pid_n = (tile_id % width) // group_size
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
 
     # contiguous block
