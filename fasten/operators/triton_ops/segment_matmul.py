@@ -330,7 +330,7 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
-@triton.jit(noinline=True)
+@triton.jit(noinline=False)
 def _split_dispatch(
     pid_k, pid_n,
     input, grad_output, grad_other,
@@ -461,7 +461,7 @@ def _split_noncontiguous_block(
                     EVEN_K=EVEN_K,
                     EVEN_N=EVEN_N,
                     EVEN_M=False,
-                    DYNAMIC_TILING=True,
+                    DYNAMIC_TILING=False,
                 )
             next_id = next_next_id
             next_next_id += 1
