@@ -551,19 +551,14 @@ def split_matmul_kernel(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
-    GROUP_K: tl.constexpr = 4
-
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
     next_id = pid // (grid_k * grid_n)
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
     tile_id = pid % (grid_k * grid_n)
-    width = GROUP_K * grid_n
-    group_id = tile_id // width
-    group_size = min(grid_k - group_id * GROUP_K, GROUP_K)
-    pid_k = group_id * GROUP_K + (tile_id % group_size)
-    pid_n = (tile_id % width) // group_size
+    pid_k = tile_id // grid_n
+    pid_n = tile_id % grid_n
 
     # contiguous block
     if next_next_id == 0:
