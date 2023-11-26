@@ -238,14 +238,27 @@ def _dynamic_k_matmul(
 
     m_iter = M // TILE_M if EVEN_M else tl.cdiv(M, TILE_M)
     for m in range(0, m_iter):
-        if EVEN_M and EVEN_K:
-            a = tl.load(input_ptrs)
+        if EVEN_K:
+            if EVEN_M:
+                a = tl.load(input_ptrs)
+            else:
+                a = tl.load(input_ptrs, mask=(offs_m[None, :] + m * TILE_M < M), other=0.0)
         else:
-            a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_M < M), other=0.0)
-        if EVEN_M and EVEN_N:
-            b = tl.load(grad_output_ptrs)
+            if EVEN_M:
+                a = tl.load(input_ptrs, mask=mask_k, other=0.0)
+            else:
+                a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_M < M), other=0.0)
+        if EVEN_N:
+            if EVEN_M:
+                b = tl.load(grad_output_ptrs)
+            else:
+                b = tl.load(grad_output_ptrs, mask=(offs_m[:, None] + m * TILE_M < M), other=0.0)
         else:
-            b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_M < M), other=0.0)
+            if EVEN_M:
+                b = tl.load(grad_output_ptrs, mask=mask_n)
+            else:
+                b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_M < M), other=0.0)
+
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += TILE_M * stride_input_m
         grad_output_ptrs += TILE_M * stride_grad_output_m
