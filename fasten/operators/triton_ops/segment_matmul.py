@@ -240,7 +240,7 @@ def _early_config_prune(configs, named_args):
     N = named_args['N']
     K = named_args['K']
     for config in configs:
-        kw = configs.kwargs
+        kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
         if TILE_SIZE_K > K or TILE_SIZE_N > N:
