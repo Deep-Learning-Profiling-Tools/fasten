@@ -235,6 +235,20 @@ def _contiguous_block(
                 )
 
 
+def _early_config_prune(configs, named_args):
+    pruned_configs = []
+    N = named_args['N']
+    K = named_args['K']
+    for config in configs:
+        kw = configs.kwargs
+        TILE_SIZE_N = kw['TILE_SIZE_N']
+        TILE_SIZE_K = kw['TILE_SIZE_K']
+        if TILE_SIZE_K > K or TILE_SIZE_N > N:
+            continue
+        pruned_configs.append(config)
+    return pruned_configs
+
+
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -263,7 +277,9 @@ def _contiguous_block(
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
     ],
     key=['N', 'K'],  # Tune for each N and K, high latency
-    # TODO: Employ another performance model
+    prune_configs_by={
+        'early_config_prune': _early_config_prune
+    }
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -508,6 +524,9 @@ def _split_noncontiguous_block(
     ],
     reset_to_zero=['grad_other'],
     key=['N', 'K'],
+    prune_configs_by={
+        'early_config_prune': _early_config_prune
+    }
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -530,19 +549,13 @@ def split_matmul_kernel(
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr
 ):
-    # TODO(Keren): a different block grouping scheme
-    GROUP_K: tl.constexpr = 2
-
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
     next_id = pid // (grid_k * grid_n)
     tile_id = pid % (grid_k * grid_n)
-    width = GROUP_K * grid_n
-    group_id = tile_id // width
-    group_size = min(grid_k * grid_n - group_id * GROUP_K, GROUP_K)
-    pid_k = group_id * GROUP_K + (tile_id % group_size)
-    pid_n = (tile_id % width) // (group_size)
+    pid_k = tile_id // grid_n
+    pid_n = tile_id % grid_n
     next_next_id = tl.load(input_tiles + 5 * next_id + 4)
 
     # contiguous block
