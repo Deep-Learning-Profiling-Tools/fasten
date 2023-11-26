@@ -330,6 +330,102 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
+@triton.jit(noinline=True)
+def _split_dispatch(
+    start_off, type_id,
+    pid_k, pid_n,
+    input, grad_output, grad_other,
+    stride_input_m, stride_input_k,
+    stride_grad_output_m, stride_grad_output_n,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N, length,
+    out_dtype: tl.constexpr,
+    TILE_K: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_M: tl.constexpr,
+    EVEN_N: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_M: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr
+):
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
+
+    if length <= TILE_M_16 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_16,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    elif length <= TILE_M_32 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_32,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    elif length <= TILE_M_64 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_64,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    else:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=False,
+        )
+
+
 @triton.jit
 def _split_noncontiguous_block(
     pid_k, pid_n,
@@ -358,11 +454,10 @@ def _split_noncontiguous_block(
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
 
-                _dynamic_k_matmul(
+                _split_dispatch(
+                    start_off, type_id,
                     pid_k, pid_n,
-                    input + start_off * stride_input_m,
-                    grad_output + start_off * stride_grad_output_m,
-                    grad_other + type_id * stride_grad_other_b,
+                    input, grad_output, grad_other,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
                     stride_grad_other_k, stride_grad_other_n,
@@ -374,6 +469,7 @@ def _split_noncontiguous_block(
                     EVEN_K=EVEN_K,
                     EVEN_N=EVEN_N,
                     EVEN_M=False,
+                    DYNAMIC_TILEING=True,
                 )
             next_id = next_next_id
             next_next_id += 1
