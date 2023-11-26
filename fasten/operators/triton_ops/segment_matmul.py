@@ -330,14 +330,13 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
-@triton.jit(noinline=False)
+@triton.jit(noinline=True)
 def _split_dispatch(
-    start_off, type_id,
     pid_k, pid_n,
     input, grad_output, grad_other,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
-    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    stride_grad_other_k, stride_grad_other_n,
     K, N, length,
     out_dtype: tl.constexpr,
     TILE_K: tl.constexpr,
@@ -355,9 +354,7 @@ def _split_dispatch(
     if length <= TILE_M_16 and DYNAMIC_TILING:
         _dynamic_k_matmul(
             pid_k, pid_n,
-            input + start_off * stride_input_m,
-            grad_output + start_off * stride_grad_output_m,
-            grad_other + type_id * stride_grad_other_b,
+            input, grad_output, grad_other,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
@@ -373,9 +370,7 @@ def _split_dispatch(
     elif length <= TILE_M_32 and DYNAMIC_TILING:
         _dynamic_k_matmul(
             pid_k, pid_n,
-            input + start_off * stride_input_m,
-            grad_output + start_off * stride_grad_output_m,
-            grad_other + type_id * stride_grad_other_b,
+            input, grad_output, grad_other,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
@@ -391,9 +386,7 @@ def _split_dispatch(
     elif length <= TILE_M_64 and DYNAMIC_TILING:
         _dynamic_k_matmul(
             pid_k, pid_n,
-            input + start_off * stride_input_m,
-            grad_output + start_off * stride_grad_output_m,
-            grad_other + type_id * stride_grad_other_b,
+            input, grad_output, grad_other,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
@@ -409,9 +402,7 @@ def _split_dispatch(
     else:
         _dynamic_k_matmul(
             pid_k, pid_n,
-            input + start_off * stride_input_m,
-            grad_output + start_off * stride_grad_output_m,
-            grad_other + type_id * stride_grad_other_b,
+            input, grad_output, grad_other,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
@@ -455,12 +446,13 @@ def _split_noncontiguous_block(
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
 
                 _split_dispatch(
-                    start_off, type_id,
                     pid_k, pid_n,
-                    input, grad_output, grad_other,
+                    input + start_off * stride_input_m,
+                    grad_output + start_off * stride_grad_output_m,
+                    grad_other + type_id * stride_grad_other_b,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    stride_grad_other_k, stride_grad_other_n,
                     K, N, length,
                     out_dtype=out_dtype,
                     TILE_K=TILE_K,
