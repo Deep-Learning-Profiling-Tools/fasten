@@ -239,11 +239,13 @@ def _early_config_prune(configs, named_args):
     pruned_configs = []
     N = named_args['N']
     K = named_args['K']
+    min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
+    min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
     for config in configs:
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if TILE_SIZE_K > K or TILE_SIZE_N > N:
+        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
             continue
         pruned_configs.append(config)
     return pruned_configs
