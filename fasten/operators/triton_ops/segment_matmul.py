@@ -245,7 +245,7 @@ def _early_config_prune(configs, named_args):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
+        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) and (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
             continue
         pruned_configs.append(config)
     return pruned_configs
