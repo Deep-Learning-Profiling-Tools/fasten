@@ -34,9 +34,12 @@ class FastenSegmentMatmul(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         input, other = ctx.saved_tensors
-        grad_input, grad_other = execute_engine(
+        grad_input = execute_engine(
             input, grad_output, other,
-            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward')
+            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward_input')
+        grad_other = execute_engine(
+            input, grad_output, other,
+            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward_other')
         return grad_input, grad_other, None, None
 
 

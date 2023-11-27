@@ -64,13 +64,17 @@ def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num
                 and first_subslice[2] + tile_size * block_size == last_subslice[3]:
             compressed_subslices.append([first_subslice[0], first_subslice[1], first_subslice[2], last_subslice[3], 0])
         else:
+            next_id = 0
             for j in range(block_start_idx, block_end_idx):
                 subslice = subslices[j]
                 # Set continuation index for small blocks
-                subslice[4] = len(small_subslices) + num_blocks
                 if j == block_start_idx:
+                    subslice[4] = len(small_subslices) + num_blocks
+                    next_id = subslice[4] + 1
                     compressed_subslices.append(subslice)
                 else:
+                    subslice[4] = next_id
+                    next_id += 1
                     small_subslices.append(subslice)
 
     return compressed_subslices, small_subslices
@@ -98,7 +102,7 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
 
 def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
-        return (input.size(1), other.size(2))
+        return (input.size(1), other.size(2))  # (K, N)
 
     def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
@@ -112,13 +116,30 @@ def _init_segment_matmul_forward_scheduler():
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
 
 
-def _init_segment_matmul_backward_scheduler():
+def _init_segment_matmul_backward_input_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
-        return (input.size(1), other.size(2))
+        return (input.size(1), other.size(2))  # (K, N)
+
+    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+        tile_size, tiling_method, block_size = config
+        if tile_size >= 64 and block_size > 4:
+            # High noinline function invocation cost
+            return True
+        if key[1] >= 128 and tile_size <= 32:
+            # When K is large, we should use larger tile size
+            return True
+        return False
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
+
+
+def _init_segment_matmul_backward_other_scheduler():
+    def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
+        return (input.size(1), other.size(2))  # (K, N)
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
 
 
 schedulers = {
     'segment_matmul_forward': _init_segment_matmul_forward_scheduler(),
-    'segment_matmul_backward': _init_segment_matmul_backward_scheduler(),
+    'segment_matmul_backward_input': _init_segment_matmul_backward_input_scheduler(),
+    'segment_matmul_backward_other': _init_segment_matmul_backward_other_scheduler(),
 }
