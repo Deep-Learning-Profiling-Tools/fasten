@@ -5,8 +5,8 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import (_dynamic_k_matmul, _fast_matmul_inline,
-                             _fast_matmul_noinline, _matmul, _reg_matmul)
+from .kernels.matmul import (_dynamic_k_matmul, _fast_matmul_inline, _fused_matmul,
+                             _matmul, _reg_matmul)
 
 
 @triton.jit(noinline=True)
@@ -187,53 +187,34 @@ def _contiguous_block(
             EVEN_N=EVEN_N,
         )
     else:
-        for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off + i * TILE_M
-            cur_end_off = cur_start_off + TILE_M
-            if EVEN_K and EVEN_N:
-                if BLOCK_SIZE == 1 or (TILE_K * TILE_M + TILE_K * TILE_N) <= (64 * 64 * 2):
-                    _fast_matmul_inline(
-                        cur_start_off, pid_n * TILE_N,
-                        input, other + type_id * stride_other_b, output,
-                        stride_input_m, stride_input_k,
-                        stride_other_k, stride_other_n,
-                        stride_output_m, stride_output_n,
-                        out_dtype=out_dtype,
-                        K_ITER=K // TILE_K,
-                        TILE_M=TILE_M,
-                        TILE_N=TILE_N,
-                        TILE_K=TILE_K
-                    )
-                else:
-                    _fast_matmul_noinline(
-                        cur_start_off, pid_n * TILE_N,
-                        input, other + type_id * stride_other_b, output,
-                        stride_input_m, stride_input_k,
-                        stride_other_k, stride_other_n,
-                        stride_output_m, stride_output_n,
-                        out_dtype=out_dtype,
-                        K_ITER=K // TILE_K,
-                        TILE_M=TILE_M,
-                        TILE_N=TILE_N,
-                        TILE_K=TILE_K
-                    )
-            else:
-                _matmul(
-                    pid_n,
-                    cur_start_off, cur_end_off,
-                    input, other + type_id * stride_other_b, output,
-                    K, N,
-                    stride_input_m, stride_input_k,
-                    stride_other_k, stride_other_n,
-                    stride_output_m, stride_output_n,
-                    out_dtype=out_dtype,
-                    MASK_M=False,
-                    EVEN_K=EVEN_K,
-                    EVEN_N=EVEN_N,
-                    TILE_M=TILE_M,
-                    TILE_N=TILE_N,
-                    TILE_K=TILE_K
-                )
+        if EVEN_K and EVEN_N and BLOCK_SIZE == 1:
+            _fast_matmul_inline(
+                start_off, pid_n * TILE_N,
+                input, other + type_id * stride_other_b, output,
+                stride_input_m, stride_input_k,
+                stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                K_ITER=K // TILE_K,
+                TILE_M=TILE_M,
+                TILE_N=TILE_N,
+                TILE_K=TILE_K
+            )
+        else:
+            _fused_matmul(
+                pid_n, start_off,
+                input, other + type_id * stride_other_b, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                EVEN_K=EVEN_K,
+                EVEN_N=EVEN_N,
+                TILE_M=TILE_M,
+                TILE_N=TILE_N,
+                TILE_K=TILE_K
+            )
 
 
 @triton.autotune(
