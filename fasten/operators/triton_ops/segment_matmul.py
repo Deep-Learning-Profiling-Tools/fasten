@@ -187,7 +187,7 @@ def _contiguous_block(
             EVEN_N=EVEN_N,
         )
     else:
-        if EVEN_K and EVEN_N and BLOCK_SIZE == 1:
+        if (EVEN_K and EVEN_N) and BLOCK_SIZE == 1:
             _fast_matmul_inline(
                 start_off, pid_n * TILE_N,
                 input, other + type_id * stride_other_b, output,
