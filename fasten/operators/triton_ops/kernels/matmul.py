@@ -148,7 +148,8 @@ def _fused_matmul(
 
     kiters = K // TILE_K if EVEN_K else tl.cdiv(K, TILE_K)
     iters = kiters * BLOCK_SIZE
-    for k in range(0, iters):
+    k = 0
+    for _ in range(0, iters):
         if EVEN_K:
             a = tl.load(input_ptrs)
             b = tl.load(other_ptrs)
@@ -170,9 +171,11 @@ def _fused_matmul(
             input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
             other_ptrs = other + \
                 (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+            k = 0
         else:
             input_ptrs += TILE_K * stride_input_k
             other_ptrs += TILE_K * stride_other_k
+            k += 1
 
 
 @triton.jit
