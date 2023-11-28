@@ -213,7 +213,8 @@ def _contiguous_block(
                 EVEN_N=EVEN_N,
                 TILE_M=TILE_M,
                 TILE_N=TILE_N,
-                TILE_K=TILE_K
+                TILE_K=TILE_K,
+                BLOCK_SIZE=BLOCK_SIZE,
             )
 
 
