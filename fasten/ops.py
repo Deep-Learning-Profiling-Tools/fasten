@@ -9,10 +9,11 @@ def execute_engine(*args, engine: Engine, tensor_slice: TensorSlice = None, op_n
         assert tensor_slice is not None, 'tensor_slice must be provided when using AUTO or TRITON engine'
         autotune = engine == Engine.AUTO
         cache_entry = tensor_slice.schedule(op_name, *args, autotune=autotune)
-        if cache_entry.best_config.input_tiles is None:
+        best_config = cache_entry.best_config
+        if best_config.input_tiles is None:
             return cache_entry.best_op(*args, input_slices=tensor_slice.slices)
         else:
-            return cache_entry.best_op(*args, input_slices=tensor_slice.slices, **(cache_entry.best_config.asdict()))
+            return cache_entry.best_op(*args, input_slices=tensor_slice.slices, **(best_config.asdict()))
     elif engine == Engine.TORCH:
         engine_op = getattr(engine_ops[engine], op_name)
         return engine_op(*args, input_slices=tensor_slice.slices)
@@ -33,9 +34,12 @@ class FastenSegmentMatmul(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):
         input, other = ctx.saved_tensors
-        grad_input, grad_other = execute_engine(
+        grad_input = execute_engine(
             input, grad_output, other,
-            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward')
+            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward_input')
+        grad_other = execute_engine(
+            input, grad_output, other,
+            engine=ctx.engine, tensor_slice=ctx.tensor_slice, op_name='segment_matmul_backward_other')
         return grad_input, grad_other, None, None
 
 

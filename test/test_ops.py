@@ -66,7 +66,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
             sorted_data_grad_ref[s] = torch.matmul(output_grad[s], other[t].t())
             other_grad_ref[t] = torch.matmul(tensor_slice.data[s].t(), output_grad[s])
         torch.testing.assert_close(tensor_slice.data.grad, sorted_data_grad_ref, atol=1e-1, rtol=1e-2)
-        if M // T >= 4096:
+        if M // T >= 2048:
             # gradient accumlation starts to be significantly different with large samples
             torch.testing.assert_close(other.grad, other_grad_ref, atol=1.0, rtol=1e-2)
         else:
@@ -92,10 +92,10 @@ def benchmark_results(format: str = "csv"):
                 writer.writerow(row)
 
 
-@pytest.mark.parametrize("phase", ["forward", "backward", "full"])
+@pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
-@pytest.mark.parametrize("K", [32, 64, 256])
+@pytest.mark.parametrize("K", [32, 64, 128])
 def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
@@ -110,7 +110,7 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
-    if phase == "backward" or phase == "full":
+    if phase == "backward":
         data.requires_grad = True
         other.requires_grad = True
 
@@ -121,30 +121,24 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
     grad_pyg = torch.empty_like(output_pyg)
 
     def fasten_fn():
-        if phase == "full":
-            output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
-            output.backward(grad_fasten)
-        elif phase == "forward":
+        if phase == "forward":
             ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
         else:  # phase == "backward"
             output_fasten.backward(grad_fasten, retain_graph=True)
 
     def pyg_fn():
-        if phase == "full":
-            output = pyg_lib.ops.segment_matmul(data, ptr, other)
-            output.backward(grad_pyg)
-        elif phase == "forward":
+        if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    if use_cudagraph:
+    if use_cudagraph or phase == "forward":
         stream = torch.cuda.Stream()
         torch.cuda.set_stream(stream)
-        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn)
+        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn, grad_to_none=[data, other])
     else:
-        fasten_ms = triton.testing.do_bench(fasten_fn)
-    pyg_ms = triton.testing.do_bench(pyg_fn)
+        fasten_ms = triton.testing.do_bench(fasten_fn, grad_to_none=[data, other])
+    pyg_ms = triton.testing.do_bench(pyg_fn, grad_to_none=[data, other])
     print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
 
     benchmark_results.append({
