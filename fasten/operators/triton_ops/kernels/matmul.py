@@ -154,9 +154,9 @@ def _fused_matmul(
         a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * TILE_K < K), other=0.0)
         b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * TILE_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
+        c_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
+        tl.store(c_ptrs, acc.to(output.dtype.element_ty), (mask_n & mask_m) and (k % BLOCK_SIZE == BLOCK_SIZE - 1))
         if k % BLOCK_SIZE == BLOCK_SIZE - 1:
-            c_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
-            tl.store(c_ptrs, acc.to(output.dtype.element_ty), mask_n & mask_m)
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
             k = 0
             offs_m += TILE_M
