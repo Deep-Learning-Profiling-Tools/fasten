@@ -153,8 +153,6 @@ def _fused_matmul(
         a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + k * TILE_K < K), other=0.0)
         b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * TILE_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += TILE_K * stride_input_k
-        other_ptrs += TILE_K * stride_other_k
         if k % BLOCK_SIZE == BLOCK_SIZE - 1:
             acc = acc.to(output.dtype.element_ty)
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
