@@ -120,7 +120,7 @@ def _matmul(
 
 @triton.jit
 def _fused_matmul(
-    pid_n, start_off,
+    pid_n, start_off, end_off,
     input, other, output,
     K, N,
     stride_input_m, stride_input_k,
@@ -136,6 +136,7 @@ def _fused_matmul(
 ):
     offs_m = start_off + tl.arange(0, TILE_M)
     offs_n = pid_n * TILE_N + tl.arange(0, TILE_N)
+    mask_n = (offs_n[None, :] < N)
     offs_k = tl.arange(0, TILE_K)
     rn = tl.max_contiguous(tl.multiple_of(offs_n % N, TILE_N), TILE_N)
 
@@ -157,8 +158,6 @@ def _fused_matmul(
             a = tl.load(input_ptrs, mask=(offs_k[None, :] + k * TILE_K < K), other=0.0)
             b = tl.load(other_ptrs, mask=(offs_k[:, None] + k * TILE_K < K), other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
-        if k % BLOCK_SIZE == BLOCK_SIZE - 1:
-            acc = acc.to(output.dtype.element_ty)
         c_ptrs = output + stride_output_m * \
             offs_m[:, None] + stride_output_n * offs_n[None, :]
         if k % BLOCK_SIZE == BLOCK_SIZE - 1:
@@ -168,8 +167,8 @@ def _fused_matmul(
             input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
             other_ptrs = other + \
                 (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
-            mask_n = (offs_n[None, :] < N)
-            tl.store(c_ptrs, acc, mask_n)
+            mask_m = offs_m[:, None] < end_off
+            tl.store(c_ptrs, acc, mask_n & mask_m)
             k = 0
         else:
             input_ptrs += TILE_K * stride_input_k

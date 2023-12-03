@@ -202,7 +202,7 @@ def _contiguous_block(
             )
         else:
             _fused_matmul(
-                pid_n, start_off,
+                pid_n, start_off, start_off + TILE_M * BLOCK_SIZE,
                 input, other + type_id * stride_other_b, output,
                 K, N,
                 stride_input_m, stride_input_k,
