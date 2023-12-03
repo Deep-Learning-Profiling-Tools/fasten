@@ -161,11 +161,6 @@ def _fused_matmul(
             acc = acc.to(output.dtype.element_ty)
         c_ptrs = output + stride_output_m * \
             offs_m[:, None] + stride_output_n * offs_n[None, :]
-        if EVEN_N:
-            tl.store(c_ptrs, acc)
-        else:
-            mask_n = (offs_n[None, :] < N) and (k % BLOCK_SIZE == BLOCK_SIZE - 1)
-            tl.store(c_ptrs, acc, mask_n)
         if k % BLOCK_SIZE == BLOCK_SIZE - 1:
             acc = acc.to(output.dtype.element_ty)
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
@@ -173,6 +168,8 @@ def _fused_matmul(
             input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
             other_ptrs = other + \
                 (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+            mask_n = (offs_n[None, :] < N)
+            tl.store(c_ptrs, acc, mask_n)
             k = 0
         else:
             input_ptrs += TILE_K * stride_input_k
