@@ -157,7 +157,6 @@ def _fused_matmul(
         c_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
         if k % BLOCK_SIZE == BLOCK_SIZE - 1:
             tl.store(c_ptrs, acc.to(output.dtype.element_ty), mask_n & mask_m)
-            acc = acc - acc
             k = 0
             offs_m += TILE_M
             mask_m = offs_m[:, None] < end_off
