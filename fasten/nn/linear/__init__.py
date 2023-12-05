@@ -1,2 +1,2 @@
 # flake8: noqa: F401
-from .linear import FastenHeteroDictLinear
+from .linear import FastenHeteroDictLinear, FastenHeteroLinear
