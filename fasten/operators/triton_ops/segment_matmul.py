@@ -174,8 +174,7 @@ def _contiguous_block(
         _reg_matmul(
             pid_n, type_id,
             start_off,
-            input, other, output,
-            K, N,
+            input, other, output, N,
             stride_input_m, stride_input_k,
             stride_other_b, stride_other_k, stride_other_n,
             stride_output_m, stride_output_n,
@@ -218,6 +217,22 @@ def _contiguous_block(
             )
 
 
+def _early_config_prune(configs, named_args):
+    pruned_configs = []
+    N = named_args['N']
+    K = named_args['K']
+    min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
+    min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
+    for config in configs:
+        kw = config.kwargs
+        TILE_SIZE_N = kw['TILE_SIZE_N']
+        TILE_SIZE_K = kw['TILE_SIZE_K']
+        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
+            continue
+        pruned_configs.append(config)
+    return pruned_configs
+
+
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -232,9 +247,23 @@ def _contiguous_block(
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
     ],
     key=['N', 'K'],  # Tune for each N and K, high latency
-    # TODO: Employ another performance model
+    prune_configs_by={
+        'early_config_prune': _early_config_prune
+    }
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -313,6 +342,143 @@ def segment_matmul_kernel(
             EVEN_N=EVEN_N)
 
 
+@triton.jit(noinline=True)
+def _split_dispatch(
+    pid_k, pid_n,
+    input, grad_output, grad_other,
+    stride_input_m, stride_input_k,
+    stride_grad_output_m, stride_grad_output_n,
+    stride_grad_other_k, stride_grad_other_n,
+    K, N, length,
+    out_dtype: tl.constexpr,
+    TILE_K: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_M: tl.constexpr,
+    EVEN_N: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_M: tl.constexpr,
+    DYNAMIC_TILING: tl.constexpr
+):
+    TILE_M_16: tl.constexpr = 16
+    TILE_M_32: tl.constexpr = 32
+    TILE_M_64: tl.constexpr = 64
+
+    if length <= TILE_M_16 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_16,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    elif length <= TILE_M_32 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_32,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    elif length <= TILE_M_64 and DYNAMIC_TILING:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M_64,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=EVEN_M,
+        )
+    else:
+        _dynamic_k_matmul(
+            pid_k, pid_n,
+            input, grad_output, grad_other,
+            stride_input_m, stride_input_k,
+            stride_grad_output_m, stride_grad_output_n,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, length,
+            out_dtype=out_dtype,
+            TILE_K=TILE_K,
+            TILE_N=TILE_N,
+            TILE_M=TILE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=False,
+        )
+
+
+@triton.jit
+def _split_noncontiguous_block(
+    pid_k, pid_n,
+    input, input_tiles, grad_output, grad_other,
+    stride_input_m, stride_input_k,
+    stride_grad_output_m, stride_grad_output_n,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N, next_id, next_next_id,
+    out_dtype: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    NUM_TILES: tl.constexpr,
+    TILE_K: tl.constexpr,
+    TILE_N: tl.constexpr,
+    TILE_M: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr,
+):
+    for _ in range(0, BLOCK_SIZE):
+        if next_id < NUM_TILES and next_id != -1:
+            # TODO: large tensors
+            # Use int32 to reduce register usage
+            start_off = tl.load(input_tiles + 5 * next_id + 2)
+            end_off = tl.load(input_tiles + 5 * next_id + 3)
+            length = end_off - start_off
+
+            if length > 0:
+                type_id = tl.load(input_tiles + 5 * next_id + 1)
+
+                _split_dispatch(
+                    pid_k, pid_n,
+                    input + start_off * stride_input_m,
+                    grad_output + start_off * stride_grad_output_m,
+                    grad_other + type_id * stride_grad_other_b,
+                    stride_input_m, stride_input_k,
+                    stride_grad_output_m, stride_grad_output_n,
+                    stride_grad_other_k, stride_grad_other_n,
+                    K, N, length,
+                    out_dtype=out_dtype,
+                    TILE_K=TILE_K,
+                    TILE_N=TILE_N,
+                    TILE_M=TILE_M,
+                    EVEN_K=EVEN_K,
+                    EVEN_N=EVEN_N,
+                    EVEN_M=False,
+                    DYNAMIC_TILING=True,
+                )
+            next_id = next_next_id
+            next_next_id += 1
+
+
 @triton.autotune(
     configs=[
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
@@ -323,82 +489,96 @@ def segment_matmul_kernel(
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
     ],
+    reset_to_zero=['grad_other'],
     key=['N', 'K'],
+    prune_configs_by={
+        'early_config_prune': _early_config_prune
+    }
 )
+@triton.heuristics({
+    'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
+    'EVEN_N': lambda args: args['N'] % args['TILE_SIZE_N'] == 0
+})
 @triton.jit
-def batch_matmul_kernel(
-    input, input_slices, grad_output, grad_other,
+def split_matmul_kernel(
+    input, input_tiles, grad_output, grad_other,
     K, N,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     out_dtype: tl.constexpr,
-    B: tl.constexpr,
+    NUM_BLOCKS: tl.constexpr,
+    NUM_TILES: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-    TILE_SIZE_K: tl.constexpr
+    TILE_SIZE_K: tl.constexpr,
+    EVEN_K: tl.constexpr,
+    EVEN_N: tl.constexpr
 ):
-    # TODO(Keren): a different block grouping scheme
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
-    bid = pid // (grid_k * grid_n)
+    next_id = pid // (grid_k * grid_n)
+    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
     tile_id = pid % (grid_k * grid_n)
     pid_k = tile_id // grid_n
     pid_n = tile_id % grid_n
 
-    start_off = tl.load(input_slices + 5 * bid + 2)
-    end_off = tl.load(input_slices + 5 * bid + 3)
-    if end_off <= start_off:
-        return
-    type_id = tl.load(input_slices + 5 * bid + 1)
-
-    M = end_off - start_off
-    TILE_M_16: tl.constexpr = 16
-    TILE_M_32: tl.constexpr = 32
-    TILE_M_64: tl.constexpr = 64
-
-    input = input + start_off * stride_input_m
-    grad_output = grad_output + start_off * stride_grad_output_m
-    grad_other = grad_other + type_id * stride_grad_other_b
-    if M <= TILE_M_16:
+    # contiguous block
+    if next_next_id == 0:
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        type_id = tl.load(input_tiles + 5 * next_id + 1)
         _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
+            pid_k, pid_n,
+            input + start_off * stride_input_m,
+            grad_output + start_off * stride_grad_output_m,
+            grad_other + type_id * stride_grad_other_b,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
+            stride_grad_other_k, stride_grad_other_n,
+            K, N, TILE_SIZE_M * BLOCK_SIZE,
             out_dtype=out_dtype,
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_16,
-        )
-    elif M <= TILE_M_32:
-        _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
-            stride_input_m, stride_input_k,
-            stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
-            out_dtype=out_dtype,
-            TILE_K=TILE_SIZE_K,
-            TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_32,
+            TILE_M=TILE_SIZE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=EVEN_N,
+            EVEN_M=True,
         )
     else:
-        _dynamic_k_matmul(
-            pid_k, pid_n, type_id,
-            input, grad_output, grad_other,
+        _split_noncontiguous_block(
+            pid_k, pid_n,
+            input, input_tiles, grad_output, grad_other,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
-            K, N, M,
+            K, N, next_id, next_next_id,
             out_dtype=out_dtype,
+            BLOCK_SIZE=BLOCK_SIZE,
+            NUM_TILES=NUM_TILES,
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
-            TILE_M=TILE_M_64,
+            TILE_M=TILE_SIZE_M,
+            EVEN_K=EVEN_K,
+            EVEN_N=False,
         )
 
 
@@ -436,61 +616,72 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     return output
 
 
-def segment_matmul_backward(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
-                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
-                            grad_other: torch.Tensor = None, grad_input: torch.Tensor = None,
-                            num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_tiles: torch.Tensor, input_slices: torch.Tensor,
+                                  grad_input: torch.Tensor = None,
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+    assert input_tiles.device == input_slices.device == other.device
+    assert other.dim() == 3
+    K: int = other.size(1)
+    N: int = other.size(2)
+    num_tiles = input_tiles.size(0)
+    num_blocks = num_blocks or num_tiles
+    grad_output = grad_output.contiguous()
+
+    # [M, N] x [K, N]^T -> [M, K]
+    if grad_input is None:
+        grad_input = torch.empty_like(input)
+
+    def grid(meta):
+        return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
+    out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
+    segment_matmul_kernel[grid](
+        grad_output, input_tiles, other, grad_input,
+        N, K,
+        grad_output.stride(0), grad_output.stride(1),
+        other.stride(0), other.stride(2), other.stride(1),  # swap K and N
+        grad_input.stride(0), grad_input.stride(1),
+        NUM_TILES=num_tiles,
+        NUM_BLOCKS=num_blocks,
+        BLOCK_SIZE=block_size,
+        out_dtype=out_dtype,
+        TILE_SIZE_M=tile_size,
+    )
+    return grad_input
+
+
+def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
+                                  input_tiles: torch.Tensor, input_slices: torch.Tensor,
+                                  grad_other: torch.Tensor = None,
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
     assert other.dim() == 3
     K: int = input.size(1)
     N: int = other.size(2)
-    B: int = input_slices.size(0)
     num_tiles = input_tiles.size(0)
     num_blocks = num_blocks or num_tiles
     grad_output = grad_output.contiguous()
 
-    def dx(grad_input):
-        # [M, N] x [K, N]^T -> [M, K]
-        if grad_input is None:
-            grad_input = torch.empty_like(input)
+    #  [M, K]^T x [M, N]-> [K, N]
+    if grad_other is None:
+        # grad_other might be sparse
+        grad_other = torch.zeros_like(other)
 
-        def grid(meta):
-            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_N']),)
-        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype)
-        segment_matmul_kernel[grid](
-            grad_output, input_tiles, other, grad_input,
-            N, K,
-            grad_output.stride(0), grad_output.stride(1),
-            other.stride(0), other.stride(2), other.stride(1),  # swap K and N
-            grad_input.stride(0), grad_input.stride(1),
-            NUM_TILES=num_tiles,
-            NUM_BLOCKS=num_blocks,
-            BLOCK_SIZE=block_size,
-            out_dtype=out_dtype,
-            TILE_SIZE_M=tile_size,
-        )
-        return grad_input
-
-    def dw(grad_other):
-        #  [M, K]^T x [M, N]-> [K, N]
-        if grad_other is None:
-            # grad_other might be sparse
-            grad_other = torch.zeros_like(other)
-
-        def grid(meta):
-            return ((B * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
-        out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
-        batch_matmul_kernel[grid](
-            input, input_slices, grad_output, grad_other,
-            K, N,
-            input.stride(0), input.stride(1),
-            grad_output.stride(0), grad_output.stride(1),
-            grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
-            out_dtype=out_dtype,
-            B=B
-        )
-        return grad_other
-
-    return dx(grad_input), dw(grad_other)
+    def grid(meta):
+        return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
+    out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
+    split_matmul_kernel[grid](
+        input, input_tiles, grad_output, grad_other,
+        K, N,
+        input.stride(0), input.stride(1),
+        grad_output.stride(0), grad_output.stride(1),
+        grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+        out_dtype=out_dtype,
+        NUM_BLOCKS=num_blocks,
+        NUM_TILES=num_tiles,
+        TILE_SIZE_M=tile_size,
+        BLOCK_SIZE=block_size,
+    )
+    return grad_other

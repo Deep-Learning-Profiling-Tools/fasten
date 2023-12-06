@@ -5,7 +5,6 @@ import torch
 from torch import Tensor
 from torch.nn import Parameter
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.dense import HeteroLinear
 from torch_geometric.nn.inits import ones
 from torch_geometric.nn.parameter_dict import ParameterDict
 from torch_geometric.typing import Adj, EdgeType, Metadata, NodeType
@@ -13,7 +12,7 @@ from torch_geometric.utils import softmax
 from torch_geometric.utils.hetero import construct_bipartite_edge_index
 
 from fasten import Engine, TensorSlice
-from fasten.nn.linear import FastenHeteroDictLinear
+from fasten.nn.linear import FastenHeteroDictLinear, FastenHeteroLinear
 
 
 class FastenHGTConv(MessagePassing):
@@ -83,10 +82,10 @@ class FastenHGTConv(MessagePassing):
         dim = out_channels // heads
         num_types = heads * len(self.edge_types)
 
-        self.k_rel = HeteroLinear(dim, dim, num_types, bias=False,
-                                  is_sorted=True)
-        self.v_rel = HeteroLinear(dim, dim, num_types, bias=False,
-                                  is_sorted=True)
+        self.k_rel = FastenHeteroLinear(dim, dim, num_types, bias=False,
+                                        is_sorted=True, engine=self.engine)
+        self.v_rel = FastenHeteroLinear(dim, dim, num_types, bias=False,
+                                        is_sorted=True, engine=self.engine)
 
         self.skip = ParameterDict({
             node_type: Parameter(torch.empty(1))
@@ -122,39 +121,31 @@ class FastenHGTConv(MessagePassing):
 
     def _construct_src_node_feat(
         self, k_dict: Dict[str, Tensor], v_dict: Dict[str, Tensor],
-        edge_index_dict: Dict[EdgeType, Adj]
+        edge_index_dict: Dict[EdgeType, Adj],
+        type_vec: Tensor,
+        tensor_slice_hl: TensorSlice = None
     ) -> Tuple[Tensor, Tensor, Dict[EdgeType, int]]:
         """Constructs the source node representations."""
         cumsum = 0
-        num_edge_types = len(self.edge_types)
         H, D = self.heads, self.out_channels // self.heads
 
         # Flatten into a single tensor with shape [num_edge_types * heads, D]:
         ks: List[Tensor] = []
         vs: List[Tensor] = []
-        type_list: List[Tensor] = []
         offset: Dict[EdgeType] = {}
         for edge_type in edge_index_dict.keys():
             src = edge_type[0]
             N = k_dict[src].size(0)
             offset[edge_type] = cumsum
             cumsum += N
-
-            # construct type_vec for curr edge_type with shape [H, D]
-            edge_type_offset = self.edge_types_map[edge_type]
-            type_vec = torch.arange(H, dtype=torch.long).view(-1, 1).repeat(
-                1, N) * num_edge_types + edge_type_offset
-
-            type_list.append(type_vec)
             ks.append(k_dict[src])
             vs.append(v_dict[src])
 
         ks = torch.cat(ks, dim=0).transpose(0, 1).reshape(-1, D)
         vs = torch.cat(vs, dim=0).transpose(0, 1).reshape(-1, D)
-        type_vec = torch.cat(type_list, dim=1).flatten()
 
-        k = self.k_rel(ks, type_vec).view(H, -1, D).transpose(0, 1)
-        v = self.v_rel(vs, type_vec).view(H, -1, D).transpose(0, 1)
+        k = self.k_rel(ks, type_vec, tensor_slice_hl).view(H, -1, D).transpose(0, 1)
+        v = self.v_rel(vs, type_vec, tensor_slice_hl).view(H, -1, D).transpose(0, 1)
 
         return k, v, offset
 
@@ -162,8 +153,10 @@ class FastenHGTConv(MessagePassing):
         self,
         x_dict: Dict[NodeType, Tensor],
         edge_index_dict: Dict[EdgeType, Adj],
-        tensor_slice: TensorSlice = None,
-        slices=None
+        tensor_slice_hl: TensorSlice = None,
+        type_vec: Tensor = None,
+        tensor_slice_hdl: TensorSlice = None,
+        slices_hdl=None
     ) -> Dict[NodeType, Optional[Tensor]]:
         r"""Runs the forward pass of the module.
 
@@ -188,7 +181,7 @@ class FastenHGTConv(MessagePassing):
         k_dict, q_dict, v_dict, out_dict = {}, {}, {}, {}
 
         # Compute K, Q, V over node types:
-        kqv_dict = self.kqv_lin(x_dict, tensor_slice, slices)
+        kqv_dict = self.kqv_lin(x_dict, tensor_slice_hdl, slices_hdl)
         for key, val in kqv_dict.items():
             k, q, v = torch.tensor_split(val, 3, dim=1)
             k_dict[key] = k.view(-1, H, D)
@@ -197,7 +190,7 @@ class FastenHGTConv(MessagePassing):
 
         q, dst_offset = self._cat(q_dict)
         k, v, src_offset = self._construct_src_node_feat(
-            k_dict, v_dict, edge_index_dict)
+            k_dict, v_dict, edge_index_dict, type_vec, tensor_slice_hl)
 
         edge_index, edge_attr = construct_bipartite_edge_index(
             edge_index_dict, src_offset, dst_offset, edge_attr_dict=self.p_rel)
@@ -216,7 +209,7 @@ class FastenHGTConv(MessagePassing):
             k:
             torch.nn.functional.gelu(v) if v is not None else v
             for k, v in out_dict.items()
-        }, tensor_slice, slices)
+        }, tensor_slice_hdl, slices_hdl)
 
         # Iterate over node types:
         for node_type, out in out_dict.items():

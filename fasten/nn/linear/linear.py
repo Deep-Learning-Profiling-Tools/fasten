@@ -9,9 +9,7 @@ import torch_geometric.typing
 from torch import Tensor
 from torch.nn.parameter import Parameter
 from torch_geometric.nn import inits
-from torch_geometric.typing import pyg_lib
 from torch_geometric.utils import index_sort, scatter
-from torch_geometric.utils.sparse import index2ptr
 
 from fasten import Engine, TensorSlice, ops
 
@@ -175,7 +173,7 @@ class Linear(torch.nn.Module):
                 f'{self.out_channels}, bias={self.bias is not None})')
 
 
-class HeteroLinear(torch.nn.Module):
+class FastenHeteroLinear(torch.nn.Module):
     r"""Applies separate linear tranformations to the incoming data according
     to types
 
@@ -212,6 +210,7 @@ class HeteroLinear(torch.nn.Module):
         out_channels: int,
         num_types: int,
         is_sorted: bool = False,
+        engine: Engine = Engine.AUTO,
         **kwargs,
     ):
         super().__init__()
@@ -220,6 +219,7 @@ class HeteroLinear(torch.nn.Module):
         self.out_channels = out_channels
         self.num_types = num_types
         self.is_sorted = is_sorted
+        self.engine = engine
         self.kwargs = kwargs
 
         self._use_segment_matmul_heuristic_output: Optional[bool] = None
@@ -244,7 +244,7 @@ class HeteroLinear(torch.nn.Module):
         reset_bias_(self.bias, self.in_channels,
                     self.kwargs.get('bias_initializer', None))
 
-    def forward(self, x: Tensor, type_vec: Tensor) -> Tensor:
+    def forward(self, x: Tensor, type_vec: Tensor, tensor_slice_hl: TensorSlice) -> Tensor:
         r"""
         Args:
             x (torch.Tensor): The input features.
@@ -270,6 +270,7 @@ class HeteroLinear(torch.nn.Module):
             assert self._use_segment_matmul_heuristic_output is not None
             use_segment_matmul = self._use_segment_matmul_heuristic_output
 
+        use_segment_matmul = True  # Making use_segemnt_matmul True by default
         if use_segment_matmul and torch_geometric.typing.WITH_SEGMM:
             assert self.weight is not None
 
@@ -279,8 +280,8 @@ class HeteroLinear(torch.nn.Module):
                     type_vec, perm = index_sort(type_vec, self.num_types)
                     x = x[perm]
 
-            type_vec_ptr = index2ptr(type_vec, self.num_types)
-            out = pyg_lib.ops.segment_matmul(x, type_vec_ptr, self.weight)
+            out = ops.fasten_segment_matmul(x, self.weight, tensor_slice_hl, self.engine)
+
             if self.bias is not None:
                 out += self.bias[type_vec]
 
@@ -288,6 +289,7 @@ class HeteroLinear(torch.nn.Module):
                 out_unsorted = torch.empty_like(out)
                 out_unsorted[perm] = out
                 out = out_unsorted
+
         else:
             out = x.new_empty(x.size(0), self.out_channels)
             for i in range(self.num_types):
