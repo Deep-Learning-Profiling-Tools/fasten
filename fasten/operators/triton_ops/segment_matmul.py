@@ -5,8 +5,7 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import (_dynamic_k_matmul, _fast_matmul_inline, _fused_matmul,
-                             _matmul, _reg_matmul)
+from .kernels.matmul import _dynamic_matmul, _fused_matmul, _general_matmul, _reg_matmul
 
 
 @triton.jit(noinline=True)
@@ -32,7 +31,7 @@ def _dispatch(
     TILE_M_64: tl.constexpr = 64
 
     if end_off - start_off <= TILE_M_16 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -49,7 +48,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     elif end_off - start_off <= TILE_M_32 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -66,7 +65,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     elif end_off - start_off <= TILE_M_64 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -83,7 +82,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     else:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -186,15 +185,19 @@ def _contiguous_block(
             EVEN_N=EVEN_N,
         )
     else:
-        if (EVEN_K and EVEN_N) and BLOCK_SIZE == 1:
-            _fast_matmul_inline(
-                start_off, pid_n * TILE_N,
-                input, other + type_id * stride_other_b, output,
+        if BLOCK_SIZE == 1:
+            _general_matmul(
+                pid_n,
+                start_off, start_off + TILE_M * BLOCK_SIZE,
+                input, other, output,
+                K, N,
                 stride_input_m, stride_input_k,
                 stride_other_k, stride_other_n,
                 stride_output_m, stride_output_n,
                 out_dtype=out_dtype,
-                K_ITER=K // TILE_K,
+                MASK_M=True,
+                EVEN_K=EVEN_K,
+                EVEN_N=EVEN_N,
                 TILE_M=TILE_M,
                 TILE_N=TILE_N,
                 TILE_K=TILE_K
@@ -364,7 +367,7 @@ def _split_dispatch(
     TILE_M_64: tl.constexpr = 64
 
     if length <= TILE_M_16 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -380,7 +383,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     elif length <= TILE_M_32 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -396,7 +399,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     elif length <= TILE_M_64 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -412,7 +415,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     else:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -546,7 +549,7 @@ def split_matmul_kernel(
     if next_next_id == 0:
         start_off = tl.load(input_tiles + 5 * next_id + 2)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input + start_off * stride_input_m,
             grad_output + start_off * stride_grad_output_m,

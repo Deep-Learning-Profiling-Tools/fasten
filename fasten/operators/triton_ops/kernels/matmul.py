@@ -52,7 +52,7 @@ def _reg_matmul(
 
 
 @triton.jit
-def _matmul(
+def _general_matmul(
     pid_n,
     start_off, end_off,
     input, other, output,
@@ -176,98 +176,7 @@ def _fused_matmul(
 
 
 @triton.jit
-def _fast_matmul_core(
-    start_off_m, start_off_n,
-    input, other, output,
-    stride_input_m, stride_input_k,
-    stride_other_k, stride_other_n,
-    stride_output_m, stride_output_n,
-    out_dtype: tl.constexpr,
-    K_ITER: tl.constexpr,
-    TILE_M: tl.constexpr,
-    TILE_N: tl.constexpr,
-    TILE_K: tl.constexpr
-):
-    offs_m = start_off_m + tl.arange(0, TILE_M)
-    offs_n = start_off_n + tl.arange(0, TILE_N)
-    offs_k = tl.arange(0, TILE_K)
-
-    # [M, K] x [K, N] -> [M, N]
-    input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + \
-        (offs_k[:, None] * stride_other_k + offs_n[None, :] * stride_other_n)
-
-    acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
-
-    for _ in range(0, K_ITER):
-        a = tl.load(input_ptrs)
-        b = tl.load(other_ptrs)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
-        input_ptrs += TILE_K * stride_input_k
-        other_ptrs += TILE_K * stride_other_k
-
-    acc = acc.to(output.dtype.element_ty)
-    c_ptrs = output + stride_output_m * \
-        offs_m[:, None] + stride_output_n * offs_n[None, :]
-    tl.store(c_ptrs, acc)
-
-
-@triton.jit
-def _fast_matmul_inline(
-    start_off_m, start_off_n,
-    input, other, output,
-    stride_input_m, stride_input_k,
-    stride_other_k, stride_other_n,
-    stride_output_m, stride_output_n,
-    out_dtype: tl.constexpr,
-    K_ITER: tl.constexpr,
-    TILE_M: tl.constexpr,
-    TILE_N: tl.constexpr,
-    TILE_K: tl.constexpr
-):
-    _fast_matmul_core(
-        start_off_m, start_off_n,
-        input, other, output,
-        stride_input_m, stride_input_k,
-        stride_other_k, stride_other_n,
-        stride_output_m, stride_output_n,
-        out_dtype=out_dtype,
-        K_ITER=K_ITER,
-        TILE_M=TILE_M,
-        TILE_N=TILE_N,
-        TILE_K=TILE_K
-    )
-
-
-@triton.jit(noinline=True)
-def _fast_matmul_noinline(
-    start_off_m, start_off_n,
-    input, other, output,
-    stride_input_m, stride_input_k,
-    stride_other_k, stride_other_n,
-    stride_output_m, stride_output_n,
-    out_dtype: tl.constexpr,
-    K_ITER: tl.constexpr,
-    TILE_M: tl.constexpr,
-    TILE_N: tl.constexpr,
-    TILE_K: tl.constexpr
-):
-    _fast_matmul_core(
-        start_off_m, start_off_n,
-        input, other, output,
-        stride_input_m, stride_input_k,
-        stride_other_k, stride_other_n,
-        stride_output_m, stride_output_n,
-        out_dtype=out_dtype,
-        K_ITER=K_ITER,
-        TILE_M=TILE_M,
-        TILE_N=TILE_N,
-        TILE_K=TILE_K
-    )
-
-
-@triton.jit
-def _dynamic_k_matmul(
+def _dynamic_matmul(
     pid_k, pid_n,
     input, grad_output, grad_other,
     stride_input_m, stride_input_k,
