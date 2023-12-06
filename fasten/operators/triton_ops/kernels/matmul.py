@@ -145,21 +145,27 @@ def _fused_matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
 
     acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
-    mask_m = offs_m[:, None] < end_off
     mask_n = offs_n[None, :] < N
 
     k_iters = K // TILE_K if EVEN_K else tl.cdiv(K, TILE_K)
     for k in range(0, k_iters * BLOCK_SIZE):
         i = k % k_iters
-        a = tl.load(input_ptrs, mask=mask_m & (offs_k[None, :] + i * TILE_K < K), other=0.0)
-        b = tl.load(other_ptrs, mask=(offs_k[:, None] + i * TILE_K < K), other=0.0)
+        if EVEN_K:
+            a = tl.load(input_ptrs)
+            b = tl.load(other_ptrs)
+        else:
+            a = tl.load(input_ptrs, mask=offs_k[None, :] + i * TILE_K < K, other=0.0)
+            b = tl.load(other_ptrs, mask=offs_k[:, None] + i * TILE_K < K, other=0.0)
         acc += tl.dot(a, b, out_dtype=out_dtype)
         c_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
-        tl.store(c_ptrs, acc.to(output.dtype.element_ty), (mask_n & mask_m) and (i == k_iters - 1))
+        if i == k_iters - 1:
+            if EVEN_N:
+                tl.store(c_ptrs, acc.to(output.dtype.element_ty))
+            else:
+                tl.store(c_ptrs, acc.to(output.dtype.element_ty), mask_n)
         if i == k_iters - 1:
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
             offs_m += TILE_M
-            mask_m = offs_m[:, None] < end_off
             input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
             other_ptrs = other + \
                 (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
