@@ -166,7 +166,7 @@ def _fused_matmul(
                 tl.store(c_ptrs, acc.to(output.dtype.element_ty), mask_n)
         if i == k_iters - 1:
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
-            input_ptrs = input + TILE_M * stride_input_m
+            input_ptrs += TILE_M * stride_input_m
             other_ptrs = original_other_ptrs
         else:
             input_ptrs += TILE_K * stride_input_k
