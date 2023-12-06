@@ -143,6 +143,7 @@ def _fused_matmul(
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
     other_ptrs = other + \
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+    original_input_ptrs = input_ptrs
     original_other_ptrs = other_ptrs
 
     acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
@@ -166,8 +167,7 @@ def _fused_matmul(
                 tl.store(c_ptrs, acc.to(output.dtype.element_ty), mask_n)
         if i == k_iters - 1:
             acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
-            offs_m += TILE_M
-            input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
+            input_ptrs = original_input_ptrs + TILE_M * stride_input_m
             other_ptrs = original_other_ptrs
         else:
             input_ptrs += TILE_K * stride_input_k
