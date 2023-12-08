@@ -5,7 +5,8 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import _dynamic_matmul, _fused_matmul, _general_matmul, _reg_matmul
+from .kernels.matmul import (_dynamic_matmul, _general_matmul, _prefetch_matmul,
+                             _reg_matmul)
 
 
 @triton.jit(noinline=True)
@@ -203,7 +204,7 @@ def _contiguous_block(
                 TILE_K=TILE_K
             )
         else:
-            _fused_matmul(
+            _prefetch_matmul(
                 pid_n, start_off, start_off + TILE_M * BLOCK_SIZE,
                 input, other + type_id * stride_other_b, output,
                 K, N,
@@ -238,29 +239,28 @@ def _early_config_prune(configs, named_args):
 
 @triton.autotune(
     configs=[
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=2),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 16}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 16}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 16}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 16}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 16}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 16}, num_warps=4, num_stages=4),
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
         triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
         triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
+        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
         triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
     ],
     key=['N', 'K'],  # Tune for each N and K, high latency

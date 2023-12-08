@@ -118,7 +118,7 @@ def _general_matmul(
 
 
 @triton.jit
-def _fused_matmul(
+def _prefetch_matmul(
     pid_n, start_off, end_off,
     input, other, output,
     K, N,
