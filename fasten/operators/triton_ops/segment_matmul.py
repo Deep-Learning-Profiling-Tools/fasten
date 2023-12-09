@@ -188,7 +188,7 @@ def _contiguous_block(
         for i in range(0, BLOCK_SIZE):
             _general_matmul(
                 pid_n,
-                start_off, start_off + i * TILE_M * BLOCK_SIZE,
+                start_off + i * TILE_M * BLOCK_SIZE, start_off + (i + 1) * TILE_M * BLOCK_SIZE,
                 input, other + type_id * stride_other_b, output,
                 K, N,
                 stride_input_m, stride_input_k,
