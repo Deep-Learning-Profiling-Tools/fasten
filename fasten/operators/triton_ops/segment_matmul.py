@@ -5,8 +5,7 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import (_dynamic_matmul, _general_matmul, _prefetch_matmul,
-                             _reg_matmul)
+from .kernels.matmul import _dynamic_matmul, _general_matmul, _reg_matmul
 
 
 @triton.jit(noinline=True)
@@ -186,10 +185,10 @@ def _contiguous_block(
             EVEN_N=EVEN_N,
         )
     else:
-        if BLOCK_SIZE == 1:
+        for i in range(0, BLOCK_SIZE):
             _general_matmul(
                 pid_n,
-                start_off, start_off + TILE_M * BLOCK_SIZE,
+                start_off, start_off + i * TILE_M * BLOCK_SIZE,
                 input, other + type_id * stride_other_b, output,
                 K, N,
                 stride_input_m, stride_input_k,
@@ -202,22 +201,6 @@ def _contiguous_block(
                 TILE_M=TILE_M,
                 TILE_N=TILE_N,
                 TILE_K=TILE_K
-            )
-        else:
-            _prefetch_matmul(
-                pid_n, start_off, start_off + TILE_M * BLOCK_SIZE,
-                input, other + type_id * stride_other_b, output,
-                K, N,
-                stride_input_m, stride_input_k,
-                stride_other_k, stride_other_n,
-                stride_output_m, stride_output_n,
-                out_dtype=out_dtype,
-                EVEN_K=EVEN_K,
-                EVEN_N=EVEN_N,
-                TILE_M=TILE_M,
-                TILE_N=TILE_N,
-                TILE_K=TILE_K,
-                BLOCK_SIZE=BLOCK_SIZE,
             )
 
 
