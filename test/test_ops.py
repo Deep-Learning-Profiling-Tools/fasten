@@ -132,7 +132,7 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         else:  # phase == "backward"
             output_pyg.backward(grad_pyg, retain_graph=True)
 
-    if use_cudagraph or phase == "forward":
+    if use_cudagraph:
         stream = torch.cuda.Stream()
         torch.cuda.set_stream(stream)
         fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn, grad_to_none=[data, other])

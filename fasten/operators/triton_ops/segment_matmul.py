@@ -5,8 +5,7 @@ import triton
 import triton.language as tl
 
 from ...utils import torch_dtype_to_triton_dtype
-from .kernels.matmul import (_dynamic_k_matmul, _fast_matmul_inline,
-                             _fast_matmul_noinline, _matmul, _reg_matmul)
+from .kernels.matmul import _dynamic_matmul, _general_matmul, _reg_matmul
 
 
 @triton.jit(noinline=True)
@@ -32,7 +31,7 @@ def _dispatch(
     TILE_M_64: tl.constexpr = 64
 
     if end_off - start_off <= TILE_M_16 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -49,7 +48,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     elif end_off - start_off <= TILE_M_32 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -66,7 +65,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     elif end_off - start_off <= TILE_M_64 and DYNAMIC_TILING:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -83,7 +82,7 @@ def _dispatch(
             TILE_K=TILE_K
         )
     else:
-        _matmul(
+        _general_matmul(
             pid_n,
             start_off, end_off,
             input, other, output,
@@ -187,52 +186,23 @@ def _contiguous_block(
         )
     else:
         for i in range(0, BLOCK_SIZE):
-            cur_start_off = start_off + i * TILE_M
-            cur_end_off = cur_start_off + TILE_M
-            if EVEN_K and EVEN_N:
-                if BLOCK_SIZE == 1 or (TILE_K * TILE_M + TILE_K * TILE_N) <= (64 * 64 * 2):
-                    _fast_matmul_inline(
-                        cur_start_off, pid_n * TILE_N,
-                        input, other + type_id * stride_other_b, output,
-                        stride_input_m, stride_input_k,
-                        stride_other_k, stride_other_n,
-                        stride_output_m, stride_output_n,
-                        out_dtype=out_dtype,
-                        K_ITER=K // TILE_K,
-                        TILE_M=TILE_M,
-                        TILE_N=TILE_N,
-                        TILE_K=TILE_K
-                    )
-                else:
-                    _fast_matmul_noinline(
-                        cur_start_off, pid_n * TILE_N,
-                        input, other + type_id * stride_other_b, output,
-                        stride_input_m, stride_input_k,
-                        stride_other_k, stride_other_n,
-                        stride_output_m, stride_output_n,
-                        out_dtype=out_dtype,
-                        K_ITER=K // TILE_K,
-                        TILE_M=TILE_M,
-                        TILE_N=TILE_N,
-                        TILE_K=TILE_K
-                    )
-            else:
-                _matmul(
-                    pid_n,
-                    cur_start_off, cur_end_off,
-                    input, other + type_id * stride_other_b, output,
-                    K, N,
-                    stride_input_m, stride_input_k,
-                    stride_other_k, stride_other_n,
-                    stride_output_m, stride_output_n,
-                    out_dtype=out_dtype,
-                    MASK_M=False,
-                    EVEN_K=EVEN_K,
-                    EVEN_N=EVEN_N,
-                    TILE_M=TILE_M,
-                    TILE_N=TILE_N,
-                    TILE_K=TILE_K
-                )
+            _general_matmul(
+                pid_n,
+                start_off + i * TILE_M,
+                start_off + (i + 1) * TILE_M,
+                input, other + type_id * stride_other_b, output,
+                K, N,
+                stride_input_m, stride_input_k,
+                stride_other_k, stride_other_n,
+                stride_output_m, stride_output_n,
+                out_dtype=out_dtype,
+                MASK_M=True,
+                EVEN_K=EVEN_K,
+                EVEN_N=EVEN_N,
+                TILE_M=TILE_M,
+                TILE_N=TILE_N,
+                TILE_K=TILE_K
+            )
 
 
 def _early_config_prune(configs, named_args):
@@ -245,39 +215,31 @@ def _early_config_prune(configs, named_args):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if (TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
+        if (TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
             continue
         pruned_configs.append(config)
     return pruned_configs
 
 
+def _generate_configs():
+    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    num_warps_options = [4, 8]  # Possible values for num_warps
+    num_stages_options = [2, 3, 4]  # Possible values for num_stages
+
+    configs = []
+    for tile_size_n in tile_sizes:
+        for tile_size_k in tile_sizes:
+            for num_warps in num_warps_options:
+                for num_stages in num_stages_options:
+                    config = triton.Config({'TILE_SIZE_N': tile_size_n, 'TILE_SIZE_K': tile_size_k},
+                                           num_warps=num_warps, num_stages=num_stages)
+                    configs.append(config)
+
+    return configs
+
+
 @triton.autotune(
-    configs=[
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-    ],
+    configs=_generate_configs(),
     key=['N', 'K'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': _early_config_prune
@@ -382,7 +344,7 @@ def _split_dispatch(
     TILE_M_64: tl.constexpr = 64
 
     if length <= TILE_M_16 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -398,7 +360,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     elif length <= TILE_M_32 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -414,7 +376,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     elif length <= TILE_M_64 and DYNAMIC_TILING:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -430,7 +392,7 @@ def _split_dispatch(
             EVEN_M=EVEN_M,
         )
     else:
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input, grad_output, grad_other,
             stride_input_m, stride_input_k,
@@ -498,32 +460,7 @@ def _split_noncontiguous_block(
 
 
 @triton.autotune(
-    configs=[
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=4, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 32, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 64, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=3),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 64}, num_warps=8, num_stages=4),
-        triton.Config({'TILE_SIZE_N': 128, 'TILE_SIZE_K': 32}, num_warps=8, num_stages=4),
-    ],
+    configs=_generate_configs(),
     reset_to_zero=['grad_other'],
     key=['N', 'K'],
     prune_configs_by={
@@ -564,7 +501,7 @@ def split_matmul_kernel(
     if next_next_id == 0:
         start_off = tl.load(input_tiles + 5 * next_id + 2)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
-        _dynamic_k_matmul(
+        _dynamic_matmul(
             pid_k, pid_n,
             input + start_off * stride_input_m,
             grad_output + start_off * stride_grad_output_m,
