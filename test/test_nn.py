@@ -50,6 +50,7 @@ def test_rgcn(engine: Engine, device: str):
 @pytest.mark.parametrize("slices", [AIFB, AM, BGS, DBLP, MUTAG])
 @pytest.mark.parametrize("K", [16, 64, 256])
 def test_rgcn_perf(slices: list, K: int):
+    torch.backends.cuda.matmul.allow_tf32 = True
     torch.manual_seed(12345)
     torch_geometric.backend.use_segment_matmul = True
     num_nodes = 10000
