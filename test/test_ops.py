@@ -132,8 +132,9 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
             grouped_data = []
             grouped_grad = []
             for s in slices:
-                grouped_data.append(data[s.start:s.stop, :].t())
-                grouped_grad.append(grad[s.start:s.stop, :])
+                if s.stop > s.start:
+                    grouped_data.append(data[s.start:s.stop, :].t())
+                    grouped_grad.append(grad[s.start:s.stop, :])
 
     def fasten_fn():
         if phase == "forward":
