@@ -123,10 +123,17 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
     elif engine == "pyg":
         output = pyg_lib.ops.segment_matmul(data, ptr, other)
+        if phase == "backward":
+            grouped_data = []
+            grouped_output = []
+            # [M, K]^T * [M, N] = [K, N]
+            for start_off in ptr:
+                grouped_data.append(data[start_off:start_off + K].t())
+                grouped_output.append(output[start_off:start_off + K])
     elif engine == "torch":
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.TORCH)
 
-    if phase == "backward":
+    if phase == "backward" and engine != "pyg":
         grad = torch.randn_like(output)
 
     def fasten_fn():
@@ -139,7 +146,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
-            output.backward(grad, retain_graph=True)
+            pyg_lib.ops.grouped_matmul(grouped_data, grouped_output)
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
