@@ -555,6 +555,7 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 
     def grid(meta):
         return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']),)
+
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,

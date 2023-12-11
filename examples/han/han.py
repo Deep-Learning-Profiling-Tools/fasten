@@ -3,10 +3,9 @@ from typing import Dict, List, Union
 
 import torch
 import torch.nn.functional as F
-from torch import nn
-
-from torch.profiler import ProfilerActivity, profile, record_function
 import torch_geometric.transforms as T
+from torch import nn
+from torch.profiler import record_function
 from torch_geometric.datasets import IMDB
 from torch_geometric.nn import HANConv
 
@@ -68,6 +67,7 @@ def test() -> List[float]:
         acc = (pred[mask] == data['movie'].y[mask]).sum() / mask.sum()
         accs.append(float(acc))
     return accs
+
 
 best_val_acc = 0
 start_patience = patience = 100

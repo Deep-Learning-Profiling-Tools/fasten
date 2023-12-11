@@ -1,23 +1,21 @@
 import argparse
 import os.path as osp
 import random
+from typing import List, Tuple
+
 import torch
 import torch.nn.functional as F
-from typing import List, Tuple
-from torch.nn import Linear
-
 import torch_geometric.transforms as T
-from torch_geometric.datasets import HGBDataset
 from torch import Tensor
+from torch_geometric.datasets import HGBDataset
 from torch_geometric.nn import Linear
 from torch_geometric.utils.sparse import index2ptr
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
 
-
 path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/HGBD')
-transform = T.Compose([T.Constant(value=random.random(), 
+transform = T.Compose([T.Constant(value=random.random(),
                                   node_types=['book', 'film', 'music', 'sports', 'people', 'location', 'organization', 'business'])])
 dataset = HGBDataset(path, "Freebase", transform=transform)
 data = dataset[0]
@@ -38,10 +36,11 @@ def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False)
     tensor_slice = compact_tensor_types(data=data, types=types, is_sorted=is_sorted, device=device)
     return tensor_slice, slices
 
+
 def tensor_slice_gen(data, num_heads) -> Tuple[TensorSlice, Tensor, TensorSlice, List]:
 
     # Generating tensor_slice for HeteroDictLinear
-    ptr = [0] 
+    ptr = [0]
     for key, _ in data.x_dict.items():
         ptr.append(ptr[-1] + data.x_dict[key].shape[0])
     tensor_slice_hdl, slices = ptr_to_tensor_slice(ptr, is_sorted=True)
