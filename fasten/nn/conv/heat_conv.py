@@ -4,14 +4,14 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Embedding
-
 from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.dense.linear import HeteroLinear, Linear
+from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.utils import softmax
 
 from fasten import Engine, TensorSlice
 from fasten.nn.linear import FastenHeteroLinear
+
 
 class FastenHEATConv(MessagePassing):
     r"""The heterogeneous edge-enhanced graph attentional operator from the
@@ -60,6 +60,7 @@ class FastenHEATConv(MessagePassing):
           edge features :math:`(|\mathcal{E}|, D)` *(optional)*
         - **output:** node features :math:`(|\mathcal{V}|, F_{out})`
     """
+
     def __init__(self, in_channels: int, out_channels: int,
                  num_node_types: int, num_edge_types: int,
                  edge_type_emb_dim: int, edge_dim: int, edge_attr_emb_dim: int,
@@ -81,7 +82,7 @@ class FastenHEATConv(MessagePassing):
 
         # self.hetero_lin = HeteroLinear(in_channels, out_channels,
         #                                num_node_types, bias=bias)
-        self.hetero_lin = FastenHeteroLinear(in_channels, out_channels, num_node_types, bias = bias, engine=self.engine)  # check for sotredness
+        self.hetero_lin = FastenHeteroLinear(in_channels, out_channels, num_node_types, bias=bias, engine=self.engine)  # check for sotredness
 
         self.edge_type_emb = Embedding(num_edge_types, edge_type_emb_dim)
         self.edge_attr_emb = Linear(edge_dim, edge_attr_emb_dim, bias=False)

@@ -5,8 +5,7 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 from torch.nn import BatchNorm1d
-
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import record_function
 from torch_geometric.datasets import PPI
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import FiLMConv
@@ -85,6 +84,7 @@ def test(loader):
 
     y, pred = torch.cat(ys, dim=0).numpy(), torch.cat(preds, dim=0).numpy()
     return f1_score(y, pred, average='micro') if pred.sum() > 0 else 0
+
 
 times = []
 for epoch in range(1, 5):
