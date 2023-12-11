@@ -257,7 +257,6 @@ def segment_matmul_kernel(
     stride_input_m, stride_input_k,
     stride_other_b, stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
-    bitvector: torch.Tensor,
     out_dtype: tl.constexpr,
     NUM_TILES: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
@@ -285,8 +284,7 @@ def segment_matmul_kernel(
     pid_n = (pid % width) // (group_size)
 
     next_id = pid_m
-    if bitvector is not None:
-        next_next_id = (tl.load(bitvector + next_id // 32) >> (next_id % 32)) & 1
+    next_next_id = tl.load(input_tiles + 5 * next_id + 4)
     if next_next_id == 0:
         _contiguous_block(
             input_tiles,
@@ -306,7 +304,6 @@ def segment_matmul_kernel(
             EQUAL_K=EQUAL_K,
         )
     else:
-        next_next_id = tl.load(input_tiles + 5 * next_id + 4)
         _noncontiguous_block(
             input_tiles,
             next_id, next_next_id, pid_n,
@@ -559,15 +556,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
     def grid(meta):
         return (num_blocks * triton.cdiv(N, meta['TILE_SIZE_N']),)
 
-    def to_bitvector(input_tiles):
-        flags = input_tiles[:, 4]
-        # Reshape the tensor to have 32 elements in each row
-        reshaped = flags.view(-1, 32)
-        # Create a tensor of powers of 2, corresponding to bit positions
-        powers_of_two = torch.tensor([2**i for i in range(32)], dtype=torch.int32)
-        # Compute the bitvector for each row using a dot product
-        return torch.matmul(reshaped, powers_of_two)
-
     out_dtype = torch_dtype_to_triton_dtype(out_dtype or input.dtype)
     segment_matmul_kernel[grid](
         input, input_tiles, other, output,
@@ -575,7 +563,6 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
-        bitvector=to_bitvector(input_tiles),
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
@@ -610,7 +597,6 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
         grad_output.stride(0), grad_output.stride(1),
         other.stride(0), other.stride(2), other.stride(1),  # swap K and N
         grad_input.stride(0), grad_input.stride(1),
-        bitvector=None,
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
