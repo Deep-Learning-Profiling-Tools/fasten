@@ -93,10 +93,14 @@ def benchmark_results(format: str = "csv"):
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
-@pytest.mark.parametrize("dtype", ["float32"])  # pyg_lib doesn't support float16
+@pytest.mark.parametrize("dtype", ["float32", "float16"])
+@pytest.mark.parametrize("engine", ["fasten", "pyg", "torch"])
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
-def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
+def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
+    if engine == "pyg" and dtype == "float16":
+        pytest.skip("pyg_lib does not support float16")
+    torch.backends.cuda.matmul.allow_tf32 = True
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
@@ -115,38 +119,38 @@ def test_perf(phase: str, dtype: str, slices_name: str, slices: list, K: int, be
         other.requires_grad = True
 
     # warmup and get output
-    output_fasten = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
-    output_pyg = pyg_lib.ops.segment_matmul(data, ptr, other)
-    grad_fasten = torch.empty_like(output_fasten)
-    grad_pyg = torch.empty_like(output_pyg)
+    if engine == "fasten":
+        output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
+    elif engine == "pyg":
+        output = pyg_lib.ops.segment_matmul(data, ptr, other)
+    elif engine == "torch":
+        output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.TORCH)
+
+    if phase == "backward":
+        grad = torch.randn_like(output)
 
     def fasten_fn():
         if phase == "forward":
-            ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
+            ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO if engine == "fasten" else Engine.TORCH)
         else:  # phase == "backward"
-            output_fasten.backward(grad_fasten, retain_graph=True)
+            output.backward(grad, retain_graph=True)
 
     def pyg_fn():
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
-            output_pyg.backward(grad_pyg, retain_graph=True)
+            output.backward(grad, retain_graph=True)
 
-    if use_cudagraph:
-        stream = torch.cuda.Stream()
-        torch.cuda.set_stream(stream)
-        fasten_ms = triton.testing.do_bench_cudagraph(fasten_fn, grad_to_none=[data, other])
-    else:
-        fasten_ms = triton.testing.do_bench(fasten_fn, grad_to_none=[data, other])
-    pyg_ms = triton.testing.do_bench(pyg_fn, grad_to_none=[data, other])
-    print(f"{phase}: fasten: {fasten_ms} ms vs pyg: {pyg_ms} ms")
+    fn = pyg_fn if engine == "pyg" else fasten_fn
+    ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
+    print(f"{phase} ms {ms}")
 
     benchmark_results.append({
+        "engine": engine,
         "phase": phase,
         "dataset": slices_name,
         "K": K,
-        "fasten_ms": fasten_ms,
-        "pyg_ms": pyg_ms
+        "ms": ms,
     })
 
 
