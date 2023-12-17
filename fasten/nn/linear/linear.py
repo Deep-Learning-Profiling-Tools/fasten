@@ -250,26 +250,6 @@ class FastenHeteroLinear(torch.nn.Module):
             x (torch.Tensor): The input features.
             type_vec (torch.Tensor): A vector that maps each entry to a type.
         """
-        use_segment_matmul = torch_geometric.backend.use_segment_matmul
-        # If `use_segment_matmul` is not specified, use a simple heuristic to
-        # determine whether `segment_matmul` can speed up computation given the
-        # observed input sizes:
-        if use_segment_matmul is None:
-            if self._use_segment_matmul_heuristic_output is None:
-                segment_count = scatter(torch.ones_like(type_vec), type_vec,
-                                        dim_size=self.num_types, reduce='sum')
-
-                self._use_segment_matmul_heuristic_output = (
-                    torch_geometric.backend.use_segment_matmul_heuristic(
-                        num_segments=self.num_types,
-                        max_segment_size=int(segment_count.max()),
-                        in_channels=self.weight.size(1),
-                        out_channels=self.weight.size(2),
-                    ))
-
-            assert self._use_segment_matmul_heuristic_output is not None
-            use_segment_matmul = self._use_segment_matmul_heuristic_output
-
         use_segment_matmul = True  # Making use_segemnt_matmul True by default
         if use_segment_matmul and torch_geometric.typing.WITH_SEGMM:
             assert self.weight is not None
@@ -408,10 +388,7 @@ class FastenHeteroDictLinear(torch.nn.Module):
 
         # Only apply fused kernel for more than 10 types, otherwise use
         # sequential computation (which is generally faster for these cases).
-        use_segment_matmul = torch_geometric.backend.use_segment_matmul
-        if use_segment_matmul is None:
-            use_segment_matmul = len(x_dict) >= 1
-
+        use_segment_matmul = True
         if (use_segment_matmul and torch_geometric.typing.WITH_GMM and not torch.jit.is_scripting()):
             xs, weights, biases = [], [], []
             for key, lin in self.lins.items():
