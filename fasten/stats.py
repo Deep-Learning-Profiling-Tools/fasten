@@ -6,7 +6,7 @@ from .tensor_slice import TensorSlice
 def get_matmul_flops(input: TensorSlice, weight: torch.Tensor):
     assert weight.dim() == 3, f"weight dim should be 3, got {weight.dim()}"
     flops = 0
-    for i in len(input):
+    for i in range(len(input)):
         s = input.get_slice_from_index(i, is_tensor=False)
         if s.stop - s.start == 0:
             continue
