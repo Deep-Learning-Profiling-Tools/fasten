@@ -9,6 +9,7 @@ import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
+from fasten.stats import get_matmul_flops
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
 slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
@@ -111,6 +112,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         types[s] = rand_types[i]
     tensor_slice = compact_tensor_types(data, types, device="cuda")
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
+    flops = get_matmul_flops(tensor_slice, other)
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
@@ -163,6 +165,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         "dataset": slices_name,
         "K": K,
         "ms": ms,
+        "tflop/s": flops / ms / 1e6,
     })
 
 
