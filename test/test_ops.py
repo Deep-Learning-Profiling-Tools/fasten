@@ -157,7 +157,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    print(f"{phase} ms: {ms}, tflop/s: {tflops / ms / 1e6}")
+    print(f"{phase} ms: {ms}, tflop/s: {tflops / (ms / 1e6)}")
 
     benchmark_results.append({
         "engine": engine,
@@ -165,7 +165,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         "dataset": slices_name,
         "K": K,
         "ms": ms,
-        "tflop/s": tflops / ms / 1e6,
+        "tflop/s": tflops / (ms / 1e6),
     })
 
 
