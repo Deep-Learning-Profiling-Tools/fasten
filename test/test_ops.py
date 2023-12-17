@@ -9,7 +9,7 @@ import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
-from fasten.stats import get_matmul_flops
+from fasten.stats import get_matmul_bytes, get_matmul_flops
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
 slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
@@ -113,6 +113,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     tensor_slice = compact_tensor_types(data, types, device="cuda")
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
     tflops = get_matmul_flops(tensor_slice, other) / 1e12
+    tbytes = get_matmul_bytes(tensor_slice, other) / 1e12
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
 
@@ -157,7 +158,9 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    print(f"{phase} ms: {ms}, tflop/s: {tflops / (ms / 1e3)}")
+    tflop = tflops / (ms / 1e3)
+    ai = tbytes / (ms / 1e3)
+    print(f"{phase} ms: {ms}, tflop/s: {tflop}, ai: {ai}")
 
     benchmark_results.append({
         "engine": engine,
@@ -165,7 +168,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         "dataset": slices_name,
         "K": K,
         "ms": ms,
-        "tflop/s": tflops / (ms / 1e3),
+        "tflop/s": tflop,
+        "arith intensity": ai,
     })
 
 
