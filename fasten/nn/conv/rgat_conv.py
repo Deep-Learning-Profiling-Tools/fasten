@@ -4,7 +4,6 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Parameter, ReLU
-
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import glorot, ones, zeros
@@ -325,7 +324,7 @@ class FastenRGATConv(MessagePassing):
         edge_attr: OptTensor = None,
         size: Size = None,
         return_attention_weights=None,
-        tensor_slice: TensorSlice=None,
+        tensor_slice: TensorSlice = None,
     ):
         r"""Runs the forward pass of the module.
 
@@ -352,7 +351,7 @@ class FastenRGATConv(MessagePassing):
         """
         # propagate_type: (x: Tensor, edge_type: OptTensor, edge_attr: OptTensor)  # noqa
         out = self.propagate(edge_index=edge_index, edge_type=edge_type, x=x,
-                             size=size, edge_attr=edge_attr, tensor_slice = tensor_slice)
+                             size=size, edge_attr=edge_attr, tensor_slice=tensor_slice)
 
         alpha = self._alpha
         assert alpha is not None
@@ -373,7 +372,7 @@ class FastenRGATConv(MessagePassing):
 
     def message(self, x_i: Tensor, x_j: Tensor, edge_type: Tensor,
                 edge_attr: OptTensor, index: Tensor, ptr: OptTensor,
-                size_i: Optional[int], tensor_slice:TensorSlice) -> Tensor:
+                size_i: Optional[int], tensor_slice: TensorSlice) -> Tensor:
 
         if self.num_bases is not None:  # Basis-decomposition =================
             w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
@@ -396,11 +395,8 @@ class FastenRGATConv(MessagePassing):
             if self.num_bases is None:
                 w = self.weight
             w = torch.index_select(w, 0, edge_type)
-            outi= ops.fasten_segment_matmul(x_i, w, tensor_slice, self.engine)
-            outj= ops.fasten_segment_matmul(x_j, w, tensor_slice, self.engine)
-            # outi = torch.bmm(x_i.unsqueeze(1), w).squeeze(-2)
-            # outj = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
-
+            outi = ops.fasten_segment_matmul(x_i, w, tensor_slice, self.engine)
+            outj = ops.fasten_segment_matmul(x_j, w, tensor_slice, self.engine)
 
         qi = torch.matmul(outi, self.q)
         kj = torch.matmul(outj, self.k)

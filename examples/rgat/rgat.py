@@ -1,19 +1,17 @@
+import argparse
 import os.path as osp
 import time
-import argparse
+from typing import List
 
 import torch
 import torch.nn.functional as F
-from typing import List
 from torch import Tensor
-
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGATConv
 from torch_geometric.utils import k_hop_subgraph
 
-from fasten.nn import FastenRGATConv
 from fasten import Engine, TensorSlice, compact_tensor_types
-
+from fasten.nn import FastenRGATConv
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',
@@ -33,6 +31,7 @@ node_idx = torch.cat([data.train_idx, data.test_idx], dim=0)
 node_idx, edge_index, mapping, edge_mask = k_hop_subgraph(
     node_idx, 2, data.edge_index, relabel_nodes=True)
 data.x = torch.randn(data.num_nodes, 16)
+
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> TensorSlice:
 
@@ -58,7 +57,8 @@ class FastenRGAT(torch.nn.Module):
         x = self.conv2(x, edge_index, edge_type, tensor_slice=tensor_slice).relu()
         x = self.lin(x)
         return F.log_softmax(x, dim=-1)
-    
+
+
 class RGAT(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels,
                  num_relations):
@@ -77,7 +77,7 @@ class RGAT(torch.nn.Module):
 data = data.to(device)
 if args.mode == "fasten":
     model = FastenRGAT(16, 16, dataset.num_classes, dataset.num_relations).to(device)
-    ptr = [i for i in range(len(data.edge_type)+1)]
+    ptr = [i for i in range(len(data.edge_type) + 1)]
     tensor_slice = ptr_to_tensor_slice(ptr, is_sorted=True)
     assert tensor_slice is not None
 else:
@@ -120,4 +120,3 @@ for epoch in range(1, 5):
           f'Test: {test_acc:.4f}')
     times.append(time.time() - start)
 print(f"Median time per epoch: {torch.tensor(times).median():.4f}s")
-
