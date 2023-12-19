@@ -4,12 +4,16 @@ from typing import Tuple
 
 import torch
 import torch.nn.functional as F
+from torch.profiler import ProfilerActivity, profile, record_function
+
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGCNConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
 
 from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
+
+from triton.testing import do_bench
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='AIFB',
@@ -18,6 +22,8 @@ parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
+parser.add_argument('--profile', type=str, default='none',
+                    choices=['none', 'torch', 'triton'])
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -80,16 +86,18 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 
 def train():
-    model.train()
-    optimizer.zero_grad()
-    if args.mode == "fasten":
-        out = model(edge_index, edge_type, tensor_slice)
-    else:
-        out = model(edge_index, edge_type)
-    loss = F.nll_loss(out[data.train_idx], data.train_y)
-    loss.backward()
-    optimizer.step()
-    return float(loss)
+    with record_function("RGCN Train"):
+        model.train()
+        optimizer.zero_grad()
+        with record_function("RGCN Inference"):
+            if args.mode == "fasten":
+                out = model(edge_index, edge_type, tensor_slice)
+            else:
+                out = model(edge_index, edge_type)
+        loss = F.nll_loss(out[data.train_idx], data.train_y)
+        loss.backward()
+        optimizer.step()
+        return float(loss)
 
 
 @torch.no_grad()
@@ -103,9 +111,27 @@ def test():
     test_acc = float((pred[data.test_idx] == data.test_y).float().mean())
     return train_acc, test_acc
 
+if args.profile == "none":
+    for epoch in range(1, 5):
+        loss = train()
+        train_acc, test_acc = test()
+        print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
+            f'Test: {test_acc:.4f}')
 
-for epoch in range(1, 5):
-    loss = train()
-    train_acc, test_acc = test()
-    print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
-          f'Test: {test_acc:.4f}')
+elif args.profile == "torch":
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
+        for epoch in range(1, 5):
+            train()
+
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+
+else: # args.profile == "triton"
+    def pyg_fn():
+        model(edge_index, edge_type).argmax(dim=-1)
+    def fasten_fn():
+        model(edge_index, edge_type, tensor_slice).argmax(dim=-1)
+    fn = pyg_fn if args.mode == "pyg" else fasten_fn
+    inference_ms = do_bench(fn)
+    train_ms = do_bench(train)
+    print(f"{args.mode} inference: {inference_ms} ms")
+    print(f"{args.mode} train: {train_ms} ms")
