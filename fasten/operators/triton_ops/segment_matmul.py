@@ -241,7 +241,7 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K', 'BLOCK_SIZE'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': _early_config_prune
     }
@@ -260,12 +260,12 @@ def segment_matmul_kernel(
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     NUM_TILES: tl.constexpr,
-    NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
+    NUM_BLOCKS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    TILE_SIZE_M: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
-    TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
 ):
