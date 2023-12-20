@@ -394,7 +394,6 @@ class FastenRGATConv(MessagePassing):
         else:  # No regularization/Basis-decomposition ========================
             if self.num_bases is None:
                 w = self.weight
-            w = torch.index_select(w, 0, edge_type)
             outi = ops.fasten_segment_matmul(x_i, w, tensor_slice, self.engine)
             outj = ops.fasten_segment_matmul(x_j, w, tensor_slice, self.engine)
 

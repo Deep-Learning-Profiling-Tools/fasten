@@ -1,14 +1,13 @@
 import argparse
 import os.path as osp
 import time
-from typing import List
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
-from torch import Tensor
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGATConv
-from torch_geometric.utils import k_hop_subgraph
+from torch_geometric.utils import index_sort, k_hop_subgraph
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGATConv
@@ -33,15 +32,13 @@ node_idx, edge_index, mapping, edge_mask = k_hop_subgraph(
 data.x = torch.randn(data.num_nodes, 16)
 
 
-def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> TensorSlice:
-
-    assert ptr is not None
-    slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
-    types = torch.zeros((ptr[-1],), dtype=torch.int)
-    for i, s in enumerate(slices):
-        types[s] = i
-    tensor_slice = compact_tensor_types(data=data, types=types, is_sorted=is_sorted, device=device)
-    return tensor_slice
+def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice, torch.Tensor, torch.Tensor]:
+    if (edge_type[1:] < edge_type[:-1]).any():
+        edge_type, perm = index_sort(
+            edge_type, max_value=num_relations)
+        edge_index = edge_index[:, perm]
+    tensor_slice = compact_tensor_types(data=None, types=edge_type, is_sorted=True, device=device)
+    return tensor_slice, edge_index, edge_type
 
 
 class FastenRGAT(torch.nn.Module):
@@ -78,7 +75,7 @@ data = data.to(device)
 if args.mode == "fasten":
     model = FastenRGAT(16, 16, dataset.num_classes, dataset.num_relations).to(device)
     ptr = [i for i in range(len(data.edge_type) + 1)]
-    tensor_slice = ptr_to_tensor_slice(ptr, is_sorted=True)
+    tensor_slice, edge_index, edge_type = tensor_slice_gen(data.edge_type, data.edge_index, dataset.num_relations)
     assert tensor_slice is not None
 else:
     model = RGAT(16, 16, dataset.num_classes, dataset.num_relations).to(device)
@@ -90,7 +87,7 @@ def train():
     model.train()
     optimizer.zero_grad()
     if args.mode == "fasten":
-        out = model(data.x, data.edge_index, data.edge_type, tensor_slice=tensor_slice)
+        out = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice)
     else:
         out = model(data.x, data.edge_index, data.edge_type)
     loss = F.nll_loss(out[data.train_idx], data.train_y)
@@ -103,7 +100,7 @@ def train():
 def test():
     model.eval()
     if args.mode == "fasten":
-        pred = model(data.x, data.edge_index, data.edge_type, tensor_slice=tensor_slice).argmax(dim=-1)
+        pred = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice).argmax(dim=-1)
     else:
         pred = model(data.x, data.edge_index, data.edge_type).argmax(dim=-1)
     train_acc = float((pred[data.train_idx] == data.train_y).float().mean())
