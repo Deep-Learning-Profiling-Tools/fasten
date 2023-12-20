@@ -23,7 +23,7 @@ parser.add_argument('--mode', type=str, default='pyg',
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
 parser.add_argument('--profile', type=str, default='none',
-                    choices=['none', 'torch', 'triton'])
+                    choices=['none', 'profile', 'benchmark'])
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -118,14 +118,14 @@ if args.profile == "none":
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
             f'Test: {test_acc:.4f}')
 
-elif args.profile == "torch":
+elif args.profile == "profile":
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
         for epoch in range(1, 5):
             train()
 
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
 
-else: # args.profile == "triton"
+else: # args.profile == "benchmark"
     def pyg_fn():
         model(edge_index, edge_type).argmax(dim=-1)
     def fasten_fn():
