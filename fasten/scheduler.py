@@ -31,6 +31,8 @@ class CacheEntry:
 class Scheduler:
     get_key: callable
     prune: callable = None
+    record: callable = None
+    cache: dict = None
     default_tile_size: int = 32
     tile_sizes: list[int] = field(default_factory=lambda: [Scheduler.default_block_size])
     default_tiling_method = TilingMethod.DEFAULT
@@ -113,6 +115,10 @@ def _init_segment_matmul_forward_scheduler():
             # When K is large, we should use larger tile size
             return True
         return False
+
+    def record(input_slices: torch.Tensor, key: Tuple, config: Tuple, ms: float):
+        pass
+
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
 
 
