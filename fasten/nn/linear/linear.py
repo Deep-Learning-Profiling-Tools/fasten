@@ -9,7 +9,7 @@ import torch_geometric.typing
 from torch import Tensor
 from torch.nn.parameter import Parameter
 from torch_geometric.nn import inits
-from torch_geometric.utils import index_sort, scatter
+from torch_geometric.utils import index_sort
 
 from fasten import Engine, TensorSlice, ops
 
