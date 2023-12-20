@@ -240,7 +240,7 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'BLOCK_SIZE'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': _early_config_prune
     }
