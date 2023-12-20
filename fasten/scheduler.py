@@ -119,7 +119,7 @@ def _init_segment_matmul_forward_scheduler():
     def record(input_slices: torch.Tensor, key: Tuple, config: Tuple, ms: float):
         pass
 
-    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1], prune=prune)
 
 
 def _init_segment_matmul_backward_input_scheduler():
