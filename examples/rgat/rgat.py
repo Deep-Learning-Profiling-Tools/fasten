@@ -12,6 +12,8 @@ from torch_geometric.utils import index_sort, k_hop_subgraph
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGATConv
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])

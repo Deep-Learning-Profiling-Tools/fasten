@@ -13,6 +13,8 @@ from triton.testing import do_bench
 from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='AIFB',
                     choices=['AIFB', 'MUTAG', 'BGS', 'AM'])

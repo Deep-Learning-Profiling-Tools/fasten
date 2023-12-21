@@ -14,6 +14,8 @@ from torch_geometric.utils.sparse import index2ptr
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])

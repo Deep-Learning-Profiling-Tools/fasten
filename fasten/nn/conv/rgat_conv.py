@@ -215,13 +215,11 @@ class FastenRGATConv(MessagePassing):
 
         mod_types = ['additive', 'scaled', 'f-additive', 'f-scaled']
 
-        if (self.attention_mechanism != "within-relation"
-                and self.attention_mechanism != "across-relation"):
+        if (self.attention_mechanism != "within-relation" and self.attention_mechanism != "across-relation"):
             raise ValueError('attention mechanism must either be '
                              '"within-relation" or "across-relation"')
 
-        if (self.attention_mode != "additive-self-attention"
-                and self.attention_mode != "multiplicative-self-attention"):
+        if (self.attention_mode != "additive-self-attention" and self.attention_mode != "multiplicative-self-attention"):
             raise ValueError('attention mode must either be '
                              '"additive-self-attention" or '
                              '"multiplicative-self-attention"')
@@ -274,15 +272,13 @@ class FastenRGATConv(MessagePassing):
                             self.heads * self.out_channels))
         elif num_blocks is not None:
             assert (
-                self.in_channels % self.num_blocks == 0
-                and (self.heads * self.out_channels) % self.num_blocks == 0), (
+                self.in_channels % self.num_blocks == 0 and (self.heads * self.out_channels) % self.num_blocks == 0), (
                     "both 'in_channels' and 'heads * out_channels' must be "
                     "multiple of 'num_blocks' used")
             self.weight = Parameter(
                 torch.empty(self.num_relations, self.num_blocks,
                             self.in_channels // self.num_blocks,
-                            (self.heads * self.out_channels) //
-                            self.num_blocks))
+                            (self.heads * self.out_channels) // self.num_blocks))
         else:
             self.weight = Parameter(
                 torch.empty(self.num_relations, self.in_channels,
@@ -379,8 +375,7 @@ class FastenRGATConv(MessagePassing):
             w = w.view(self.num_relations, self.in_channels,
                        self.heads * self.out_channels)
         if self.num_blocks is not None:  # Block-diagonal-decomposition =======
-            if (x_i.dtype == torch.long and x_j.dtype == torch.long
-                    and self.num_blocks is not None):
+            if (x_i.dtype == torch.long and x_j.dtype == torch.long and self.num_blocks is not None):
                 raise ValueError('Block-diagonal decomposition not supported '
                                  'for non-continuous input features.')
             w = self.weight
@@ -440,20 +435,16 @@ class FastenRGATConv(MessagePassing):
         if self.mod == "additive":
             if self.attention_mode == "additive-self-attention":
                 ones = torch.ones_like(alpha)
-                h = (outj.view(-1, self.heads, self.out_channels) *
-                     ones.view(-1, self.heads, 1))
+                h = (outj.view(-1, self.heads, self.out_channels) * ones.view(-1, self.heads, 1))
                 h = torch.mul(self.w, h)
 
-                return (outj.view(-1, self.heads, self.out_channels) *
-                        alpha.view(-1, self.heads, 1) + h)
+                return (outj.view(-1, self.heads, self.out_channels) * alpha.view(-1, self.heads, 1) + h)
             elif self.attention_mode == "multiplicative-self-attention":
                 ones = torch.ones_like(alpha)
-                h = (outj.view(-1, self.heads, 1, self.out_channels) *
-                     ones.view(-1, self.heads, self.dim, 1))
+                h = (outj.view(-1, self.heads, 1, self.out_channels) * ones.view(-1, self.heads, self.dim, 1))
                 h = torch.mul(self.w, h)
 
-                return (outj.view(-1, self.heads, 1, self.out_channels) *
-                        alpha.view(-1, self.heads, self.dim, 1) + h)
+                return (outj.view(-1, self.heads, 1, self.out_channels) * alpha.view(-1, self.heads, self.dim, 1) + h)
 
         elif self.mod == "scaled":
             if self.attention_mode == "additive-self-attention":
@@ -465,8 +456,7 @@ class FastenRGATConv(MessagePassing):
                 degree = torch.matmul(degree, self.l2) + self.b2
 
                 return torch.mul(
-                    outj.view(-1, self.heads, self.out_channels) *
-                    alpha.view(-1, self.heads, 1),
+                    outj.view(-1, self.heads, self.out_channels) * alpha.view(-1, self.heads, 1),
                     degree.view(-1, 1, self.out_channels))
             elif self.attention_mode == "multiplicative-self-attention":
                 ones = alpha.new_ones(index.size())
@@ -477,8 +467,7 @@ class FastenRGATConv(MessagePassing):
                 degree = torch.matmul(degree, self.l2) + self.b2
 
                 return torch.mul(
-                    outj.view(-1, self.heads, 1, self.out_channels) *
-                    alpha.view(-1, self.heads, self.dim, 1),
+                    outj.view(-1, self.heads, 1, self.out_channels) * alpha.view(-1, self.heads, self.dim, 1),
                     degree.view(-1, 1, 1, self.out_channels))
 
         elif self.mod == "f-additive":
@@ -500,8 +489,7 @@ class FastenRGATConv(MessagePassing):
             return alpha.view(-1, self.heads, 1) * outj.view(
                 -1, self.heads, self.out_channels)
         else:
-            return (alpha.view(-1, self.heads, self.dim, 1) *
-                    outj.view(-1, self.heads, 1, self.out_channels))
+            return (alpha.view(-1, self.heads, self.dim, 1) * outj.view(-1, self.heads, 1, self.out_channels))
 
     def update(self, aggr_out: Tensor) -> Tensor:
         if self.attention_mode == "additive-self-attention":
