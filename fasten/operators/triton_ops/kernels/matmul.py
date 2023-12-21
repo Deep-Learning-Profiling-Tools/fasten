@@ -21,19 +21,18 @@ def _reg_matmul(
     offs_n = pid_n * TILE_N + tl.arange(0, TILE_N)
     offs_k = tl.arange(0, TILE_K)
     rn = tl.max_contiguous(tl.multiple_of(offs_n % N, TILE_N), TILE_N)
+    other_ptrs = other + type_id * stride_other_b + \
+        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+    b = tl.load(other_ptrs)
 
     # [M, K] x [K, N] -> [M, N]
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
-    other_ptrs = other + type_id * stride_other_b + \
-        (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
     output_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
-
-    b = tl.load(other_ptrs)
     for _ in range(0, BLOCK_SIZE):
         a = tl.load(input_ptrs)
-        acc = tl.dot(a, b, out_dtype=out_dtype).to(output.dtype.element_ty)
         input_ptrs += TILE_M * stride_input_m
         output_ptrs += TILE_M * stride_output_m
+        acc = tl.dot(a, b, out_dtype=out_dtype).to(output.dtype.element_ty)
         if EVEN_N:
             tl.store(output_ptrs, acc)
         else:
