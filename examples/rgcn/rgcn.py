@@ -45,6 +45,8 @@ data.edge_type = data.edge_type[edge_mask]
 data.train_idx = mapping[:data.train_idx.size(0)]
 data.test_idx = mapping[data.train_idx.size(0):]
 
+input = torch.randn(data.num_nodes, args.hidden_size).to(device)
+
 
 def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice, torch.Tensor, torch.Tensor]:
     if (edge_type[1:] < edge_type[:-1]).any():
@@ -61,8 +63,7 @@ class Net(torch.nn.Module):
         self.conv1 = RGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
         self.conv2 = RGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
-    def forward(self, edge_index, edge_type):
-        input = torch.arange(self.conv1.in_channels_l, device=self.conv1.weight.device)
+    def forward(self, input, edge_index, edge_type):
         x = F.relu(self.conv1(input, edge_index, edge_type))
         x = self.conv2(x, edge_index, edge_type)
         return F.log_softmax(x, dim=1)
@@ -74,8 +75,7 @@ class FastenNet(torch.nn.Module):
         self.conv1 = FastenRGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
         self.conv2 = FastenRGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
-    def forward(self, edge_index, edge_type, tensor_slice):
-        input = torch.arange(self.conv1.in_channels_l, device=self.conv1.weight.device)
+    def forward(self, input, edge_index, edge_type, tensor_slice):
         x = F.relu(self.conv1(input, edge_index, edge_type, tensor_slice))
         x = self.conv2(x, edge_index, edge_type, tensor_slice)
         return F.log_softmax(x, dim=1)
