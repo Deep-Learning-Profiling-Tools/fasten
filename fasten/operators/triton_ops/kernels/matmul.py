@@ -28,15 +28,9 @@ def _reg_matmul(
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
     output_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
 
-    a = tl.zeros((TILE_M, TILE_K), dtype=input.dtype.element_ty)
-    b = tl.zeros((TILE_K, TILE_N), dtype=other.dtype.element_ty)
-
-    for i in range(0, BLOCK_SIZE):
-        if i == 0:
-            a = tl.load(input_ptrs)
-            b = tl.load(other_ptrs)
-        else:
-            a = tl.load(input_ptrs)
+    b = tl.load(other_ptrs)
+    for _ in range(0, BLOCK_SIZE):
+        a = tl.load(input_ptrs)
         acc = tl.dot(a, b, out_dtype=out_dtype).to(output.dtype.element_ty)
         input_ptrs += TILE_M * stride_input_m
         output_ptrs += TILE_M * stride_output_m
