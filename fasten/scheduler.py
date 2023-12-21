@@ -113,12 +113,33 @@ def _init_segment_matmul_backward_input_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
+    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+        tile_size, tiling_method, block_size = config
+        if tile_size >= 64 and block_size > 4:
+            # low cache utilization
+            return True
+        if key[1] >= 128 and tile_size <= 32:
+            # When K is large, we should use larger tile size
+            return True
+        return False
+
     return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
 
 
 def _init_segment_matmul_backward_other_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
+
+    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+        tile_size, tiling_method, block_size = config
+        if tile_size >= 64 and block_size > 4:
+            # low cache utilization
+            return True
+        if key[1] >= 128 and tile_size <= 32:
+            # When K is large, we should use larger tile size
+            return True
+        return False
+
     return Scheduler(get_key=get_key, tile_sizes=[16, 32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16])
 
 
