@@ -60,7 +60,7 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice,
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = RGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv1 = RGCNConv(args.hidden_size, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
         self.conv2 = RGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
     def forward(self, input, edge_index, edge_type):
@@ -72,7 +72,7 @@ class Net(torch.nn.Module):
 class FastenNet(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = FastenRGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv1 = FastenRGCNConv(args.hidden_size, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
         self.conv2 = FastenRGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
     def forward(self, input, edge_index, edge_type, tensor_slice):
