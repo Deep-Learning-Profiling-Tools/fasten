@@ -115,7 +115,7 @@ def _init_segment_matmul_backward_input_scheduler():
 
     def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
-        if tile_size >= 64 and block_size > 4:
+        if tile_size >= 64 and block_size >= 4:
             # low cache utilization
             return True
         if key[1] >= 128 and tile_size <= 32:
@@ -132,7 +132,7 @@ def _init_segment_matmul_backward_other_scheduler():
 
     def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
-        if tile_size >= 64 and block_size > 4:
+        if tile_size >= 64 and block_size >= 4:
             # low cache utilization
             return True
         if key[1] >= 128 and tile_size <= 32:
