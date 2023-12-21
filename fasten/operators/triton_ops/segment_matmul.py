@@ -215,7 +215,8 @@ def _early_config_prune(configs, named_args):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if (TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n):
+        if TILE_SIZE_K != K and \
+                ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
             continue
         pruned_configs.append(config)
     return pruned_configs
@@ -240,7 +241,7 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': _early_config_prune
     }
@@ -259,12 +260,12 @@ def segment_matmul_kernel(
     stride_output_m, stride_output_n,
     out_dtype: tl.constexpr,
     NUM_TILES: tl.constexpr,
-    NUM_BLOCKS: tl.constexpr,  # A key to determine whether to autotune during training
+    NUM_BLOCKS: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    TILE_SIZE_M: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
-    TILE_SIZE_M: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
 ):

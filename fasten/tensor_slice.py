@@ -206,6 +206,8 @@ class TensorSlice:
                 )
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}')
+                if scheduler.record:
+                    scheduler.record(input_tiles.slices, key, config, ms)
                 if ms < best_ms:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio)
             except OutOfResources:

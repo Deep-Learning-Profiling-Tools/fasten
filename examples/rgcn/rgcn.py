@@ -5,15 +5,13 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 from torch.profiler import ProfilerActivity, profile, record_function
-
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGCNConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
+from triton.testing import do_bench
 
 from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
-
-from triton.testing import do_bench
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='AIFB',
@@ -111,12 +109,13 @@ def test():
     test_acc = float((pred[data.test_idx] == data.test_y).float().mean())
     return train_acc, test_acc
 
+
 if args.profile == "none":
     for epoch in range(1, 5):
         loss = train()
         train_acc, test_acc = test()
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
-            f'Test: {test_acc:.4f}')
+              f'Test: {test_acc:.4f}')
 
 elif args.profile == "profile":
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
@@ -125,9 +124,10 @@ elif args.profile == "profile":
 
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
 
-else: # args.profile == "benchmark"
+else:  # args.profile == "benchmark"
     def pyg_fn():
         model(edge_index, edge_type).argmax(dim=-1)
+
     def fasten_fn():
         model(edge_index, edge_type, tensor_slice).argmax(dim=-1)
     fn = pyg_fn if args.mode == "pyg" else fasten_fn

@@ -26,8 +26,8 @@ def _reg_matmul(
     input_ptrs = input + (offs_m[:, None] * stride_input_m + offs_k[None, :] * stride_input_k)
     other_ptrs = other + type_id * stride_other_b + \
         (offs_k[:, None] * stride_other_k + rn[None, :] * stride_other_n)
+    output_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
 
-    acc = tl.zeros((TILE_M, TILE_N), dtype=out_dtype)
     a = tl.zeros((TILE_M, TILE_K), dtype=input.dtype.element_ty)
     b = tl.zeros((TILE_K, TILE_N), dtype=other.dtype.element_ty)
 
@@ -37,18 +37,14 @@ def _reg_matmul(
             b = tl.load(other_ptrs)
         else:
             a = tl.load(input_ptrs)
-        acc += tl.dot(a, b, out_dtype=out_dtype)
+        acc = tl.dot(a, b, out_dtype=out_dtype).to(output.dtype.element_ty)
         input_ptrs += TILE_M * stride_input_m
-
-    acc = acc.to(output.dtype.element_ty)
-    c_ptrs = output + stride_output_m * \
-        offs_m[:, None] + stride_output_n * offs_n[None, :]
-
-    if EVEN_N:
-        tl.store(c_ptrs, acc)
-    else:
-        mask_n = offs_n[None, :] < N
-        tl.store(c_ptrs, acc, mask=mask_n)
+        output_ptrs += TILE_M * stride_output_m
+        if EVEN_N:
+            tl.store(output_ptrs, acc)
+        else:
+            mask_n = offs_n[None, :] < N
+            tl.store(output_ptrs, acc, mask=mask_n)
 
 
 @triton.jit
