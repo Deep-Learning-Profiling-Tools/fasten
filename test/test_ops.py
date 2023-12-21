@@ -17,7 +17,7 @@ AM = read_slices_from_csv('AM.csv')
 BGS = read_slices_from_csv('BGS.csv')
 DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
-slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
+slices_obj = [("AM", AM), ("AIFB", AIFB), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
 
 # non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
 use_cudagraph = False
