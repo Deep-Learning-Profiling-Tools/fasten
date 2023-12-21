@@ -5,6 +5,7 @@ from typing import Tuple
 
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGATConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
@@ -13,6 +14,7 @@ from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGATConv
 
 torch.backends.cuda.matmul.allow_tf32 = True
+torch_geometric.backend.use_segment_matmul = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',

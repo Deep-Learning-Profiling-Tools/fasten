@@ -4,6 +4,7 @@ from typing import Tuple
 
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGCNConv
@@ -14,6 +15,7 @@ from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
 
 torch.backends.cuda.matmul.allow_tf32 = True
+torch_geometric.backend.use_segment_matmul = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='AIFB',
