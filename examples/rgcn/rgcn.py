@@ -96,9 +96,9 @@ def train():
         model.train()
         with record_function("RGCN Inference"):
             if args.mode == "fasten":
-                out = model(edge_index, edge_type, tensor_slice)
+                out = model(input, edge_index, edge_type, tensor_slice)
             else:
-                out = model(edge_index, edge_type)
+                out = model(input, edge_index, edge_type)
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         loss.backward()
         optimizer.step()
@@ -109,9 +109,9 @@ def train():
 def test():
     model.eval()
     if args.mode == "fasten":
-        pred = model(edge_index, edge_type, tensor_slice).argmax(dim=-1)
+        pred = model(input, edge_index, edge_type, tensor_slice).argmax(dim=-1)
     else:
-        pred = model(edge_index, edge_type).argmax(dim=-1)
+        pred = model(input, edge_index, edge_type).argmax(dim=-1)
     train_acc = float((pred[data.train_idx] == data.train_y).float().mean())
     test_acc = float((pred[data.test_idx] == data.test_y).float().mean())
     return train_acc, test_acc
