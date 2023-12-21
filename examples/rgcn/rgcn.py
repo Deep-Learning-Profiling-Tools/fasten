@@ -89,9 +89,9 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 
 def train():
+    optimizer.zero_grad()
     with record_function("RGCN Train"):
         model.train()
-        optimizer.zero_grad()
         with record_function("RGCN Inference"):
             if args.mode == "fasten":
                 out = model(edge_index, edge_type, tensor_slice)
@@ -99,8 +99,8 @@ def train():
                 out = model(edge_index, edge_type)
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         loss.backward()
-        optimizer.step()
-        return float(loss)
+    optimizer.step()
+    return float(loss)
 
 
 @torch.no_grad()
