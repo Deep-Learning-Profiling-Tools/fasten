@@ -156,8 +156,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    flops = get_matmul_flops(tensor_slice, other)
-    print(f"{phase} ms {ms} flops {flops}")
+    tflops = get_matmul_flops(tensor_slice, other) / 1e12
+    print(f"{phase} ms {ms} tflops {tflops}")
 
     benchmark_results.append({
         "engine": engine,
