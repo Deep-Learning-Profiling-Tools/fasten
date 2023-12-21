@@ -106,14 +106,14 @@ def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1])
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
 
 
 def _init_segment_matmul_backward_input_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1])
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
 
 
 def _init_segment_matmul_backward_other_scheduler():
