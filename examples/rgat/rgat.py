@@ -23,6 +23,7 @@ parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
 parser.add_argument('--dataset', type=str, default='AIFB',
                     choices=['AIFB', 'MUTAG', 'BGS', 'AM'])
+parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 
 device = torch.device(args.device)
@@ -77,12 +78,12 @@ class RGAT(torch.nn.Module):
 
 data = data.to(device)
 if args.mode == "fasten":
-    model = FastenRGAT(16, 16, dataset.num_classes, dataset.num_relations).to(device)
+    model = FastenRGAT(args.hidden_size, args.hidden_size, dataset.num_classes, dataset.num_relations).to(device)
     ptr = [i for i in range(len(data.edge_type) + 1)]
     tensor_slice, edge_index, edge_type = tensor_slice_gen(data.edge_type, data.edge_index, dataset.num_relations)
     assert tensor_slice is not None
 else:
-    model = RGAT(16, 16, dataset.num_classes, dataset.num_relations).to(device)
+    model = RGAT(args.hidden_size, args.hidden_size, dataset.num_classes, dataset.num_relations).to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
