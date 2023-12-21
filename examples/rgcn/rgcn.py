@@ -62,7 +62,8 @@ class Net(torch.nn.Module):
         self.conv2 = RGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
     def forward(self, edge_index, edge_type):
-        x = F.relu(self.conv1(None, edge_index, edge_type))
+        input = torch.arange(self.conv1.in_channels_l, device=self.conv1.weight.device)
+        x = F.relu(self.conv1(input, edge_index, edge_type))
         x = self.conv2(x, edge_index, edge_type)
         return F.log_softmax(x, dim=1)
 
@@ -74,7 +75,8 @@ class FastenNet(torch.nn.Module):
         self.conv2 = FastenRGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
     def forward(self, edge_index, edge_type, tensor_slice):
-        x = F.relu(self.conv1(None, edge_index, edge_type, tensor_slice))
+        input = torch.arange(self.conv1.in_channels_l, device=self.conv1.weight.device)
+        x = F.relu(self.conv1(input, edge_index, edge_type, tensor_slice))
         x = self.conv2(x, edge_index, edge_type, tensor_slice)
         return F.log_softmax(x, dim=1)
 
