@@ -169,7 +169,7 @@ def _contiguous_block(
 ):
     start_off = tl.load(input_tiles + 5 * next_id + 2)
     type_id = tl.load(input_tiles + 5 * next_id + 1)
-    if EQUAL_K and TILE_K <= 32:
+    if EQUAL_K:
         _reg_matmul(
             pid_n, type_id,
             start_off,
