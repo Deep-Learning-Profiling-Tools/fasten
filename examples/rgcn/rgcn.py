@@ -45,6 +45,8 @@ data.edge_type = data.edge_type[edge_mask]
 data.train_idx = mapping[:data.train_idx.size(0)]
 data.test_idx = mapping[data.train_idx.size(0):]
 
+input = torch.randn(data.num_nodes, args.hidden_size).to(device)
+
 
 def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice, torch.Tensor, torch.Tensor]:
     if (edge_type[1:] < edge_type[:-1]).any():
@@ -58,11 +60,11 @@ def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice,
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = RGCNConv(data.num_nodes, 16, dataset.num_relations, is_sorted=True)
-        self.conv2 = RGCNConv(16, dataset.num_classes, dataset.num_relations, is_sorted=True)
+        self.conv1 = RGCNConv(args.hidden_size, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv2 = RGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
-    def forward(self, edge_index, edge_type):
-        x = F.relu(self.conv1(None, edge_index, edge_type))
+    def forward(self, input, edge_index, edge_type):
+        x = F.relu(self.conv1(input, edge_index, edge_type))
         x = self.conv2(x, edge_index, edge_type)
         return F.log_softmax(x, dim=1)
 
@@ -70,11 +72,11 @@ class Net(torch.nn.Module):
 class FastenNet(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = FastenRGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv1 = FastenRGCNConv(args.hidden_size, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
         self.conv2 = FastenRGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
-    def forward(self, edge_index, edge_type, tensor_slice):
-        x = F.relu(self.conv1(None, edge_index, edge_type, tensor_slice))
+    def forward(self, input, edge_index, edge_type, tensor_slice):
+        x = F.relu(self.conv1(input, edge_index, edge_type, tensor_slice))
         x = self.conv2(x, edge_index, edge_type, tensor_slice)
         return F.log_softmax(x, dim=1)
 
@@ -90,26 +92,26 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 def train():
     with record_function("RGCN Train"):
-        model.train()
         optimizer.zero_grad()
+        model.train()
         with record_function("RGCN Inference"):
             if args.mode == "fasten":
-                out = model(edge_index, edge_type, tensor_slice)
+                out = model(input, edge_index, None, tensor_slice)
             else:
-                out = model(edge_index, edge_type)
+                out = model(input, edge_index, edge_type)
         loss = F.nll_loss(out[data.train_idx], data.train_y)
         loss.backward()
         optimizer.step()
-        return float(loss)
+    return float(loss)
 
 
 @torch.no_grad()
 def test():
     model.eval()
     if args.mode == "fasten":
-        pred = model(edge_index, edge_type, tensor_slice).argmax(dim=-1)
+        pred = model(input, edge_index, None, tensor_slice).argmax(dim=-1)
     else:
-        pred = model(edge_index, edge_type).argmax(dim=-1)
+        pred = model(input, edge_index, edge_type).argmax(dim=-1)
     train_acc = float((pred[data.train_idx] == data.train_y).float().mean())
     test_acc = float((pred[data.test_idx] == data.test_y).float().mean())
     return train_acc, test_acc
@@ -123,6 +125,8 @@ if args.profile == "none":
               f'Test: {test_acc:.4f}')
 
 elif args.profile == "profile":
+    # warmup
+    train()
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
         for epoch in range(1, 5):
             train()

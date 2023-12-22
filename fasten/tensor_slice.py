@@ -201,8 +201,8 @@ class TensorSlice:
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
                     ),
-                    warmup=1 if debug else 5,
-                    rep=1 if debug else 10
+                    warmup=1,
+                    rep=1,
                 )
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}')
