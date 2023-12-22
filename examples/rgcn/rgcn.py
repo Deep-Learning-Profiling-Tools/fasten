@@ -4,6 +4,7 @@ from typing import Tuple
 
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGCNConv
@@ -12,6 +13,9 @@ from triton.testing import do_bench
 
 from fasten import TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGCNConv
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch_geometric.backend.use_segment_matmul = True
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='AIFB',
@@ -22,6 +26,7 @@ parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
+parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -65,8 +70,8 @@ class Net(torch.nn.Module):
 class FastenNet(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = FastenRGCNConv(data.num_nodes, 16, dataset.num_relations, aggr="add", is_sorted=True)
-        self.conv2 = FastenRGCNConv(16, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv1 = FastenRGCNConv(data.num_nodes, args.hidden_size, dataset.num_relations, aggr="add", is_sorted=True)
+        self.conv2 = FastenRGCNConv(args.hidden_size, dataset.num_classes, dataset.num_relations, aggr="add", is_sorted=True)
 
     def forward(self, edge_index, edge_type, tensor_slice):
         x = F.relu(self.conv1(None, edge_index, edge_type, tensor_slice))

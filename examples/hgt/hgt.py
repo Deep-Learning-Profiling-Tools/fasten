@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
+import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch_geometric.datasets import DBLP, HGBDataset
@@ -14,6 +15,9 @@ from torch_geometric.utils.sparse import index2ptr
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch_geometric.backend.use_segment_matmul = True
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
@@ -21,6 +25,7 @@ parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
 parser.add_argument('--example', type=str, default='dblp',
                     choices=['dblp', 'freebase'])
+parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 
 if args.example == 'dblp':
@@ -146,14 +151,14 @@ class FastenHGT(torch.nn.Module):
 
 
 if args.mode == 'fasten':
-    model = FastenHGT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = FastenHGT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
     data, model = data.to(device), model.to(device)
     tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl = tensor_slice_gen(data, 2)  # last argument num_heads
     with torch.no_grad():  # Initialize lazy modules.
         out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
 
 else:
-    model = HGT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = HGT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
     data, model = data.to(device), model.to(device)
     with torch.no_grad():  # Initialize lazy modules.
         out = model(data.x_dict, data.edge_index_dict)
