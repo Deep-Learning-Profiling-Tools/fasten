@@ -5,6 +5,8 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
+from torch.profiler import ProfilerActivity, profile, record_function
+
 import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
@@ -14,6 +16,8 @@ from torch_geometric.utils.sparse import index2ptr
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
+
+from triton.testing import do_bench
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch_geometric.backend.use_segment_matmul = True
@@ -26,6 +30,8 @@ parser.add_argument('--mode', type=str, default='pyg',
 parser.add_argument('--example', type=str, default='dblp',
                     choices=['dblp', 'freebase'])
 parser.add_argument('--hidden_size', type=int, default=32)
+parser.add_argument('--profile', type=str, default='none',
+                    choices=['none', 'profile', 'benchmark'])
 args = parser.parse_args()
 
 if args.example == 'dblp':
@@ -167,18 +173,20 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
 
 def train(node_out: str):
-    model.train()
-    optimizer.zero_grad()
-    if args.mode == 'fasten':
-        out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
-    else:
-        out = model(data.x_dict, data.edge_index_dict)
+    with record_function("HGT Train"):
+        model.train()
+        optimizer.zero_grad()
+        with record_function("HGT Inference"):
+            if args.mode == 'fasten':
+                out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
+            else:
+                out = model(data.x_dict, data.edge_index_dict)
 
-    mask = data[node_out].train_mask
-    loss = F.cross_entropy(out[mask], data[node_out].y[mask])
-    loss.backward()
-    optimizer.step()
-    return float(loss)
+        mask = data[node_out].train_mask
+        loss = F.cross_entropy(out[mask], data[node_out].y[mask])
+        loss.backward()
+        optimizer.step()
+        return float(loss)
 
 
 @torch.no_grad()
@@ -209,13 +217,36 @@ if args.example == 'dblp':
 else:
     node_out = 'book'
 
-for epoch in range(1, 5):
-    loss = train(node_out)
-    if args.example == "dblp":
-        train_acc, val_acc, test_acc = test(node_out)
-        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-              f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
-    else:
-        train_acc, test_acc = test(node_out)
-        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-              f'Test: {test_acc:.4f}')
+if args.profile == "none":
+    for epoch in range(1, 5):
+        loss = train(node_out)
+        if args.example == "dblp":
+            train_acc, val_acc, test_acc = test(node_out)
+            print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
+                f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
+        else:
+            train_acc, test_acc = test(node_out)
+            print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
+                f'Test: {test_acc:.4f}')
+
+elif args.profile == "profile":
+    # warmup
+    train()
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
+        for epoch in range(1, 5):
+            train(node_out)
+
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+
+else: # args.profile == "benchmark"
+    def pyg_fn():
+        model(data.x_dict, data.edge_index_dict)
+    def fasten_fn():
+        model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
+    def train_fn():
+        train(node_out)
+    fn = pyg_fn if args.mode == "pyg" else fasten_fn
+    inference_ms = do_bench(fn)
+    train_ms = do_bench(train_fn)
+    print(f"{args.mode} inference: {inference_ms} ms")
+    print(f"{args.mode} train: {train_ms} ms")

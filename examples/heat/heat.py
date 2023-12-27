@@ -4,20 +4,28 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
+from torch.profiler import ProfilerActivity, profile, record_function
+
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch_geometric.datasets import DBLP
-from torch_geometric.nn import Linear
+from torch_geometric.nn import HEATConv, Linear
 from torch_geometric.utils import index_sort
 from torch_geometric.utils.sparse import index2ptr
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHEATConv
 
+from triton.testing import do_bench
+
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'DBLP')
 parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
+parser.add_argument('--mode', type=str, default='pyg',
+                    choices=['pyg', 'fasten'])
+parser.add_argument('--profile', type=str, default='none',
+                    choices=['none', 'profile', 'benchmark'])
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -58,6 +66,30 @@ class HEAT(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
+            conv = HEATConv(hidden_channels, hidden_channels, len(torch.unique(data.node_type)), len(torch.unique(data.edge_type)), 5,2,6,
+                        num_heads, concat = False)
+            self.convs.append(conv)
+
+        self.lin_in = Linear(-1, hidden_channels)
+        self.lin_out = Linear(hidden_channels, out_channels)
+
+    def forward(self, x, edge_index, node_type, edge_type, edge_attr):
+        with record_function("heat_forward"):
+            x = self.lin_in(x).relu_()
+            
+            for conv in self.convs:
+                with record_function("conv"):
+                    x = conv(x, edge_index, node_type, edge_type, edge_attr)
+
+        return self.lin_out(x)
+
+
+class FastenHEAT(torch.nn.Module):
+    def __init__(self, hidden_channels, out_channels, num_heads, num_layers):
+        super().__init__()
+
+        self.convs = torch.nn.ModuleList()
+        for _ in range(num_layers):
             conv = FastenHEATConv(hidden_channels, hidden_channels, len(torch.unique(data.node_type)), len(torch.unique(data.edge_type)), 5, 2, 6,
                                   num_heads, concat=False, engine=Engine.TRITON)
             self.convs.append(conv)
@@ -73,8 +105,12 @@ class HEAT(torch.nn.Module):
 
         return self.lin_out(x)
 
+model = None
+if args.mode == 'fasten':
+    model = FastenHEAT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
+else:
+    model = HEAT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
 
-model = HEAT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
 data, model = data.to(device), model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 tensor_slice_hl = tensor_slice_gen(data)
@@ -83,7 +119,10 @@ tensor_slice_hl = tensor_slice_gen(data)
 def train():
     model.train()
     optimizer.zero_grad()
-    out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+    if args.mode == 'fasten':
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+    else:
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
     loss = F.cross_entropy(out[:author_num], data.y[:author_num])
     loss.backward()
     optimizer.step()
@@ -93,7 +132,10 @@ def train():
 @torch.no_grad()
 def test():
     model.eval()
-    pred = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl).argmax(dim=-1)
+    if args.mode == 'fasten':
+        pred = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl).argmax(dim=-1)
+    else:
+        pred = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr).argmax(dim=-1)
     accs = []
     for split in ['train_mask', 'val_mask', 'test_mask']:
         mask = data[split]
@@ -113,8 +155,31 @@ def test():
     return accs
 
 
-for epoch in range(1, 10):
-    loss = train()
-    train_acc, val_acc, test_acc = test()
-    print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-          f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
+if args.profile == "none":
+    for epoch in range(1, 5):
+        loss = train()
+        train_acc, val_acc, test_acc = test()
+        print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
+            f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
+
+elif args.profile == "profile":
+    # warmup
+    train()
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
+        for epoch in range(1, 5):
+            train()
+
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+
+else: # args.profile == "benchmark"
+    def pyg_fn():
+        model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
+    def fasten_fn():
+        model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+    def train_fn():
+        train()
+    fn = pyg_fn if args.mode == "pyg" else fasten_fn
+    inference_ms = do_bench(fn)
+    train_ms = do_bench(train_fn)
+    print(f"{args.mode} inference: {inference_ms} ms")
+    print(f"{args.mode} train: {train_ms} ms")
