@@ -230,6 +230,8 @@ if args.profile == "none":
                 f'Test: {test_acc:.4f}')
 
 elif args.profile == "profile":
+    # warmup
+    train()
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
         for epoch in range(1, 5):
             train(node_out)
