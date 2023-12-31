@@ -4,19 +4,17 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.profiler import ProfilerActivity, profile, record_function
-
 import torch_geometric.transforms as T
 from torch import Tensor
+from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import DBLP
 from torch_geometric.nn import HEATConv, Linear
 from torch_geometric.utils import index_sort
 from torch_geometric.utils.sparse import index2ptr
+from triton.testing import do_bench
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHEATConv
-
-from triton.testing import do_bench
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'DBLP')
 parser = argparse.ArgumentParser()
@@ -33,12 +31,10 @@ device = torch.device(args.device)
 # We initialize conference node features with a single one-vector as feature:
 dataset = DBLP(path, transform=T.Constant(node_types='conference'))
 data = dataset[0]
-print(data)
 author_num = data['author'].x.shape[0]
 data = data.to_homogeneous()
 # Create ramdom values for edge_attr
 data["edge_attr"] = torch.randn((data.edge_index.shape[1], 2))
-print(data)
 
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> Tuple[TensorSlice, List]:
@@ -66,8 +62,8 @@ class HEAT(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
-            conv = HEATConv(hidden_channels, hidden_channels, len(torch.unique(data.node_type)), len(torch.unique(data.edge_type)), 5,2,6,
-                        num_heads, concat = False)
+            conv = HEATConv(hidden_channels, hidden_channels, len(torch.unique(data.node_type)), len(torch.unique(data.edge_type)), 5, 2, 6,
+                            num_heads, concat=False)
             self.convs.append(conv)
 
         self.lin_in = Linear(-1, hidden_channels)
@@ -76,7 +72,7 @@ class HEAT(torch.nn.Module):
     def forward(self, x, edge_index, node_type, edge_type, edge_attr):
         with record_function("heat_forward"):
             x = self.lin_in(x).relu_()
-            
+
             for conv in self.convs:
                 with record_function("conv"):
                     x = conv(x, edge_index, node_type, edge_type, edge_attr)
@@ -104,6 +100,7 @@ class FastenHEAT(torch.nn.Module):
             x = conv(x, edge_index, node_type, edge_type, edge_attr, tensor_slice_hl=tensor_slice_hl)
 
         return self.lin_out(x)
+
 
 model = None
 if args.mode == 'fasten':
@@ -160,7 +157,7 @@ if args.profile == "none":
         loss = train()
         train_acc, val_acc, test_acc = test()
         print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-            f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
+              f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
 
 elif args.profile == "profile":
     # warmup
@@ -171,11 +168,13 @@ elif args.profile == "profile":
 
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
 
-else: # args.profile == "benchmark"
+else:  # args.profile == "benchmark"
     def pyg_fn():
         model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
+
     def fasten_fn():
         model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+
     def train_fn():
         train()
     fn = pyg_fn if args.mode == "pyg" else fasten_fn
