@@ -5,19 +5,17 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.profiler import ProfilerActivity, profile, record_function
-
 import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
+from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import DBLP, HGBDataset
 from torch_geometric.nn import HGTConv, Linear
 from torch_geometric.utils.sparse import index2ptr
+from triton.testing import do_bench
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHGTConv
-
-from triton.testing import do_bench
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch_geometric.backend.use_segment_matmul = True
@@ -223,11 +221,11 @@ if args.profile == "none":
         if args.example == "dblp":
             train_acc, val_acc, test_acc = test(node_out)
             print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-                f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
+                  f'Val: {val_acc:.4f}, Test: {test_acc:.4f}')
         else:
             train_acc, test_acc = test(node_out)
             print(f'Epoch: {epoch:03d}, Loss: {loss:.4f}, Train: {train_acc:.4f}, '
-                f'Test: {test_acc:.4f}')
+                  f'Test: {test_acc:.4f}')
 
 elif args.profile == "profile":
     # warmup
@@ -238,11 +236,13 @@ elif args.profile == "profile":
 
     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
 
-else: # args.profile == "benchmark"
+else:  # args.profile == "benchmark"
     def pyg_fn():
         model(data.x_dict, data.edge_index_dict)
+
     def fasten_fn():
         model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
+
     def train_fn():
         train(node_out)
     fn = pyg_fn if args.mode == "pyg" else fasten_fn

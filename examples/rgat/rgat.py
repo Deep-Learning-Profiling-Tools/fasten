@@ -34,7 +34,7 @@ data = dataset[0]
 node_idx = torch.cat([data.train_idx, data.test_idx], dim=0)
 node_idx, edge_index, mapping, edge_mask = k_hop_subgraph(
     node_idx, 2, data.edge_index, relabel_nodes=True)
-data.x = torch.randn(data.num_nodes, 16)
+data.x = torch.randn(data.num_nodes, args.hidden_size)
 
 
 def tensor_slice_gen(edge_type, edge_index, num_relations) -> Tuple[TensorSlice, torch.Tensor, torch.Tensor]:
