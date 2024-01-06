@@ -2,6 +2,7 @@
 
 phase=("forward" "backward")
 slices=("AIFB" "AM" "BGS" "MUTAG")
+code=("fasten" "pyg" "torch")
 K=(32 64 128)
 
 cd test || exit
@@ -12,23 +13,26 @@ output="output.log"
 rm -rf $output
 touch $output
 
-for p in "${phase[@]}"
+for c in "${code[@]}"
 do
-		for s_i in $(seq 0 "$slices_len")
-		do
-				s=${slices[$s_i]}
-				for k in "${K[@]}"
-				do
-						options=$k-$s-slices$s_i-fasten-float32-$p
-						nsys profile -o perf -f true pytest -vs test_ops.py::test_perf["$options"]
-						nsys stats --report cuda_gpu_kern_sum perf.nsys-rep -f csv -o 1
-						echo $options >> $output
-						cat tmp.csv_cuda_gpu_kern_sum.csv | grep segment_matmul_kernel | cut -d "," -f 6 >> $output
-						tail -n 2 $output
-						rm tmp.csv_cuda_gpu_kern_sum.csv
-						rm -rf perf.nsys-rep
-				done
-		done
+  for p in "${phase[@]}"
+  do
+      for s_i in $(seq 0 "$slices_len")
+      do
+          s=${slices[$s_i]}
+          for k in "${K[@]}"
+          do
+              options=$k-$s-slices$s_i-$c-float32-$p
+              nsys profile -o perf -f true pytest -vs test_ops.py::test_perf["$options"]
+              nsys stats --report cuda_gpu_kern_sum perf.nsys-rep -f csv -o 1
+              echo "$options" >> $output
+              grep segment_matmul_kernel tmp.csv_cuda_gpu_kern_sum.csv | cut -d "," -f 6 >> $output
+              tail -n 2 $output
+              rm tmp.csv_cuda_gpu_kern_sum.csv
+              rm -rf perf.nsys-rep
+          done
+      done
+  done
 done
 
 cd .. || exit
