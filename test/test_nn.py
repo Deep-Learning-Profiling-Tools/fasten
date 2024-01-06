@@ -107,7 +107,7 @@ def test_hgt(device: str):
     tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl = tensor_slice_gen(x_dict, edge_index_dict, meta_data, num_heads)
 
     torch.manual_seed(12345)
-    hidden_channels = 16
+    hidden_channels = 32
 
     lin_dict = torch.nn.ModuleDict()
     for node_type in node_types:
@@ -123,10 +123,10 @@ def test_hgt(device: str):
     data = data.to(device)
 
     torch.manual_seed(12345)
-    hgt_conv = HGTConv(hidden_channels, hidden_channels, meta_data, num_heads, group='sum').to(device)
+    hgt_conv = HGTConv(hidden_channels, hidden_channels, meta_data, num_heads).to(device)
 
     torch.manual_seed(12345)
-    fasten_hgt_conv = FastenHGTConv(hidden_channels, hidden_channels, meta_data, num_heads, group='sum', engine=Engine.TRITON).to(device)
+    fasten_hgt_conv = FastenHGTConv(hidden_channels, hidden_channels, meta_data, num_heads, engine=Engine.TRITON).to(device)
 
     hgt_conv_out = hgt_conv(data.x_dict, data.edge_index_dict)
     fasten_hgt_conv_out = fasten_hgt_conv(x_dict=data.x_dict, edge_index_dict=data.edge_index_dict, tensor_slice_hl=tensor_slice_hl, type_vec=type_vec, tensor_slice_hdl=tensor_slice_hdl, slices_hdl=slices_hdl)

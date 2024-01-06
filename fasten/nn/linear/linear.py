@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn.functional as F
-import torch_geometric.backend
 import torch_geometric.typing
 from torch import Tensor
 from torch.nn.parameter import Parameter
