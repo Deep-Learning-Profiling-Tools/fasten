@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 import torch
 import torch.nn.functional as F
+import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch.profiler import ProfilerActivity, profile, record_function
@@ -15,6 +16,9 @@ from triton.testing import do_bench
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenHEATConv
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch_geometric.backend.use_segment_matmul = True
 
 path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'DBLP')
 parser = argparse.ArgumentParser()
