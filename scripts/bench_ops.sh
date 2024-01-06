@@ -19,7 +19,7 @@ for c in "${code[@]}"
 do
   for p in "${phase[@]}"
   do
-      for s_i in $(seq 0 "$slices_len")
+      for s_i in $(seq 0 $((slices_len-1)))
       do
           s=${slices[$s_i]}
           for k in "${K[@]}"
@@ -28,7 +28,13 @@ do
               nsys profile -o perf -f true pytest -vs test_ops.py::test_perf["$options"]
               nsys stats --report cuda_gpu_kern_sum perf.nsys-rep -f csv -o 1
               echo "$options" >> $output
-              grep segment_matmul_kernel 1_cuda_gpu_kern_sum.csv | cut -d "," -f 6 >> $output
+              if [ "$c" == "fasten" ]; then
+                  grep segment_matmul_kernel 1_cuda_gpu_kern_sum.csv >> $output
+              elif [ "$c" == "pyg" ]; then
+                grep cutlass 1_cuda_gpu_kern_sum.csv >> $output
+              elif [ "$c" == "torch" ]; then
+                grep matmul 1_cuda_gpu_kern_sum.csv >> $output
+              fi
               tail -n 2 $output
               rm 1_cuda_gpu_kern_sum.csv
               rm -rf perf.*
