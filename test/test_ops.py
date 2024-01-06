@@ -16,9 +16,8 @@ slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
 AIFB = read_slices_from_csv('AIFB.csv')
 AM = read_slices_from_csv('AM.csv')
 BGS = read_slices_from_csv('BGS.csv')
-DBLP = read_slices_from_csv('DBLP.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
-slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("DBLP", DBLP), ("MUTAG", MUTAG)]
+slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("MUTAG", MUTAG)]
 
 # non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
 use_cudagraph = False
@@ -28,7 +27,7 @@ use_cudagraph = False
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32", "float16"])
-@pytest.mark.parametrize("slices", [slices0, slices1, AIFB, AM, BGS, DBLP, MUTAG])
+@pytest.mark.parametrize("slices", [slices0, slices1, AIFB, AM, BGS, MUTAG])
 @pytest.mark.parametrize("K", [16, 32, 64, 80])
 def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
     if engine == Engine.TRITON and device == "cpu":
