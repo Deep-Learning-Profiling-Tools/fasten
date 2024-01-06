@@ -6,9 +6,11 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 import torch_geometric
+from torch.profiler import ProfilerActivity, profile, record_function
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGATConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
+from triton.testing import do_bench
 
 from fasten import Engine, TensorSlice, compact_tensor_types
 from fasten.nn import FastenRGATConv
@@ -23,6 +25,8 @@ parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
 parser.add_argument('--dataset', type=str, default='AIFB',
                     choices=['AIFB', 'MUTAG', 'BGS', 'AM'])
+parser.add_argument('--profile', type=str, default='none',
+                    choices=['none', 'profile', 'benchmark'])
 parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 
@@ -89,16 +93,18 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 
 def train():
-    model.train()
-    optimizer.zero_grad()
-    if args.mode == "fasten":
-        out = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice)
-    else:
-        out = model(data.x, data.edge_index, data.edge_type)
-    loss = F.nll_loss(out[data.train_idx], data.train_y)
-    loss.backward()
-    optimizer.step()
-    return float(loss)
+    with record_function("RGAT Train"):
+        model.train()
+        optimizer.zero_grad()
+        with record_function("RGAT Inference"):
+            if args.mode == "fasten":
+                out = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice)
+            else:
+                out = model(data.x, data.edge_index, data.edge_type)
+        loss = F.nll_loss(out[data.train_idx], data.train_y)
+        loss.backward()
+        optimizer.step()
+        return float(loss)
 
 
 @torch.no_grad()
@@ -113,12 +119,28 @@ def test():
     return train_acc, test_acc
 
 
-times = []
-for epoch in range(1, 5):
-    start = time.time()
-    loss = train()
-    train_acc, test_acc = test()
-    print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
-          f'Test: {test_acc:.4f}')
-    times.append(time.time() - start)
-print(f"Median time per epoch: {torch.tensor(times).median():.4f}s")
+if args.profile == "none":
+    times = []
+    for epoch in range(1, 5):
+        start = time.time()
+        loss = train()
+        train_acc, test_acc = test()
+        print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Train: {train_acc:.4f} '
+              f'Test: {test_acc:.4f}')
+        times.append(time.time() - start)
+    print(f"Median time per epoch: {torch.tensor(times).median():.4f}s")
+
+elif args.profile == "profile":
+    # warmup
+    train()
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
+        for epoch in range(1, 5):
+            train()
+
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+
+else:  # args.profile == "benchmark"
+    def train_fn():
+        train()
+    train_ms = do_bench(train_fn)
+    print(f"{args.mode} train: {train_ms} ms")

@@ -1,5 +1,6 @@
 import argparse
 import os.path as osp
+import random
 from typing import List, Tuple
 
 import torch
@@ -8,7 +9,7 @@ import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch.profiler import ProfilerActivity, profile, record_function
-from torch_geometric.datasets import DBLP
+from torch_geometric.datasets import DBLP, HGBDataset
 from torch_geometric.nn import HEATConv, Linear
 from torch_geometric.utils import index_sort
 from torch_geometric.utils.sparse import index2ptr
@@ -26,6 +27,8 @@ parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
 parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
+parser.add_argument('--example', type=str, default='dblp',
+                    choices=['dblp', 'freebase'])
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
 args = parser.parse_args()
@@ -33,7 +36,17 @@ device = torch.device(args.device)
 
 
 # We initialize conference node features with a single one-vector as feature:
-dataset = DBLP(path, transform=T.Constant(node_types='conference'))
+if args.example == 'dblp':
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/DBLP')
+    # We initialize conference node features with a single one-vector as feature:
+    dataset = DBLP(path, transform=T.Constant(node_types='conference'))
+    out_channels = 4  # 4 class labels
+else:
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/HGBD')
+    transform = T.Compose([T.Constant(value=random.random(),
+                                      node_types=['book', 'film', 'music', 'sports', 'people', 'location', 'organization', 'business'])])
+    dataset = HGBDataset(path, "Freebase", transform=transform)
+    out_channels = 7   # 7 class labels
 data = dataset[0]
 author_num = data['author'].x.shape[0]
 data = data.to_homogeneous()
@@ -108,9 +121,9 @@ class FastenHEAT(torch.nn.Module):
 
 model = None
 if args.mode == 'fasten':
-    model = FastenHEAT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
+    model = FastenHEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
 else:
-    model = HEAT(hidden_channels=64, out_channels=4, num_heads=2, num_layers=1)
+    model = HEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
 
 data, model = data.to(device), model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
@@ -118,16 +131,18 @@ tensor_slice_hl = tensor_slice_gen(data)
 
 
 def train():
-    model.train()
-    optimizer.zero_grad()
-    if args.mode == 'fasten':
-        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
-    else:
-        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
-    loss = F.cross_entropy(out[:author_num], data.y[:author_num])
-    loss.backward()
-    optimizer.step()
-    return float(loss)
+    with record_function("HEAT Train"):
+        model.train()
+        optimizer.zero_grad()
+        with record_function("HEAT Inference"):
+            if args.mode == 'fasten':
+                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+            else:
+                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
+        loss = F.cross_entropy(out[:author_num], data.y[:author_num])
+        loss.backward()
+        optimizer.step()
+        return float(loss)
 
 
 @torch.no_grad()
