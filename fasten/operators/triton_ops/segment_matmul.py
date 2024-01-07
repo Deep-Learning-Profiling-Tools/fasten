@@ -244,7 +244,8 @@ def _generate_configs():
     key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': _early_config_prune
-    }
+    },
+    rep=10,
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
