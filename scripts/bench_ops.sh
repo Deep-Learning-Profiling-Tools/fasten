@@ -23,15 +23,12 @@ do
 						nsys profile -o perf -f true pytest -vs test_ops.py::test_perf["$options"]
 						nsys stats --report cuda_gpu_kern_sum perf.nsys-rep -f csv -o 1
 						echo $options >> $output
-						cat 1.csv_cuda_gpu_kern_sum.csv | grep segment_matmul_kernel | cut -d "," -f 6 >> $output
-						tail -n +2 $output
-						rm 1.csv_cuda_gpu_kern_sum.csv
+						cat tmp.csv_cuda_gpu_kern_sum.csv | grep segment_matmul_kernel | cut -d "," -f 6 >> $output
+						tail -n 2 $output
+						rm tmp.csv_cuda_gpu_kern_sum.csv
 						rm -rf perf.nsys-rep
-						break
 				done
-				break
 		done
-		break
 done
 
 cd .. || exit
