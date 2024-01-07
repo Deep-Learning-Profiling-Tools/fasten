@@ -30,6 +30,9 @@ do
               echo "$options" >> $output
               if [ "$c" == "fasten" ]; then
                   grep segment_matmul_kernel 1_cuda_gpu_kern_sum.csv >> $output
+                  if [ "$p" == "backward" ]; then
+                      grep split_matmul_kernel 1_cuda_gpu_kern_sum.csv >> $output
+                  fi
               elif [ "$c" == "pyg" ]; then
                 grep cutlass 1_cuda_gpu_kern_sum.csv >> $output
               fi
