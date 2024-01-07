@@ -13,6 +13,8 @@ output="output.log"
 rm -rf $output
 touch $output
 
+rm -rf perf.*
+
 for c in "${code[@]}"
 do
   for p in "${phase[@]}"
@@ -26,10 +28,10 @@ do
               nsys profile -o perf -f true pytest -vs test_ops.py::test_perf["$options"]
               nsys stats --report cuda_gpu_kern_sum perf.nsys-rep -f csv -o 1
               echo "$options" >> $output
-              grep segment_matmul_kernel tmp.csv_cuda_gpu_kern_sum.csv | cut -d "," -f 6 >> $output
+              grep segment_matmul_kernel 1_cuda_gpu_kern_sum.csv | cut -d "," -f 6 >> $output
               tail -n 2 $output
-              rm tmp.csv_cuda_gpu_kern_sum.csv
-              rm -rf perf.nsys-rep
+              rm 1_cuda_gpu_kern_sum.csv
+              rm -rf perf.*
           done
       done
   done
