@@ -48,7 +48,7 @@ else:
     dataset = HGBDataset(path, "Freebase", transform=transform)
     out_channels = 7   # 7 class labels
 data = dataset[0]
-author_num = data['author'].x.shape[0]
+output_idx = data['author'].x.shape[0] if args.example == 'dblp' else data['book'].x.shape[0]
 data = data.to_homogeneous()
 # Create ramdom values for edge_attr
 data["edge_attr"] = torch.randn((data.edge_index.shape[1], 2))
@@ -131,18 +131,16 @@ tensor_slice_hl = tensor_slice_gen(data)
 
 
 def train():
-    with record_function("HEAT Train"):
-        model.train()
-        optimizer.zero_grad()
-        with record_function("HEAT Inference"):
-            if args.mode == 'fasten':
-                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
-            else:
-                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
-        loss = F.cross_entropy(out[:author_num], data.y[:author_num])
-        loss.backward()
-        optimizer.step()
-        return float(loss)
+    model.train()
+    optimizer.zero_grad()
+    if args.mode == 'fasten':
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+    else:
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
+    loss = F.cross_entropy(out[:output_idx], data.y[:output_idx])
+    loss.backward()
+    optimizer.step()
+    return float(loss)
 
 
 @torch.no_grad()
@@ -185,7 +183,7 @@ elif args.profile == "profile":
         for epoch in range(1, 5):
             train()
 
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 
 else:  # args.profile == "benchmark"
     def pyg_fn():

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import ProfilerActivity, profile
 from torch_geometric.datasets import DBLP, HGBDataset
 from torch_geometric.nn import HGTConv, Linear
 from torch_geometric.utils.sparse import index2ptr
@@ -100,7 +100,7 @@ class HGT(torch.nn.Module):
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
             conv = HGTConv(hidden_channels, hidden_channels, data.metadata(),
-                           num_heads, group='sum')
+                           num_heads)
             self.convs.append(conv)
 
         self.lin = Linear(hidden_channels, out_channels)
@@ -132,7 +132,7 @@ class FastenHGT(torch.nn.Module):
         self.convs = torch.nn.ModuleList()
         for _ in range(num_layers):
             conv = FastenHGTConv(hidden_channels, hidden_channels, data.metadata(),
-                                 num_heads, group='sum', engine=Engine.TRITON)
+                                 num_heads, engine=Engine.TRITON)
             self.convs.append(conv)
 
         self.lin = Linear(hidden_channels, out_channels)
@@ -171,20 +171,18 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
 
 
 def train(node_out: str):
-    with record_function("HGT Train"):
-        model.train()
-        optimizer.zero_grad()
-        with record_function("HGT Inference"):
-            if args.mode == 'fasten':
-                out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
-            else:
-                out = model(data.x_dict, data.edge_index_dict)
+    model.train()
+    optimizer.zero_grad()
+    if args.mode == 'fasten':
+        out = model(data.x_dict, data.edge_index_dict, tensor_slice_hl, type_vec, tensor_slice_hdl, slices_hdl)
+    else:
+        out = model(data.x_dict, data.edge_index_dict)
 
-        mask = data[node_out].train_mask
-        loss = F.cross_entropy(out[mask], data[node_out].y[mask])
-        loss.backward()
-        optimizer.step()
-        return float(loss)
+    mask = data[node_out].train_mask
+    loss = F.cross_entropy(out[mask], data[node_out].y[mask])
+    loss.backward()
+    optimizer.step()
+    return float(loss)
 
 
 @torch.no_grad()
@@ -229,12 +227,12 @@ if args.profile == "none":
 
 elif args.profile == "profile":
     # warmup
-    train()
+    train(node_out)
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False, record_shapes=False) as prof:
         for epoch in range(1, 5):
             train(node_out)
 
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 
 else:  # args.profile == "benchmark"
     def pyg_fn():
