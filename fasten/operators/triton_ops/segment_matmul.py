@@ -224,7 +224,7 @@ def _early_config_prune(configs, named_args):
 
 def _generate_configs():
     tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
-    num_warps_options = [4, 8]  # Possible values for num_warps
+    num_warps_options = [4]  # Possible values for num_warps
     num_stages_options = [2, 3, 4]  # Possible values for num_stages
 
     configs = []
