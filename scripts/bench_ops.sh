@@ -2,7 +2,7 @@
 
 phase=("forward" "backward")
 slices=("AIFB" "AM" "BGS" "MUTAG")
-code=("fasten" "pyg" "torch")
+code=("fasten" "pyg")
 K=(32 64 128)
 
 cd test || exit
@@ -32,8 +32,6 @@ do
                   grep segment_matmul_kernel 1_cuda_gpu_kern_sum.csv >> $output
               elif [ "$c" == "pyg" ]; then
                 grep cutlass 1_cuda_gpu_kern_sum.csv >> $output
-              elif [ "$c" == "torch" ]; then
-                grep matmul 1_cuda_gpu_kern_sum.csv >> $output
               fi
               tail -n 2 $output
               rm 1_cuda_gpu_kern_sum.csv
