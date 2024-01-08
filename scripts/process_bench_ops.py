@@ -44,7 +44,7 @@ with open(file) as f:
                     line_idx += 2  # skip forward warmup
                     time_dw = get_minimum_time(lines[line_idx])
                     line_idx += 1
-                    perf[key] = time_dx + time_dw
+                    perf[key] = int(time_dx) + int(time_dw)
                 else:
                     raise Exception("Invalid phase: " + phase)
             elif engine == "pyg":
@@ -57,7 +57,7 @@ with open(file) as f:
                     time_dx = get_minimum_time(lines[line_idx])
                     time_dw = get_maximum_time(lines[line_idx])
                     line_idx += 1
-                    perf[key] = time_dx + time_dw
+                    perf[key] = int(time_dx) + int(time_dw)
                 else:
                     raise Exception("Invalid phase: " + phase)
             else:
