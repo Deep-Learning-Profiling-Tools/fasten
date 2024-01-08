@@ -7,7 +7,7 @@ def get_options(line: str):
     k = entries[0]
     dataset = entries[1]
     engine = entries[3]
-    phase = entries[4]
+    phase = entries[5]
     return k, dataset, engine, phase
 
 
