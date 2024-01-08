@@ -45,6 +45,8 @@ with open(file) as f:
                     time_dw = get_minimum_time(lines[line_idx])
                     line_idx += 1
                     perf[key] = time_dx + time_dw
+                else:
+                    raise Exception("Invalid phase: " + phase)
             elif engine == "pyg":
                 if phase == "forward":
                     # single kernel, get the minimum time
@@ -56,6 +58,10 @@ with open(file) as f:
                     time_dw = get_maximum_time(lines[line_idx])
                     line_idx += 1
                     perf[key] = time_dx + time_dw
+                else:
+                    raise Exception("Invalid phase: " + phase)
+            else:
+                raise Exception("Invalid engine: " + engine)
         else:
             raise Exception("Invalid line: " + lines[line_idx])
 
