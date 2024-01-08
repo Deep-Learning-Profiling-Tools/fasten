@@ -48,6 +48,7 @@ else:
                                       node_types=['book', 'film', 'music', 'sports', 'people', 'location', 'organization', 'business'])])
     dataset = HGBDataset(path, "Freebase", transform=transform)
     out_channels = 7   # 7 class labels
+
 data = dataset[0]
 data = data.to_homogeneous()
 # Create ramdom values for edge_attr
@@ -133,9 +134,8 @@ def train():
         out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
     else:
         out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
-    node_out = 'author' if args.example == 'dblp' else 'book'
-    mask = data[node_out].train_mask
-    loss = F.cross_entropy(out[mask], data[node_out].y[mask])
+    mask = data.y != -1
+    loss = F.cross_entropy(out[mask], data.y[mask])
     loss.backward()
     optimizer.step()
     return float(loss)
