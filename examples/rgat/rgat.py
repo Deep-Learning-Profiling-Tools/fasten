@@ -6,7 +6,7 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import ProfilerActivity, profile
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGATConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
@@ -93,18 +93,16 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 
 def train():
-    with record_function("RGAT Train"):
-        model.train()
-        optimizer.zero_grad()
-        with record_function("RGAT Inference"):
-            if args.mode == "fasten":
-                out = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice)
-            else:
-                out = model(data.x, data.edge_index, data.edge_type)
-        loss = F.nll_loss(out[data.train_idx], data.train_y)
-        loss.backward()
-        optimizer.step()
-        return float(loss)
+    model.train()
+    optimizer.zero_grad()
+    if args.mode == "fasten":
+        out = model(data.x, edge_index, edge_type, tensor_slice=tensor_slice)
+    else:
+        out = model(data.x, data.edge_index, data.edge_type)
+    loss = F.nll_loss(out[data.train_idx], data.train_y)
+    loss.backward()
+    optimizer.step()
+    return float(loss)
 
 
 @torch.no_grad()
@@ -137,7 +135,7 @@ elif args.profile == "profile":
         for epoch in range(1, 5):
             train()
 
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 
 else:  # args.profile == "benchmark"
     def train_fn():

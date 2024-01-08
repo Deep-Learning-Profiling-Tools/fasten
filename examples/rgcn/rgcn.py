@@ -5,7 +5,7 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 import torch_geometric
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import ProfilerActivity, profile
 from torch_geometric.datasets import Entities
 from torch_geometric.nn import RGCNConv
 from torch_geometric.utils import index_sort, k_hop_subgraph
@@ -91,17 +91,15 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0005)
 
 
 def train():
-    with record_function("RGCN Train"):
-        optimizer.zero_grad()
-        model.train()
-        with record_function("RGCN Inference"):
-            if args.mode == "fasten":
-                out = model(input, edge_index, None, tensor_slice)
-            else:
-                out = model(input, edge_index, edge_type)
-        loss = F.nll_loss(out[data.train_idx], data.train_y)
-        loss.backward()
-        optimizer.step()
+    optimizer.zero_grad()
+    model.train()
+    if args.mode == "fasten":
+        out = model(input, edge_index, None, tensor_slice)
+    else:
+        out = model(input, edge_index, edge_type)
+    loss = F.nll_loss(out[data.train_idx], data.train_y)
+    loss.backward()
+    optimizer.step()
     return float(loss)
 
 
@@ -131,7 +129,7 @@ elif args.profile == "profile":
         for epoch in range(1, 5):
             train()
 
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 
 else:  # args.profile == "benchmark"
     def pyg_fn():

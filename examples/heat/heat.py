@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import ProfilerActivity, profile
 from torch_geometric.datasets import DBLP, HGBDataset
 from torch_geometric.nn import HEATConv, Linear
 from torch_geometric.utils import index_sort
@@ -31,6 +31,7 @@ parser.add_argument('--example', type=str, default='dblp',
                     choices=['dblp', 'freebase'])
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
+parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -47,15 +48,14 @@ else:
                                       node_types=['book', 'film', 'music', 'sports', 'people', 'location', 'organization', 'business'])])
     dataset = HGBDataset(path, "Freebase", transform=transform)
     out_channels = 7   # 7 class labels
+
 data = dataset[0]
-author_num = data['author'].x.shape[0]
 data = data.to_homogeneous()
 # Create ramdom values for edge_attr
 data["edge_attr"] = torch.randn((data.edge_index.shape[1], 2))
 
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> Tuple[TensorSlice, List]:
-
     assert ptr is not None
     slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
     types = torch.zeros((ptr[-1],), dtype=torch.int)
@@ -66,7 +66,6 @@ def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False)
 
 
 def tensor_slice_gen(data) -> TensorSlice:
-
     sorted_node_type, _ = index_sort(data.node_type, len(torch.unique(data.node_type)))
     ptr = index2ptr(sorted_node_type, len(torch.unique(data.node_type)))
     tensor_slice_hl, _ = ptr_to_tensor_slice(ptr, is_sorted=True)
@@ -87,12 +86,10 @@ class HEAT(torch.nn.Module):
         self.lin_out = Linear(hidden_channels, out_channels)
 
     def forward(self, x, edge_index, node_type, edge_type, edge_attr):
-        with record_function("heat_forward"):
-            x = self.lin_in(x).relu_()
+        x = self.lin_in(x).relu_()
 
-            for conv in self.convs:
-                with record_function("conv"):
-                    x = conv(x, edge_index, node_type, edge_type, edge_attr)
+        for conv in self.convs:
+            x = conv(x, edge_index, node_type, edge_type, edge_attr)
 
         return self.lin_out(x)
 
@@ -121,9 +118,9 @@ class FastenHEAT(torch.nn.Module):
 
 model = None
 if args.mode == 'fasten':
-    model = FastenHEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = FastenHEAT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
 else:
-    model = HEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = HEAT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
 
 data, model = data.to(device), model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
@@ -131,18 +128,17 @@ tensor_slice_hl = tensor_slice_gen(data)
 
 
 def train():
-    with record_function("HEAT Train"):
-        model.train()
-        optimizer.zero_grad()
-        with record_function("HEAT Inference"):
-            if args.mode == 'fasten':
-                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
-            else:
-                out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
-        loss = F.cross_entropy(out[:author_num], data.y[:author_num])
-        loss.backward()
-        optimizer.step()
-        return float(loss)
+    model.train()
+    optimizer.zero_grad()
+    if args.mode == 'fasten':
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
+    else:
+        out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
+    mask = data.y != -1
+    loss = F.cross_entropy(out[mask], data.y[mask])
+    loss.backward()
+    optimizer.step()
+    return float(loss)
 
 
 @torch.no_grad()
@@ -185,7 +181,7 @@ elif args.profile == "profile":
         for epoch in range(1, 5):
             train()
 
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=15))
+    print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 
 else:  # args.profile == "benchmark"
     def pyg_fn():
