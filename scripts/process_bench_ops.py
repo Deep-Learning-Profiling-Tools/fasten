@@ -4,21 +4,21 @@ import sys
 def get_options(line: str):
     # 32-AIFB-slices0-fasten-float32-forward
     entries = line.split("-")
-    k = entries[0]
-    dataset = entries[1]
-    engine = entries[3]
-    phase = entries[5]
+    k = entries[0].strip()
+    dataset = entries[1].strip()
+    engine = entries[3].strip()
+    phase = entries[5].strip()
     return k, dataset, engine, phase
 
 
 def get_minimum_time(line: str):
     entries = line.split(",")
-    return entries[5]
+    return entries[5].strip()
 
 
 def get_maximum_time(line: str):
     entries = line.split(",")
-    return entries[6]
+    return entries[6].strip()
 
 
 file = sys.argv[1]
