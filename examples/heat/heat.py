@@ -55,7 +55,6 @@ data["edge_attr"] = torch.randn((data.edge_index.shape[1], 2))
 
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> Tuple[TensorSlice, List]:
-
     assert ptr is not None
     slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
     types = torch.zeros((ptr[-1],), dtype=torch.int)
@@ -66,7 +65,6 @@ def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False)
 
 
 def tensor_slice_gen(data) -> TensorSlice:
-
     sorted_node_type, _ = index_sort(data.node_type, len(torch.unique(data.node_type)))
     ptr = index2ptr(sorted_node_type, len(torch.unique(data.node_type)))
     tensor_slice_hl, _ = ptr_to_tensor_slice(ptr, is_sorted=True)

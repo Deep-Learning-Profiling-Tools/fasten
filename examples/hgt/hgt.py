@@ -49,7 +49,6 @@ device = torch.device(args.device)
 
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> Tuple[TensorSlice, List]:
-
     assert ptr is not None
     slices = [slice(ptr[i], ptr[i + 1]) for i in range(len(ptr) - 1)]
     types = torch.zeros((ptr[-1],), dtype=torch.int)
@@ -60,7 +59,6 @@ def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False)
 
 
 def tensor_slice_gen(data, num_heads) -> Tuple[TensorSlice, Tensor, TensorSlice, List]:
-
     # Generating tensor_slice for HeteroDictLinear
     ptr = [0]
     for key, _ in data.x_dict.items():
