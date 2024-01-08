@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
-from torch.profiler import ProfilerActivity, profile, record_function
+from torch.profiler import ProfilerActivity, profile
 from torch_geometric.datasets import DBLP, HGBDataset
 from torch_geometric.nn import HEATConv, Linear
 from torch_geometric.utils import index_sort
@@ -31,6 +31,7 @@ parser.add_argument('--example', type=str, default='dblp',
                     choices=['dblp', 'freebase'])
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
+parser.add_argument('--hidden_size', type=int, default=32)
 args = parser.parse_args()
 device = torch.device(args.device)
 
@@ -48,7 +49,6 @@ else:
     dataset = HGBDataset(path, "Freebase", transform=transform)
     out_channels = 7   # 7 class labels
 data = dataset[0]
-output_idx = data['author'].x.shape[0] if args.example == 'dblp' else data['book'].x.shape[0]
 data = data.to_homogeneous()
 # Create ramdom values for edge_attr
 data["edge_attr"] = torch.randn((data.edge_index.shape[1], 2))
@@ -87,12 +87,10 @@ class HEAT(torch.nn.Module):
         self.lin_out = Linear(hidden_channels, out_channels)
 
     def forward(self, x, edge_index, node_type, edge_type, edge_attr):
-        with record_function("heat_forward"):
-            x = self.lin_in(x).relu_()
+        x = self.lin_in(x).relu_()
 
-            for conv in self.convs:
-                with record_function("conv"):
-                    x = conv(x, edge_index, node_type, edge_type, edge_attr)
+        for conv in self.convs:
+            x = conv(x, edge_index, node_type, edge_type, edge_attr)
 
         return self.lin_out(x)
 
@@ -121,9 +119,9 @@ class FastenHEAT(torch.nn.Module):
 
 model = None
 if args.mode == 'fasten':
-    model = FastenHEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = FastenHEAT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
 else:
-    model = HEAT(hidden_channels=64, out_channels=out_channels, num_heads=2, num_layers=1)
+    model = HEAT(hidden_channels=args.hidden_size, out_channels=out_channels, num_heads=2, num_layers=1)
 
 data, model = data.to(device), model.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.001)
@@ -137,7 +135,9 @@ def train():
         out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr, tensor_slice_hl)
     else:
         out = model(data.x, data.edge_index, data.node_type, data.edge_type, data.edge_attr)
-    loss = F.cross_entropy(out[:output_idx], data.y[:output_idx])
+    node_out = 'author' if args.example == 'dblp' else 'book'
+    mask = data[node_out].train_mask
+    loss = F.cross_entropy(out[mask], data[node_out].y[mask])
     loss.backward()
     optimizer.step()
     return float(loss)
