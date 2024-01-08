@@ -5,7 +5,6 @@ import torch
 from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
-from .analysis import get_contiguous_ratio
 from .operators import torch_ops, triton_ops
 from .scheduler import BestConfig, CacheEntry, Scheduler, default_tiling, schedulers
 from .utils import TilingMethod, is_debug
@@ -48,7 +47,7 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
-        self._contiguous_ratio = get_contiguous_ratio(self._slices, self.num_blocks)
+        self._contiguous_ratio = self._get_contiguous_ratio(self.num_blocks)
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -139,6 +138,10 @@ class TensorSlice:
         '''
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
+
+    def _get_contiguous_ratio(self, num_blocks: int) -> float:
+        """Get the ratio of contiguous slices."""
+        return torch.sum(self.slices[:, 4] != 0).item() / float(num_blocks)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
