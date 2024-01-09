@@ -167,6 +167,82 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     })
 
 
+@pytest.mark.parametrize("phase", ["forward", "backward"])
+@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("engine", ["fasten", "pyg"])
+@pytest.mark.parametrize("K", [32, 128])
+@pytest.mark.parametrize("T", [i for i in range(10, 200, 10)])
+@pytest.mark.parametrize("M", 1e6)
+def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, benchmark_results: Callable[[], None]):
+    if engine == "pyg" and dtype == "float16":
+        pytest.skip("pyg_lib does not support float16")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    dtype = getattr(torch, dtype)
+    data = torch.randn((M, K), device="cuda", dtype=dtype)
+    types = torch.zeros((M,), device="cuda", dtype=torch.int)
+    types = torch.randint(0, T, (M,), device="cuda", dtype=torch.int)
+    tensor_slice = compact_tensor_types(data, types, device="cuda")
+    other = torch.randn((T, K, K), device="cuda", dtype=dtype)
+    # ptr should be on CPU
+    ptr = []
+    for i in range(len(tensor_slice)):
+        ptr.append(tensor_slice.get_slice_from_index(i, is_tensor=False).start)
+    ptr.append(tensor_slice.get_slice_from_index(len(tensor_slice) - 1, is_tensor=False).stop)
+
+    if phase == "backward":
+        data.requires_grad = True
+        other.requires_grad = True
+
+    # warmup and get output
+    if engine == "fasten":
+        output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
+    elif engine == "pyg":
+        output = pyg_lib.ops.segment_matmul(data, ptr, other)
+    elif engine == "torch":
+        output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.TORCH)
+
+    if phase == "backward":
+        grad = torch.randn_like(output)
+        if engine == "pyg":
+            grouped_data = []
+            grouped_grad = []
+            for i in range(len(tensor_slice)):
+                s = tensor_slice.get_slice_from_index(i, is_tensor=False)
+                if s.stop > s.start:
+                    grouped_data.append(data[s.start:s.stop, :].t())
+                    grouped_grad.append(grad[s.start:s.stop, :])
+
+    def fasten_fn():
+        if phase == "forward":
+            ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO if engine == "fasten" else Engine.TORCH)
+        else:  # phase == "backward"
+            output.backward(grad, retain_graph=True)
+
+    def pyg_fn():
+        if phase == "forward":
+            pyg_lib.ops.segment_matmul(data, ptr, other)
+        else:  # phase == "backward"
+            # dx
+            # [M, N] * [K, N]^T = [M, K]^T
+            pyg_lib.ops.segment_matmul(grad, ptr, other.transpose(1, 2))
+            # dw
+            # [M, K]^T * [M, N] = [K, N]
+            pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
+
+    fn = pyg_fn if engine == "pyg" else fasten_fn
+    ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
+    tflops = get_matmul_flops(tensor_slice, other) / 1e12
+    print(f"{phase} ms {ms} tflops {tflops}")
+
+    benchmark_results.append({
+        "engine": engine,
+        "phase": phase,
+        "T": T,
+        "K": K,
+        "ms": ms,
+    })
+
+
 def test_cache():
     M = 128
     K = 16
