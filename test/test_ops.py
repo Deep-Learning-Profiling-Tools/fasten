@@ -234,7 +234,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
     tflops = get_matmul_flops(tensor_slice, other) / 1e12
-    tbytes = get_matmul_bytes(tensor_slice, other) / 1e9
+    tbytes = get_matmul_bytes(tensor_slice, other) / 1e12
     print(f"{phase} ms {ms} tflops {tflops} tbytes {tbytes}")
 
     benchmark_results.append({
