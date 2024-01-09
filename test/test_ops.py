@@ -188,6 +188,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     for i in range(len(tensor_slice)):
         ptr.append(tensor_slice.get_slice_from_index(i, is_tensor=False).start)
     ptr.append(tensor_slice.get_slice_from_index(len(tensor_slice) - 1, is_tensor=False).stop)
+    ptr = torch.tensor(ptr)
 
     if phase == "backward":
         data.requires_grad = True
