@@ -110,6 +110,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     for i, s in enumerate(slices):
         types[s] = rand_types[i]
     tensor_slice = compact_tensor_types(data, types, device="cuda")
+    data = tensor_slice.data
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
     # ptr should be on CPU
     ptr = torch.tensor([s.start for s in slices] + [slices[-1].stop])
@@ -182,6 +183,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     data = torch.randn((M, K), device="cuda", dtype=dtype)
     types = torch.randint(0, T, (M,), device="cuda", dtype=torch.int)
     tensor_slice = compact_tensor_types(data, types, device="cuda")
+    data = tensor_slice.data
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
     # ptr should be on CPU
     ptr = []
