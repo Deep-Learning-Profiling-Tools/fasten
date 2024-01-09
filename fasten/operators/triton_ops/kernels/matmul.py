@@ -30,14 +30,14 @@ def _reg_matmul(
     output_ptrs = output + stride_output_m * offs_m[:, None] + stride_output_n * offs_n[None, :]
     for _ in range(0, BLOCK_SIZE):
         a = tl.load(input_ptrs)
-        input_ptrs += TILE_M * stride_input_m
-        output_ptrs += TILE_M * stride_output_m
         acc = tl.dot(a, b, out_dtype=out_dtype).to(output.dtype.element_ty)
         if EVEN_N:
             tl.store(output_ptrs, acc)
         else:
             mask_n = offs_n[None, :] < N
             tl.store(output_ptrs, acc, mask=mask_n)
+        input_ptrs += TILE_M * stride_input_m
+        output_ptrs += TILE_M * stride_output_m
 
 
 @triton.jit
