@@ -171,7 +171,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 @pytest.mark.parametrize("dtype", ["float32"])
 @pytest.mark.parametrize("engine", ["fasten", "pyg"])
 @pytest.mark.parametrize("K", [32, 128])
-@pytest.mark.parametrize("T", [i for i in range(10, 200, 10)])
+@pytest.mark.parametrize("T", [i for i in range(100, 2000, 200)])
 @pytest.mark.parametrize("M", [1000000])
 def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, benchmark_results: Callable[[], None]):
     if engine == "pyg" and dtype == "float16":
