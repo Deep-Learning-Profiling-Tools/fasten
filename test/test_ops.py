@@ -177,6 +177,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
+    torch.random.manual_seed(147)
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), device="cuda", dtype=dtype)
     types = torch.zeros((M,), device="cuda", dtype=torch.int)
