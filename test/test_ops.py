@@ -180,7 +180,6 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     torch.random.manual_seed(T)
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), device="cuda", dtype=dtype)
-    types = torch.zeros((M,), device="cuda", dtype=torch.int)
     types = torch.randint(0, T, (M,), device="cuda", dtype=torch.int)
     tensor_slice = compact_tensor_types(data, types, device="cuda")
     other = torch.randn((T, K, K), device="cuda", dtype=dtype)
