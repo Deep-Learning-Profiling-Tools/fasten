@@ -12,7 +12,7 @@ from fasten.utils import TilingMethod
 @pytest.mark.parametrize("T", [16, 33])
 @pytest.mark.parametrize("tile_size", [16, 64])
 @pytest.mark.parametrize("block_size", [1, 4])
-@pytest.mark.parametrize("K", [16, 80])
+@pytest.mark.parametrize("K", [16, 32, 80])
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("tiling_method", ["default"])
 def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_size: int, block_size: int, device: str, tiling_method: str) -> None:
