@@ -9,7 +9,7 @@ import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
-from fasten.stats import get_matmul_flops
+from fasten.stats import get_matmul_bytes, get_matmul_flops
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
 slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
@@ -234,7 +234,8 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     fn = pyg_fn if engine == "pyg" else fasten_fn
     ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
     tflops = get_matmul_flops(tensor_slice, other) / 1e12
-    print(f"{phase} ms {ms} tflops {tflops}")
+    tbytes = get_matmul_bytes(tensor_slice, other) / 1e9
+    print(f"{phase} ms {ms} tflops {tflops} tbytes {tbytes}")
 
     benchmark_results.append({
         "engine": engine,
@@ -242,6 +243,8 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
         "T": T,
         "K": K,
         "ms": ms,
+        "tflops": tflops,
+        "tbytes": tbytes,
     })
 
 
