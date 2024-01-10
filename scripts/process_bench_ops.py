@@ -1,13 +1,20 @@
 import sys
 
 
-def get_options(line: str):
-    # 32-AIFB-slices0-fasten-float32-forward
+def get_options(line: str, mode: str):
     entries = line.split("-")
-    k = entries[0].strip()
-    dataset = entries[1].strip()
-    engine = entries[3].strip()
-    phase = entries[5].strip()
+    if mode == "random":
+        # 1000000-1500-128-pyg-float32-backward
+        k = entries[2].strip()
+        dataset = entries[1].strip()
+        engine = entries[3].strip()
+        phase = entries[5].strip()
+    else:
+        # 32-AIFB-slices0-fasten-float32-forward
+        k = entries[-1].strip()
+        dataset = entries[1].strip()
+        engine = entries[3].strip()
+        phase = entries[5].strip()
     return k, dataset, engine, phase
 
 
@@ -22,6 +29,8 @@ def get_maximum_time(line: str):
 
 
 file = sys.argv[1]
+if len(sys.argv) >= 3:
+    mode = sys.argv[2]
 perf = dict()
 
 # read it line by line
@@ -30,7 +39,7 @@ with open(file) as f:
     line_idx = 0
     while line_idx < len(lines):
         if "-" in lines[line_idx]:
-            k, dataset, engine, phase = get_options(lines[line_idx])
+            k, dataset, engine, phase = get_options(lines[line_idx], mode)
             key = f"{k}-{dataset}-{engine}-{phase}"
             line_idx += 1
             if engine == "fasten":
