@@ -140,8 +140,7 @@ class TensorSlice:
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
     def _get_contiguous_ratio(self, num_blocks: int) -> float:
-        """Get the ratio of contiguous slices."""
-        return torch.sum(self.slices[:, 4] != 0).item() / float(num_blocks)
+        return torch.sum(self.slices[:, 4] == 0).item() / float(num_blocks)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
