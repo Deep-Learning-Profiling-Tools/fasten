@@ -446,14 +446,14 @@ def _split_noncontiguous_block(
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
             end_off = tl.load(input_tiles + 5 * next_id + 3)
-            slice_id = tl.load(input_tiles + 5 * next_id + 0)
-            slice_start = tl.load(input_slices + 5 * slice_id + 2)
-            slice_end = tl.load(input_slices + 5 * slice_id + 3)
-            M = slice_end - slice_start
             length = end_off - start_off
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
+                slice_id = tl.load(input_tiles + 5 * next_id + 0)
+                slice_start = tl.load(input_slices + 5 * slice_id + 2)
+                slice_end = tl.load(input_slices + 5 * slice_id + 3)
+                M = slice_end - slice_start
 
                 _split_dispatch(
                     pid_k, pid_n, next_id,
@@ -521,7 +521,7 @@ def split_matmul_kernel(
 
     # contiguous block
     if next_next_id == 0:
-        slice_id = tl.load(input_slices + 5 * next_id + 0)
+        slice_id = tl.load(input_tiles + 5 * next_id + 0)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
         start_off = tl.load(input_tiles + 5 * next_id + 2)
         slice_start = tl.load(input_slices + 5 * slice_id + 2)

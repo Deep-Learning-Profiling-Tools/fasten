@@ -233,7 +233,7 @@ def _dynamic_matmul(
     else:
         c_ptrs = grad_other + \
             stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-        if M <= TILE_M * m_iter:
+        if M <= length:
             if EVEN_N and EVEN_K:
                 tl.store(c_ptrs, acc)
             else:
