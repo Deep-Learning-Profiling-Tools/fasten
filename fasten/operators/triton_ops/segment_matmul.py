@@ -595,7 +595,7 @@ def split_reduce_kernel(
     k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
     n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
     grad_other_tiles_ptr = grad_other_tiles + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n
-    mask = k_offs < K & n_offs < N
+    mask = (k_offs < K) & (n_offs < N)
     for i in range(start_tile_id, end_tile_id):
         acc += tl.load(grad_other_tiles_ptr, mask=mask)
         grad_other_tiles_ptr += stride_grad_other_b
