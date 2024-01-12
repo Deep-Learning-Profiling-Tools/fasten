@@ -713,7 +713,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
 
     grad_other_tiles = None
     if deterministic:
-        grad_other_tiles = torch.zeros((num_blocks, K, N), device=grad_other.device, dtype=grad_other.dtype)
+        grad_other_tiles = torch.zeros((num_tiles, K, N), device=grad_other.device, dtype=grad_other.dtype)
 
     def grid(meta):
         return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
