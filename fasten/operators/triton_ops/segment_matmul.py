@@ -567,8 +567,25 @@ def split_matmul_kernel(
         )
 
 
+def _generate_reduce_configs():
+    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    num_warps_options = [4, 8]  # Possible values for num_warps
+    num_stages_options = [1]  # Possible values for num_stages
+
+    configs = []
+    for tile_size_n in tile_sizes:
+        for tile_size_k in tile_sizes:
+            for num_warps in num_warps_options:
+                for num_stages in num_stages_options:
+                    config = triton.Config({'TILE_SIZE_N': tile_size_n, 'TILE_SIZE_K': tile_size_k},
+                                           num_warps=num_warps, num_stages=num_stages)
+                    configs.append(config)
+
+    return configs
+
+
 @triton.autotune(
-    configs=_generate_configs(),
+    configs=_generate_reduce_configs(),
     key=['N', 'K'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, forward=False)
