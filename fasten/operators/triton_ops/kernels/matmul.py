@@ -178,7 +178,8 @@ def _dynamic_matmul(
     TILE_M: tl.constexpr,
     EVEN_N: tl.constexpr,
     EVEN_K: tl.constexpr,
-    EVEN_M: tl.constexpr
+    EVEN_M: tl.constexpr,
+    DETERMINISTIC: tl.constexpr
 ):
     offs_k = pid_k * TILE_K + tl.arange(0, TILE_K)
     offs_n = pid_n * TILE_N + tl.arange(0, TILE_N)
@@ -220,6 +221,7 @@ def _dynamic_matmul(
         grad_output_ptrs += TILE_M * stride_grad_output_m
 
     acc = acc.to(grad_other.dtype.element_ty)
+
     c_ptrs = grad_other + \
         stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
     if EVEN_N and EVEN_K:

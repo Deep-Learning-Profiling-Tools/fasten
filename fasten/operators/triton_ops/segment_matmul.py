@@ -1,3 +1,4 @@
+import functools
 from typing import Optional
 
 import torch
@@ -205,7 +206,7 @@ def _contiguous_block(
             )
 
 
-def _early_config_prune(configs, named_args):
+def _early_config_prune(configs, named_args, forward: bool):
     pruned_configs = []
     N = named_args['N']
     K = named_args['K']
@@ -243,7 +244,7 @@ def _generate_configs():
     configs=_generate_configs(),
     key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
-        'early_config_prune': _early_config_prune
+        'early_config_prune': functools.partial(_early_config_prune, forward=True)
     },
     rep=10,
 )
@@ -339,7 +340,8 @@ def _split_dispatch(
     EVEN_N: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_M: tl.constexpr,
-    DYNAMIC_TILING: tl.constexpr
+    DYNAMIC_TILING: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     TILE_M_16: tl.constexpr = 16
     TILE_M_32: tl.constexpr = 32
@@ -360,6 +362,7 @@ def _split_dispatch(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     elif length <= TILE_M_32 and DYNAMIC_TILING:
         _dynamic_matmul(
@@ -376,6 +379,7 @@ def _split_dispatch(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     elif length <= TILE_M_64 and DYNAMIC_TILING:
         _dynamic_matmul(
@@ -392,6 +396,7 @@ def _split_dispatch(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     else:
         _dynamic_matmul(
@@ -408,6 +413,7 @@ def _split_dispatch(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=False,
+            DETERMINISTIC=DETERMINISTIC,
         )
 
 
@@ -427,6 +433,7 @@ def _split_noncontiguous_block(
     TILE_M: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     for _ in range(0, BLOCK_SIZE):
         if next_id < NUM_TILES and next_id != -1:
@@ -456,6 +463,7 @@ def _split_noncontiguous_block(
                     EVEN_N=EVEN_N,
                     EVEN_M=False,
                     DYNAMIC_TILING=True,
+                    DETERMINISTIC=DETERMINISTIC,
                 )
             next_id = next_next_id
             next_next_id += 1
@@ -464,9 +472,9 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K'],
+    key=['N', 'K', 'BLOCK_SIZE', 'NUM_BLOCKS'],
     prune_configs_by={
-        'early_config_prune': _early_config_prune
+        'early_config_prune': functools.partial(_early_config_prune, forward=False)
     }
 )
 @triton.heuristics({
@@ -488,7 +496,8 @@ def split_matmul_kernel(
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
-    EVEN_N: tl.constexpr
+    EVEN_N: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
@@ -519,6 +528,7 @@ def split_matmul_kernel(
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=True,
+            DETERMINISTIC=DETERMINISTIC,
         )
     else:
         _split_noncontiguous_block(
@@ -536,6 +546,7 @@ def split_matmul_kernel(
             TILE_M=TILE_SIZE_M,
             EVEN_K=EVEN_K,
             EVEN_N=False,
+            DETERMINISTIC=DETERMINISTIC,
         )
 
 
@@ -611,7 +622,8 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
 def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_other: torch.Tensor = None,
-                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64,
+                                  deterministic: bool = False):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
