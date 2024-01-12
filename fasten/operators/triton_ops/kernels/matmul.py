@@ -224,7 +224,7 @@ def _dynamic_matmul(
 
     if DETERMINISTIC:
         c_ptrs = grad_other_tiles + \
-            next_id * stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
+            next_id * stride_grad_other_b + stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
         if EVEN_N and EVEN_K:
             tl.store(c_ptrs, acc)
         else:
