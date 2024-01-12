@@ -718,7 +718,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
     )
     if deterministic:
         def grid(meta):
-            return (num_slices * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(K, meta['TILE_SIZE_N']), )
+            return (num_slices * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N']), )
         split_reduce_kernel[grid](
             slice_tile_mapping, grad_other_tiles, grad_other,
             grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
