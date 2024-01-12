@@ -562,7 +562,7 @@ def split_matmul_kernel(
             TILE_N=TILE_SIZE_N,
             TILE_M=TILE_SIZE_M,
             EVEN_K=EVEN_K,
-            EVEN_N=False,
+            EVEN_N=EVEN_N,
             DETERMINISTIC=DETERMINISTIC,
         )
 
