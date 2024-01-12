@@ -590,10 +590,13 @@ def split_reduce_kernel(
     start_tile_id = tl.load(slice_to_tiles + type_id * 2)
     end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
+    k_offs = tl.arange(0, TILE_SIZE_K)[:, None]
+    n_offs = tl.arange(0, TILE_SIZE_N)[None, :]
+    grad_other_tiles_ptr = grad_other_tiles + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n
     for i in range(start_tile_id, end_tile_id):
-        grad_other_tiles_ptr = grad_other_tiles + i * stride_grad_other_b
         acc += tl.load(grad_other_tiles_ptr)
-    tl.store(grad_other + type_id * stride_grad_other_b, acc)
+        grad_other_tiles_ptr += stride_grad_other_b
+    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
