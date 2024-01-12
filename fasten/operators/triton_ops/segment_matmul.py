@@ -589,7 +589,7 @@ def split_reduce_kernel(
     type_id = pid // (grid_k * grid_n)
     start_tile_id = tl.load(slice_to_tiles + type_id * 2)
     end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
-    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype)
+    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
     for i in range(start_tile_id, end_tile_id):
         grad_other_tiles_ptr = grad_other_tiles + i * stride_grad_other_b
         acc += tl.load(grad_other_tiles_ptr)
