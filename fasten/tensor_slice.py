@@ -24,7 +24,7 @@ class TensorSlice:
             num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, deterministic: bool = False) -> None:
         self._data = data
 
         if type(slices) is int:
@@ -48,7 +48,8 @@ class TensorSlice:
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
         self._contiguous_ratio = self._get_contiguous_ratio()
-        self._tile_slice_mapping = self._get_tile_slice_mapping()
+        self._slice_tile_mapping = self._get_slice_tile_mapping()
+        self._deterministic = deterministic
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -98,6 +99,10 @@ class TensorSlice:
         return self._num_blocks
 
     @property
+    def deterministic(self):
+        return self._deterministic
+
+    @property
     def block_size(self):
         return self._block_size
 
@@ -107,7 +112,7 @@ class TensorSlice:
 
     @property
     def slice_tile_mapping(self):
-        return self._tile_slice_mapping
+        return self._slice_tile_mapping
 
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
@@ -147,10 +152,11 @@ class TensorSlice:
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
 
-    def _get_tile_slice_mapping(self) -> torch.Tensor:
+    def _get_slice_tile_mapping(self) -> torch.Tensor:
         _, counts = torch.unique_consecutive(self.slices[:, 1], return_counts=True)
         end_offsets = torch.cumsum(counts, dim=0)
         start_offsets = end_offsets.roll(1)
+        start_offsets[0] = 0
         return torch.stack((start_offsets, end_offsets), dim=1)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
@@ -213,6 +219,8 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
+                        slice_tile_mapping=input_tiles.slice_tile_mapping,
+                        deterministic=input_tiles.deterministic
                     ),
                     warmup=1,
                     rep=1,
@@ -222,7 +230,11 @@ class TensorSlice:
                 if scheduler.record:
                     scheduler.record(input_tiles.slices, key, config, ms)
                 if ms < best_ms:
-                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio)
+                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
+                                                                              input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
+                                                                              contiguous_ratio=input_tiles.contiguous_ratio,
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                                              deterministic=input_tiles.deterministic)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
