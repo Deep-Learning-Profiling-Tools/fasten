@@ -216,9 +216,13 @@ def _early_config_prune(configs, named_args, forward: bool):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if TILE_SIZE_K != K and \
-                ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
-            continue
+        if forward:
+            if TILE_SIZE_K != K and \
+                    ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
+        else:
+            if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
         pruned_configs.append(config)
     return pruned_configs
 
@@ -472,7 +476,7 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K', 'BLOCK_SIZE', 'NUM_BLOCKS'],
+    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, forward=False)
     }
@@ -483,7 +487,7 @@ def _split_noncontiguous_block(
 })
 @triton.jit
 def split_matmul_kernel(
-    input, input_tiles, grad_output, grad_other,
+    input, input_tiles, grad_output, grad_other, grad_other_tiles,
     K, N,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
@@ -643,7 +647,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
     out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
     split_matmul_kernel[grid](
-        input, input_tiles, grad_output, grad_other,
+        input, input_tiles, grad_output, grad_other, None,
         K, N,
         input.stride(0), input.stride(1),
         grad_output.stride(0), grad_output.stride(1),
@@ -653,5 +657,6 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         NUM_TILES=num_tiles,
         TILE_SIZE_M=tile_size,
         BLOCK_SIZE=block_size,
+        DETERMINISTIC=deterministic,
     )
     return grad_other
