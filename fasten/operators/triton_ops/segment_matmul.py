@@ -567,11 +567,25 @@ def split_matmul_kernel(
         )
 
 
+def _split_config_prune(configs, named_args):
+    pruned_configs = []
+    N = named_args['N']
+    K = named_args['K']
+    for config in configs:
+        kw = config.kwargs
+        TILE_SIZE_N = kw['TILE_SIZE_N']
+        TILE_SIZE_K = kw['TILE_SIZE_K']
+        if N > TILE_SIZE_N and K > TILE_SIZE_K:
+            pruned_configs.append(config)
+    assert len(pruned_configs) > 0, "No valid configs found"
+    return pruned_configs
+
+
 @triton.autotune(
     configs=_generate_configs(),
     key=['N', 'K'],
     prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, forward=True)
+        'early_config_prune': _split_config_prune
     },
     rep=10,
 )
@@ -587,16 +601,19 @@ def split_reduce_kernel(
     grid_k = tl.cdiv(K, TILE_SIZE_K)
     grid_n = tl.cdiv(N, TILE_SIZE_N)
     type_id = pid // (grid_k * grid_n)
+    pid_k = (pid % (grid_k * grid_n)) // grid_n
+    pid_n = (pid % (grid_k * grid_n)) % grid_n
     start_tile_id = tl.load(slice_to_tiles + type_id * 2)
     end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
-    k_offs = tl.arange(0, TILE_SIZE_K)[:, None]
-    n_offs = tl.arange(0, TILE_SIZE_N)[None, :]
+    k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
+    n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
     grad_other_tiles_ptr = grad_other_tiles + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n
+    mask = k_offs < K & n_offs < N
     for i in range(start_tile_id, end_tile_id):
-        acc += tl.load(grad_other_tiles_ptr)
+        acc += tl.load(grad_other_tiles_ptr, mask=mask)
         grad_other_tiles_ptr += stride_grad_other_b
-    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc)
+    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
@@ -715,7 +732,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
     if deterministic:
         def grid(meta):
             return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(K, meta['TILE_SIZE_N']), )
-        grad_other = split_reduce_kernel[grid](
+        split_reduce_kernel[grid](
             slice_tile_mapping, grad_other_tiles, grad_other,
             grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
             K, N,
