@@ -246,7 +246,7 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, forward=True)
     },
@@ -482,7 +482,7 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],
+    key=['N', 'K', 'TILE_SIZE_M'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, forward=False)
     }

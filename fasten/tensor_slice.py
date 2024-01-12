@@ -149,7 +149,7 @@ class TensorSlice:
 
     def _get_tile_slice_mapping(self) -> torch.Tensor:
         _, counts = torch.unique_consecutive(self.slices[:, 1], return_counts=True)
-        end_offsets = torch.cumsum(counts)
+        end_offsets = torch.cumsum(counts, dim=0)
         start_offsets = end_offsets.roll(1)
         return torch.stack((start_offsets, end_offsets), dim=1)
 
