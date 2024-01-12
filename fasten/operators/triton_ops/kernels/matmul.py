@@ -166,12 +166,12 @@ def _prefetch_matmul(
 
 @triton.jit
 def _dynamic_matmul(
-    pid_k, pid_n,
-    input, grad_output, grad_other,
+    pid_k, pid_n, next_id,
+    input, grad_output, grad_other, grad_other_tiles,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
-    stride_grad_other_k, stride_grad_other_n,
-    K, N, M,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N, M, length,
     out_dtype: tl.constexpr,
     TILE_K: tl.constexpr,
     TILE_N: tl.constexpr,
@@ -193,28 +193,28 @@ def _dynamic_matmul(
     # [M, N]
     grad_output_ptrs = grad_output + (offs_m[:, None] * stride_grad_output_m + offs_n[None, :] * stride_grad_output_n)
 
-    m_iter = M // TILE_M if EVEN_M else tl.cdiv(M, TILE_M)
+    m_iter = length // TILE_M if EVEN_M else tl.cdiv(length, TILE_M)
     for m in range(0, m_iter):
         if EVEN_K:
             if EVEN_M:
                 a = tl.load(input_ptrs)
             else:
-                a = tl.load(input_ptrs, mask=(offs_m[None, :] + m * TILE_M < M), other=0.0)
+                a = tl.load(input_ptrs, mask=(offs_m[None, :] + m * TILE_M < length), other=0.0)
         else:
             if EVEN_M:
                 a = tl.load(input_ptrs, mask=mask_k, other=0.0)
             else:
-                a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_M < M), other=0.0)
+                a = tl.load(input_ptrs, mask=mask_k & (offs_m[None, :] + m * TILE_M < length), other=0.0)
         if EVEN_N:
             if EVEN_M:
                 b = tl.load(grad_output_ptrs)
             else:
-                b = tl.load(grad_output_ptrs, mask=(offs_m[:, None] + m * TILE_M < M), other=0.0)
+                b = tl.load(grad_output_ptrs, mask=(offs_m[:, None] + m * TILE_M < length), other=0.0)
         else:
             if EVEN_M:
                 b = tl.load(grad_output_ptrs, mask=mask_n)
             else:
-                b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_M < M), other=0.0)
+                b = tl.load(grad_output_ptrs, mask=mask_n & (offs_m[:, None] + m * TILE_M < length), other=0.0)
 
         acc += tl.dot(a, b, out_dtype=out_dtype)
         input_ptrs += TILE_M * stride_input_m
@@ -222,10 +222,26 @@ def _dynamic_matmul(
 
     acc = acc.to(grad_other.dtype.element_ty)
 
-    c_ptrs = grad_other + \
-        stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-    if EVEN_N and EVEN_K:
-        tl.atomic_add(c_ptrs, acc)
+    if DETERMINISTIC:
+        c_ptrs = grad_other_tiles + \
+            next_id * stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
+        if EVEN_N and EVEN_K:
+            tl.store(c_ptrs, acc)
+        else:
+            c_mask = mask_k & mask_n
+            tl.store(c_ptrs, acc, mask=c_mask)
     else:
-        c_mask = mask_k & mask_n
-        tl.atomic_add(c_ptrs, acc, mask=c_mask)
+        c_ptrs = grad_other + \
+            stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
+        if M >= TILE_M * m_iter:
+            if EVEN_N and EVEN_K:
+                tl.store(c_ptrs, acc)
+            else:
+                c_mask = mask_k & mask_n
+                tl.store(c_ptrs, acc, mask=c_mask)
+        else:
+            if EVEN_N and EVEN_K:
+                tl.atomic_add(c_ptrs, acc)
+            else:
+                c_mask = mask_k & mask_n
+                tl.atomic_add(c_ptrs, acc, mask=c_mask)

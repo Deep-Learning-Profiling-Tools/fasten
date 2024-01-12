@@ -331,12 +331,12 @@ def segment_matmul_kernel(
 
 @triton.jit(noinline=True)
 def _split_dispatch(
-    pid_k, pid_n,
-    input, grad_output, grad_other,
+    pid_k, pid_n, next_id,
+    input, grad_output, grad_other, grad_other_tiles,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_k, stride_grad_other_n,
-    K, N, length,
+    K, N, M, length,
     out_dtype: tl.constexpr,
     TILE_K: tl.constexpr,
     TILE_N: tl.constexpr,
@@ -353,12 +353,12 @@ def _split_dispatch(
 
     if length <= TILE_M_16 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            K, N, M, length,
             out_dtype=out_dtype,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
@@ -370,12 +370,12 @@ def _split_dispatch(
         )
     elif length <= TILE_M_32 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            K, N, M, length,
             out_dtype=out_dtype,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
@@ -387,12 +387,12 @@ def _split_dispatch(
         )
     elif length <= TILE_M_64 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            K, N, M, length,
             out_dtype=out_dtype,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
@@ -404,12 +404,12 @@ def _split_dispatch(
         )
     else:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            K, N, M, length,
             out_dtype=out_dtype,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
@@ -424,7 +424,8 @@ def _split_dispatch(
 @triton.jit
 def _split_noncontiguous_block(
     pid_k, pid_n,
-    input, input_tiles, grad_output, grad_other,
+    input, input_slices, input_tiles,
+    grad_output, grad_other, grad_other_tiles,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
@@ -445,20 +446,25 @@ def _split_noncontiguous_block(
             # Use int32 to reduce register usage
             start_off = tl.load(input_tiles + 5 * next_id + 2)
             end_off = tl.load(input_tiles + 5 * next_id + 3)
+            slice_id = tl.load(input_tiles + 5 * next_id + 0)
+            slice_start = tl.load(input_slices + 5 * slice_id + 2)
+            slice_end = tl.load(input_slices + 5 * slice_id + 3)
+            M = slice_end - slice_start
             length = end_off - start_off
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
 
                 _split_dispatch(
-                    pid_k, pid_n,
+                    pid_k, pid_n, next_id,
                     input + start_off * stride_input_m,
                     grad_output + start_off * stride_grad_output_m,
                     grad_other + type_id * stride_grad_other_b,
+                    grad_other_tiles,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_k, stride_grad_other_n,
-                    K, N, length,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    K, N, M, length,
                     out_dtype=out_dtype,
                     TILE_K=TILE_K,
                     TILE_N=TILE_N,
@@ -487,7 +493,8 @@ def _split_noncontiguous_block(
 })
 @triton.jit
 def split_matmul_kernel(
-    input, input_tiles, grad_output, grad_other, grad_other_tiles,
+    input, input_slices, input_tiles,
+    grad_output, grad_other, grad_other_tiles,
     K, N,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
@@ -514,17 +521,22 @@ def split_matmul_kernel(
 
     # contiguous block
     if next_next_id == 0:
-        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        slice_id = tl.load(input_slices + 5 * next_id + 0)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        slice_start = tl.load(input_slices + 5 * slice_id + 2)
+        slice_end = tl.load(input_slices + 5 * slice_id + 3)
+        M = slice_end - slice_start
         _dynamic_matmul(
-            pid_k, pid_n,
+            pid_k, pid_n, next_id,
             input + start_off * stride_input_m,
             grad_output + start_off * stride_grad_output_m,
             grad_other + type_id * stride_grad_other_b,
+            grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, TILE_SIZE_M * BLOCK_SIZE,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, TILE_SIZE_M * BLOCK_SIZE,
             out_dtype=out_dtype,
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
@@ -537,7 +549,8 @@ def split_matmul_kernel(
     else:
         _split_noncontiguous_block(
             pid_k, pid_n,
-            input, input_tiles, grad_output, grad_other,
+            input, input_slices, input_tiles,
+            grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
@@ -552,6 +565,35 @@ def split_matmul_kernel(
             EVEN_N=False,
             DETERMINISTIC=DETERMINISTIC,
         )
+
+
+@triton.autotune(
+    configs=_generate_configs(),
+    key=['N', 'K'],
+    prune_configs_by={
+        'early_config_prune': functools.partial(_early_config_prune, forward=True)
+    },
+    rep=10,
+)
+@triton.jit
+def split_reduce_kernel(
+    slice_to_tiles, grad_other_tiles, grad_other,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N,
+    TILE_SIZE_N: tl.constexpr,
+    TILE_SIZE_K: tl.constexpr
+):
+    pid = tl.program_id(axis=0)
+    grid_k = tl.cdiv(K, TILE_SIZE_K)
+    grid_n = tl.cdiv(N, TILE_SIZE_N)
+    type_id = pid // (grid_k * grid_n)
+    start_tile_id = tl.load(slice_to_tiles + type_id * 2)
+    end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
+    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype)
+    for i in range(start_tile_id, end_tile_id):
+        grad_other_tiles_ptr = grad_other_tiles + i * stride_grad_other_b
+        acc += tl.load(grad_other_tiles_ptr)
+    tl.store(grad_other + type_id * stride_grad_other_b, acc)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
@@ -643,11 +685,16 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         # grad_other might be sparse
         grad_other = torch.zeros_like(other)
 
+    grad_other_tiles = None
+    if deterministic:
+        grad_other_tiles = torch.zeros((num_blocks, K, N), device=grad_other.device, dtype=grad_other.dtype)
+
     def grid(meta):
         return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
     out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
     split_matmul_kernel[grid](
-        input, input_tiles, grad_output, grad_other, None,
+        input, input_slices, input_tiles,
+        grad_output, grad_other, grad_other_tiles,
         K, N,
         input.stride(0), input.stride(1),
         grad_output.stride(0), grad_output.stride(1),
@@ -659,4 +706,12 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         BLOCK_SIZE=block_size,
         DETERMINISTIC=deterministic,
     )
+    if deterministic:
+        def grid(meta):
+            return (num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * torch.cdiv(K, meta['TILE_SIZE_N']), )
+        grad_other = split_reduce_kernel[grid](
+            input_slices, grad_other_tiles, grad_other,
+            grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+            K, N,
+        )
     return grad_other

@@ -47,7 +47,8 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
-        self._contiguous_ratio = self._get_contiguous_ratio(self.num_blocks)
+        self._contiguous_ratio = self._get_contiguous_ratio()
+        self._tile_slice_mapping = self._get_tile_slice_mapping()
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -104,6 +105,10 @@ class TensorSlice:
     def contiguous_ratio(self):
         return self._contiguous_ratio
 
+    @property
+    def slice_tile_mapping(self):
+        return self._tile_slice_mapping
+
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -139,8 +144,14 @@ class TensorSlice:
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
-    def _get_contiguous_ratio(self, num_blocks: int) -> float:
-        return torch.sum(self.slices[:, 4] == 0).item() / float(num_blocks)
+    def _get_contiguous_ratio(self) -> float:
+        return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
+
+    def _get_tile_slice_mapping(self) -> torch.Tensor:
+        _, counts = torch.unique_consecutive(self.slices[:, 1], return_counts=True)
+        end_offsets = torch.cumsum(counts)
+        start_offsets = end_offsets.roll(1)
+        return torch.stack((start_offsets, end_offsets), dim=1)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
