@@ -567,25 +567,11 @@ def split_matmul_kernel(
         )
 
 
-def _split_config_prune(configs, named_args):
-    pruned_configs = []
-    N = named_args['N']
-    K = named_args['K']
-    for config in configs:
-        kw = config.kwargs
-        TILE_SIZE_N = kw['TILE_SIZE_N']
-        TILE_SIZE_K = kw['TILE_SIZE_K']
-        if N > TILE_SIZE_N and K > TILE_SIZE_K:
-            pruned_configs.append(config)
-    assert len(pruned_configs) > 0, "No valid configs found"
-    return pruned_configs
-
-
 @triton.autotune(
     configs=_generate_configs(),
     key=['N', 'K'],
     prune_configs_by={
-        'early_config_prune': _split_config_prune
+        'early_config_prune': functools.partial(_early_config_prune, forward=False)
     },
     rep=10,
 )
