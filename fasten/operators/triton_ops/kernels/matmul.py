@@ -173,6 +173,7 @@ def _dynamic_matmul(
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
     K, N, M, length,
     out_dtype: tl.constexpr,
+    BLOCK_LENGTH: tl.constexpr,
     TILE_K: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_M: tl.constexpr,
@@ -233,7 +234,7 @@ def _dynamic_matmul(
     else:
         c_ptrs = grad_other + \
             stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-        if M <= length:
+        if M <= BLOCK_LENGTH:
             if EVEN_N and EVEN_K:
                 tl.store(c_ptrs, acc)
             else:

@@ -153,11 +153,45 @@ class TensorSlice:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
 
     def _get_slice_tile_mapping(self) -> torch.Tensor:
-        _, counts = torch.unique_consecutive(self.slices[:, 1], return_counts=True)
-        end_offsets = torch.cumsum(counts, dim=0)
-        start_offsets = end_offsets.roll(1)
-        start_offsets[0] = 0
-        return torch.stack((start_offsets, end_offsets), dim=1)
+        slices = self._slices.tolist()
+        # type id -> subslice index
+        subslices_dict = OrderedDict()
+        for i in range(len(slices)):
+            if slices[i][1] not in subslices_dict:
+                subslices_dict[slices[i][1]] = []
+            subslices_dict[slices[i][1]].append(i)
+        # compress subslices
+        subslices = []
+        small_subslices = []
+        prev_subslice = None
+        for type_id, subslice_indices in subslices_dict.items():
+            prev = -1
+            begin = -1
+            first_segment = True
+            for i, idx in enumerate(subslice_indices):
+                if prev != -1 and prev + 1 != idx:
+                    # new segment
+                    if first_segment:
+                        first_segment = False
+                        subslices.append([type_id, begin, prev + 1, -1])
+                        prev_subslice = subslices[-1]
+                    else:
+                        prev_subslice[3] = len(subslices_dict) + len(small_subslices)
+                        small_subslices.append([type_id, begin, prev + 1, -1])
+                        prev_subslice = small_subslices[-1]
+                    begin = idx
+                elif prev == -1:
+                    begin = idx
+                prev = idx
+            if first_segment:
+                subslices.append([type_id, begin, prev + 1, -1])
+                prev_subslice = subslices[-1]
+            else:
+                prev_subslice[3] = len(subslices_dict) + len(small_subslices)
+                small_subslices.append([type_id, begin, prev + 1, -1])
+                prev_subslice = small_subslices[-1]
+        subslices.extend(small_subslices)
+        return torch.tensor(subslices, dtype=torch.int, device=self._slices.device)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
