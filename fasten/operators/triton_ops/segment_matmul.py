@@ -129,7 +129,7 @@ def _noncontiguous_block(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
-                for i in range(0, triton.cdiv(length, TILE_M)):
+                for i in range(0, tl.cdiv(length, TILE_M)):
                     _dispatch(
                         pid_n,
                         start_off + i * TILE_M, end_off,
