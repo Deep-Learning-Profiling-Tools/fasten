@@ -104,23 +104,20 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
         compressed_subslices.extend(small_subslices)
         return compressed_subslices, num_blocks
     else:
-        prev_subslice = None
         blocks = []
         cur_block = []
         for subslice in subslices:
-            if prev_subslice is None:
+            if len(cur_block) == 0:
                 cur_block.append(subslice)
             else:
-                if subslice[1] == prev_subslice[1]:
+                if subslice[1] == cur_block[-1][1]:
                     cur_block.append(subslice)
                     if len(cur_block) == block_size:
                         blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
-                        prev_subslice = None
                         cur_block = []
                 else:
                     blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
                     cur_block = [subslice]
-            prev_subslice = subslice
         if len(cur_block) > 0:
             blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
         return blocks, len(blocks)
