@@ -51,7 +51,7 @@ class Scheduler:
         return configs
 
 
-def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num_blocks: int, reorder: bool) -> Tuple[list[list], list[list]]:
+def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num_blocks: int) -> Tuple[list[list], list[list]]:
     """Compress subslices into large and small blocks."""
     compressed_subslices = []
     small_subslices = []
@@ -71,19 +71,15 @@ def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num
             next_id = 0
             for j in range(block_start_idx, block_end_idx):
                 subslice = subslices[j]
-                if reorder:
-                    # Set continuation index for small blocks
-                    if j == block_start_idx:
-                        subslice[4] = len(small_subslices) + num_blocks
-                        next_id = subslice[4] + 1
-                        compressed_subslices.append(subslice)
-                    else:
-                        subslice[4] = next_id
-                        next_id += 1
-                        small_subslices.append(subslice)
-                else:
-                    subslice[4] = -1
+                # Set continuation index for small blocks
+                if j == block_start_idx:
+                    subslice[4] = len(small_subslices) + num_blocks
+                    next_id = subslice[4] + 1
                     compressed_subslices.append(subslice)
+                else:
+                    subslice[4] = next_id
+                    next_id += 1
+                    small_subslices.append(subslice)
 
     return compressed_subslices, small_subslices
 
@@ -97,18 +93,33 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
         for off in range(start, end, tile_size)
     ]
 
-    # Calculate the number of blocks
-    num_blocks = triton.cdiv(len(subslices), block_size)
+    if reorder:
+        # Calculate the number of blocks
+        num_blocks = triton.cdiv(len(subslices), block_size)
 
-    # Compress subslices into large and small blocks
-    compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks, reorder)
+        # Compress subslices into large and small blocks
+        compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks, reorder)
 
-    if not reorder:
-        return compressed_subslices, len(compressed_subslices)
-    else:
         # Combine all subslices and return
         compressed_subslices.extend(small_subslices)
         return compressed_subslices, num_blocks
+    else:
+        prev_subslice = None
+        blocks = []
+        cur_block = []
+        for subslice in subslices:
+            if prev_subslice is None:
+                cur_block.append(subslice)
+            else:
+                if subslice[1] == prev_subslice[1]:
+                    cur_block.append(subslice)
+                    if len(cur_block) == block_size:
+                        blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
+                else:
+                    blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
+                    cur_block = []
+            prev_subslice = subslice
+        return blocks, len(blocks)
 
 
 def _init_segment_matmul_forward_scheduler():
