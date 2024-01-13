@@ -98,7 +98,7 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
         num_blocks = triton.cdiv(len(subslices), block_size)
 
         # Compress subslices into large and small blocks
-        compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks, reorder)
+        compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks)
 
         # Combine all subslices and return
         compressed_subslices.extend(small_subslices)
