@@ -208,7 +208,9 @@ class TensorSlice:
         slices = self._slices.tolist()
         num_blocks = None
         if method == TilingMethod.DEFAULT:
-            subslices, num_blocks = default_tiling(slices, tile_size, block_size)
+            subslices, num_blocks = default_tiling(slices, tile_size, block_size, reorder=False)
+        elif method == TilingMethod.BALANCED:
+            subslices, num_blocks = default_tiling(slices, tile_size, block_size, reorder=True)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)

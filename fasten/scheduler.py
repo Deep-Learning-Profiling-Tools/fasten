@@ -51,7 +51,7 @@ class Scheduler:
         return configs
 
 
-def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num_blocks: int) -> Tuple[list[list], list[list]]:
+def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num_blocks: int, reorder: bool) -> Tuple[list[list], list[list]]:
     """Compress subslices into large and small blocks."""
     compressed_subslices = []
     small_subslices = []
@@ -71,20 +71,24 @@ def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num
             next_id = 0
             for j in range(block_start_idx, block_end_idx):
                 subslice = subslices[j]
-                # Set continuation index for small blocks
-                if j == block_start_idx:
-                    subslice[4] = len(small_subslices) + num_blocks
-                    next_id = subslice[4] + 1
-                    compressed_subslices.append(subslice)
+                if reorder:
+                    # Set continuation index for small blocks
+                    if j == block_start_idx:
+                        subslice[4] = len(small_subslices) + num_blocks
+                        next_id = subslice[4] + 1
+                        compressed_subslices.append(subslice)
+                    else:
+                        subslice[4] = next_id
+                        next_id += 1
+                        small_subslices.append(subslice)
                 else:
-                    subslice[4] = next_id
-                    next_id += 1
-                    small_subslices.append(subslice)
+                    subslice[4] = -1
+                    compressed_subslices.append(subslice)
 
     return compressed_subslices, small_subslices
 
 
-def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tuple[list[list], int]:
+def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) -> Tuple[list[list], int]:
     """Create subslices based on the tile size and compress them into blocks."""
     # Generate subslices
     subslices = [
@@ -97,7 +101,7 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
     num_blocks = triton.cdiv(len(subslices), block_size)
 
     # Compress subslices into large and small blocks
-    compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks)
+    compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks, reorder)
 
     # Combine all subslices and return
     compressed_subslices.extend(small_subslices)
