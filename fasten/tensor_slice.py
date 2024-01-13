@@ -6,7 +6,7 @@ from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
-from .scheduler import BestConfig, CacheEntry, Scheduler, default_tiling, schedulers
+from .scheduler import BestConfig, CacheEntry, Scheduler, schedulers, tiling
 from .utils import TilingMethod, is_debug
 
 
@@ -208,9 +208,9 @@ class TensorSlice:
         slices = self._slices.tolist()
         num_blocks = None
         if method == TilingMethod.DEFAULT:
-            subslices, num_blocks = default_tiling(slices, tile_size, block_size, reorder=False)
+            subslices, num_blocks = tiling(slices, tile_size, block_size, reorder=False)
         elif method == TilingMethod.BALANCED:
-            subslices, num_blocks = default_tiling(slices, tile_size, block_size, reorder=True)
+            subslices, num_blocks = tiling(slices, tile_size, block_size, reorder=True)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
