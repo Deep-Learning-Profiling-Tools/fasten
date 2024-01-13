@@ -103,6 +103,9 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
     # Compress subslices into large and small blocks
     compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks, reorder)
 
+    if not reorder:
+        return compressed_subslices, len(compressed_subslices)
+
     # Combine all subslices and return
     compressed_subslices.extend(small_subslices)
     return compressed_subslices, num_blocks
