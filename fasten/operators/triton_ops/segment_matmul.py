@@ -563,7 +563,6 @@ def split_matmul_kernel(
             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
             K, N, next_id, next_next_id,
             out_dtype=out_dtype,
-            NUM_BLOCKS=NUM_BLOCKS,
             BLOCK_SIZE=BLOCK_SIZE,
             NUM_TILES=NUM_TILES,
             TILE_K=TILE_SIZE_K,
