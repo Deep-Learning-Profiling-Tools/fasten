@@ -105,10 +105,10 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
 
     if not reorder:
         return compressed_subslices, len(compressed_subslices)
-
-    # Combine all subslices and return
-    compressed_subslices.extend(small_subslices)
-    return compressed_subslices, num_blocks
+    else:
+        # Combine all subslices and return
+        compressed_subslices.extend(small_subslices)
+        return compressed_subslices, num_blocks
 
 
 def _init_segment_matmul_forward_scheduler():
