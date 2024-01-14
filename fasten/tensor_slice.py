@@ -48,7 +48,6 @@ class TensorSlice:
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
         self._contiguous_ratio = self._get_contiguous_ratio()
-        self._slice_tile_mapping = self._get_slice_tile_mapping()
         self._deterministic = deterministic
 
     def _init_mappings(self):
@@ -110,10 +109,6 @@ class TensorSlice:
     def contiguous_ratio(self):
         return self._contiguous_ratio
 
-    @property
-    def slice_tile_mapping(self):
-        return self._slice_tile_mapping
-
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -151,47 +146,6 @@ class TensorSlice:
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
-
-    def _get_slice_tile_mapping(self) -> torch.Tensor:
-        slices = self._slices.tolist()
-        # type id -> subslice index
-        subslices_dict = OrderedDict()
-        for i in range(len(slices)):
-            if slices[i][1] not in subslices_dict:
-                subslices_dict[slices[i][1]] = []
-            subslices_dict[slices[i][1]].append(i)
-        # compress subslices
-        subslices = []
-        small_subslices = []
-        prev_subslice = None
-        for type_id, subslice_indices in subslices_dict.items():
-            prev = -1
-            begin = -1
-            first_segment = True
-            for i, idx in enumerate(subslice_indices):
-                if prev != -1 and prev + 1 != idx:
-                    # new segment
-                    if first_segment:
-                        first_segment = False
-                        subslices.append([type_id, begin, prev + 1, -1])
-                        prev_subslice = subslices[-1]
-                    else:
-                        prev_subslice[3] = len(subslices_dict) + len(small_subslices)
-                        small_subslices.append([type_id, begin, prev + 1, -1])
-                        prev_subslice = small_subslices[-1]
-                    begin = idx
-                elif prev == -1:
-                    begin = idx
-                prev = idx
-            if first_segment:
-                subslices.append([type_id, begin, prev + 1, -1])
-                prev_subslice = subslices[-1]
-            else:
-                prev_subslice[3] = len(subslices_dict) + len(small_subslices)
-                small_subslices.append([type_id, begin, prev + 1, -1])
-                prev_subslice = small_subslices[-1]
-        subslices.extend(small_subslices)
-        return torch.tensor(subslices, dtype=torch.int, device=self._slices.device)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
@@ -255,7 +209,6 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
-                        slice_tile_mapping=input_tiles.slice_tile_mapping,
                         deterministic=input_tiles.deterministic
                     ),
                     warmup=1,
@@ -269,7 +222,6 @@ class TensorSlice:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
                                                                               contiguous_ratio=input_tiles.contiguous_ratio,
-                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
                                                                               deterministic=input_tiles.deterministic)
             except OutOfResources:
                 if debug:

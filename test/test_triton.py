@@ -14,7 +14,7 @@ from fasten.utils import TilingMethod
 @pytest.mark.parametrize("block_size", [1, 4])
 @pytest.mark.parametrize("K", [16, 32, 80])
 @pytest.mark.parametrize("device", ["cuda"])
-@pytest.mark.parametrize("tiling_method", ["default"])
+@pytest.mark.parametrize("tiling_method", ["balanced", "default"])
 @pytest.mark.parametrize("deterministic", [True, False])
 def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_size: int, block_size: int, device: str, tiling_method: str, deterministic: bool) -> None:
     if not deterministic and phase == "forward":
