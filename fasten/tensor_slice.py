@@ -154,10 +154,10 @@ class TensorSlice:
         subslices = self._slices.tolist()
         segments = []
         begin = 0
-        for i in range(len(subslices)):
-            if i != 0 and subslices[i][1] != subslices[i - 1][1]:
+        for i in range(1, len(subslices)):
+            if subslices[i][1] != subslices[i - 1][1]:
                 segments.append((begin, i))
-            begin = i
+                begin = i
         segments.append((begin, len(subslices)))
         return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
 
