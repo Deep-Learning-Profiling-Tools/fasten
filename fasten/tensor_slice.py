@@ -156,9 +156,9 @@ class TensorSlice:
         begin = 0
         for i in range(1, len(subslices)):
             if subslices[i][1] != subslices[i - 1][1]:
-                segments.append((begin, i))
+                segments.append((subslices[i - 1][1], begin, i))
                 begin = i
-        segments.append((begin, len(subslices)))
+        segments.append((subslices[-1][1], begin, len(subslices)))
         return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
 
     def _get_contiguous_ratio(self) -> float:
