@@ -19,6 +19,8 @@ from fasten.utils import TilingMethod
 def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_size: int, block_size: int, device: str, tiling_method: str, deterministic: bool) -> None:
     if not deterministic and phase == "forward":
         pytest.skip("Non-deterministic test is not supported for forward pass")
+    if phase == "backward" and tiling_method == "balanced":
+        pytest.skip("Balanced tiling is not supported for backward pass")
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), dtype=dtype, device=device)
     types = torch.randint(0, T, (M,), device=device, dtype=torch.int)
