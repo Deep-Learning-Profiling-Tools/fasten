@@ -614,8 +614,8 @@ def split_reduce_kernel(
     type_id = pid // (grid_k * grid_n)
     pid_k = (pid % (grid_k * grid_n)) // grid_n
     pid_n = (pid % (grid_k * grid_n)) % grid_n
-    start_tile_id = tl.load(slice_to_tiles + type_id * 5)
-    end_tile_id = tl.load(slice_to_tiles + type_id * 5 + 1)
+    start_tile_id = tl.load(slice_to_tiles + type_id * 2)
+    end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
     k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
     n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
