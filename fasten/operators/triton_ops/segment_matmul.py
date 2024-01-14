@@ -614,9 +614,8 @@ def split_reduce_kernel(
     type_id = pid // (grid_k * grid_n)
     pid_k = (pid % (grid_k * grid_n)) // grid_n
     pid_n = (pid % (grid_k * grid_n)) % grid_n
-    slice_id = tl.load(slice_to_tiles + type_id * 5 + 0)
-    start_tile_id = tl.load(slice_to_tiles + type_id * 5 + 2)
-    end_tile_id = tl.load(slice_to_tiles + type_id * 5 + 3)
+    start_tile_id = tl.load(slice_to_tiles + type_id * 5)
+    end_tile_id = tl.load(slice_to_tiles + type_id * 5 + 1)
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
     k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
     n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
@@ -624,14 +623,15 @@ def split_reduce_kernel(
     mask = (k_offs < K) & (n_offs < N)
     for i in range(start_tile_id, end_tile_id):
         acc += tl.load(grad_other_tiles_ptrs + stride_grad_other_b * i, mask=mask)
-    tl.store(grad_other + slice_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
+    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
                            num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0,
-                           tile_size: int = 64, out_dtype: torch.dtype = None, deterministic: bool = False):
+                           tile_size: int = 64, out_dtype: torch.dtype = None,
+                           deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -667,7 +667,7 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_input: torch.Tensor = None,
                                   num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64,
-                                  deterministic: bool = False):
+                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input_tiles.device == input_slices.device == other.device
     assert other.dim() == 3
     K: int = other.size(1)
@@ -702,7 +702,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_other: torch.Tensor = None,
                                   num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64,
-                                  deterministic: bool = False):
+                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -744,8 +744,8 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         def grid(meta):
             return (num_slices * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N']), )
         split_reduce_kernel[grid](
-            input_slices, grad_other_tiles, grad_other,
+            slice_tile_mapping, grad_other_tiles, grad_other,
             grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
-            K, N,
+            K, N
         )
     return grad_other

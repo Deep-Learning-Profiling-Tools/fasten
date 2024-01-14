@@ -48,6 +48,7 @@ class TensorSlice:
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
         self._contiguous_ratio = self._get_contiguous_ratio()
+        self._slice_tile_mapping = self._get_slice_tile_mapping()
         self._deterministic = deterministic
 
     def _init_mappings(self):
@@ -109,6 +110,10 @@ class TensorSlice:
     def contiguous_ratio(self):
         return self._contiguous_ratio
 
+    @property
+    def slice_tile_mapping(self):
+        return self._slice_tile_mapping
+
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -143,6 +148,18 @@ class TensorSlice:
         '''
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
+
+    def _get_slice_tile_mapping(self) -> torch.Tensor:
+        # XXX: A hack, only works for default tiling method
+        subslices = self._slices.tolist()
+        segments = []
+        begin = 0
+        for i in range(len(subslices)):
+            if i != 0 and subslices[i][1] != subslices[i - 1][1]:
+                segments.append((begin, i))
+            begin = i
+        segments.append((begin, len(subslices)))
+        return torch.Tensor(segments, dtype=torch.int, device=self._slices.device)
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
@@ -209,6 +226,7 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
+                        slice_tile_mapping=input_tiles.slice_tile_mapping,
                         deterministic=input_tiles.deterministic
                     ),
                     warmup=1,
@@ -222,6 +240,7 @@ class TensorSlice:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
                                                                               contiguous_ratio=input_tiles.contiguous_ratio,
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
                                                                               deterministic=input_tiles.deterministic)
             except OutOfResources:
                 if debug:
