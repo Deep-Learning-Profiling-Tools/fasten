@@ -224,13 +224,22 @@ def _dynamic_matmul(
     acc = acc.to(grad_other.dtype.element_ty)
 
     if DETERMINISTIC:
-        c_ptrs = grad_other_tiles + \
-            next_id * stride_grad_other_b + stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
-        if EVEN_N and EVEN_K:
-            tl.store(c_ptrs, acc)
+        if M <= BLOCK_LENGTH:
+            c_ptrs = grad_other + \
+                stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
+            if EVEN_N and EVEN_K:
+                tl.store(c_ptrs, acc)
+            else:
+                c_mask = mask_k & mask_n
+                tl.store(c_ptrs, acc, mask=c_mask)
         else:
-            c_mask = mask_k & mask_n
-            tl.store(c_ptrs, acc, mask=c_mask)
+            c_ptrs = grad_other_tiles + \
+                next_id * stride_grad_other_b + stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]
+            if EVEN_N and EVEN_K:
+                tl.store(c_ptrs, acc)
+            else:
+                c_mask = mask_k & mask_n
+                tl.store(c_ptrs, acc, mask=c_mask)
     else:
         c_ptrs = grad_other + \
             stride_grad_other_k * offs_k[:, None] + stride_grad_other_n * offs_n[None, :]

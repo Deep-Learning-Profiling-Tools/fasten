@@ -617,6 +617,8 @@ def split_reduce_kernel(
     type_id = tl.load(slice_to_tiles + slice_id * 3 + 0)
     start_tile_id = tl.load(slice_to_tiles + slice_id * 3 + 1)
     end_tile_id = tl.load(slice_to_tiles + slice_id * 3 + 2)
+    if start_tile_id == end_tile_id or end_tile_id - start_tile_id == 1:
+        return
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
     k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
     n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
