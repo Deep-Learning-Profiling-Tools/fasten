@@ -614,8 +614,9 @@ def split_reduce_kernel(
     type_id = pid // (grid_k * grid_n)
     pid_k = (pid % (grid_k * grid_n)) // grid_n
     pid_n = (pid % (grid_k * grid_n)) % grid_n
-    start_tile_id = tl.load(slice_to_tiles + type_id * 2)
-    end_tile_id = tl.load(slice_to_tiles + type_id * 2 + 1)
+    slice_id = tl.load(slice_to_tiles + type_id * 5 + 0)
+    start_tile_id = tl.load(slice_to_tiles + type_id * 5 + 2)
+    end_tile_id = tl.load(slice_to_tiles + type_id * 5 + 3)
     acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
     k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
     n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
@@ -623,7 +624,7 @@ def split_reduce_kernel(
     mask = (k_offs < K) & (n_offs < N)
     for i in range(start_tile_id, end_tile_id):
         acc += tl.load(grad_other_tiles_ptrs + stride_grad_other_b * i, mask=mask)
-    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
+    tl.store(grad_other + slice_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
