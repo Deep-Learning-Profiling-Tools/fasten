@@ -30,7 +30,7 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices,
                                                    tile_size=tile_size, out_dtype=torch.float32,
                                                    num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                   deterministic=deterministic)
+                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
         output_ref = torch.zeros((M, K), dtype=dtype, device="cuda")
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
@@ -42,16 +42,16 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices,
                                                    tile_size=tile_size, num_blocks=input_tiles.num_blocks,
                                                    block_size=input_tiles.block_size,
-                                                   deterministic=deterministic)
+                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
         output_grad = torch.randn_like(output)
         grad_input = triton_ops.segment_matmul_backward_input(tensor_slice.data, output_grad, other, input_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
                                                               num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                              deterministic=deterministic)
+                                                              deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
         grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, input_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
                                                               num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                              deterministic=deterministic)
+                                                              deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)
         for i in range(len(tensor_slice)):
