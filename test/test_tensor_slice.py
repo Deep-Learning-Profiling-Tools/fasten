@@ -51,4 +51,5 @@ def test_tile_slice_mapping(tile_size: int, block_size: int, device: str):
     tensor_slice = compact_tensor_types(data, types, device=device)
     tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
     slice_tile_mapping = tensor_tile.slice_tile_mapping
+    print(tensor_tile.slices)
     print(slice_tile_mapping)

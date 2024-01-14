@@ -117,14 +117,10 @@ def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) 
             if len(cur_block) == 0:
                 cur_block.append(subslice)
             else:
-                if subslice[1] == cur_block[-1][1]:
-                    cur_block.append(subslice)
-                    if len(cur_block) == block_size:
-                        append_block()
-                        cur_block = []
-                else:
+                if len(cur_block) == block_size or subslice[1] == cur_block[-1][1]:
                     append_block()
-                    cur_block = [subslice]
+                    cur_block = []
+                cur_block.append(subslice)
         if len(cur_block) > 0:
             append_block()
         return blocks, len(blocks)

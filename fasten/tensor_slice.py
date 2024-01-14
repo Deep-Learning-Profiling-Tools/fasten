@@ -159,7 +159,7 @@ class TensorSlice:
                 segments.append((begin, i))
             begin = i
         segments.append((begin, len(subslices)))
-        return torch.Tensor(segments, dtype=torch.int, device=self._slices.device)
+        return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
