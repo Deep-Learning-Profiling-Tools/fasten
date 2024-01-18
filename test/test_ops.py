@@ -17,6 +17,15 @@ AIFB = read_slices_from_csv('AIFB.csv')
 AM = read_slices_from_csv('AM.csv')
 BGS = read_slices_from_csv('BGS.csv')
 MUTAG = read_slices_from_csv('MUTAG.csv')
+ACM = read_slices_from_csv('ACM.csv')
+IMDB = read_slices_from_csv('IMDB.csv')
+OSE_GVCS = read_slices_from_csv('OSE_GVCS.csv')
+AmazonBook = read_slices_from_csv('AmazonBook.csv')
+IGMCDataset_Douban = read_slices_from_csv('IGMCDataset_Douban.csv')
+IGMCDataset_Flixster = read_slices_from_csv('IGMCDataset_Flixster.csv')
+IGMCDataset_Yahoo_Music= read_slices_from_csv('IGMCDataset_Yahoo_Musiccsv')
+MovieLens1M = read_slices_from_csv('MovieLens1M.csv')
+MovieLens100K = read_slices_from_csv('MovieLens100K.csv')
 slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("MUTAG", MUTAG)]
 
 # non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
