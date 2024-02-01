@@ -9,7 +9,7 @@ import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch.profiler import ProfilerActivity, profile
-from torch_geometric.datasets import DBLP, HGBDataset
+from torch_geometric.datasets import DBLP, HGBDataset, Entities
 from torch_geometric.nn import HGTConv, Linear
 from torch_geometric.utils.sparse import index2ptr
 from triton.testing import do_bench
@@ -26,7 +26,7 @@ parser.add_argument('--device', type=str, default='cpu',
 parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
 parser.add_argument('--example', type=str, default='dblp',
-                    choices=['dblp', 'freebase'])
+                    choices=['dblp', 'freebase', 'aifb', 'am', 'bgs', 'mutag'])
 parser.add_argument('--hidden_size', type=int, default=32)
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
@@ -37,6 +37,10 @@ if args.example == 'dblp':
     # We initialize conference node features with a single one-vector as feature:
     dataset = DBLP(path, transform=T.Constant(node_types='conference'))
     out_channels = 4  # 4 class labels
+elif args.example in ['aifb', 'am', 'bgs', 'mutag']:
+    path = osp.join(osp.dirname(osp.realpath(__file__)), '../../Entities')
+    dataset = Entities(path, args.example, hetero=True)
+    out_channels = dataset.num_classes
 else:
     path = osp.join(osp.dirname(osp.realpath(__file__)), '../../data/HGBD')
     transform = T.Compose([T.Constant(value=random.random(),
@@ -46,6 +50,17 @@ else:
 
 data = dataset[0]
 device = torch.device(args.device)
+if args.example in ['aifb', 'am', 'bgs', 'mutag']:
+    data['v'].train_mask = torch.zeros(data['v'].num_nodes, dtype=torch.bool)
+    data['v'].test_mask = torch.zeros(data['v'].num_nodes, dtype=torch.bool)
+    data['v'].y = torch.Tensor([dataset.num_classes + 1] * data['v'].num_nodes).type(torch.LongTensor)
+    data['v'].x = torch.rand((data['v'].num_nodes, args.hidden_size))
+    for idx, i in enumerate(data.train_idx):
+        data['v'].train_mask[i] = True
+        data['v'].y[i] = data.train_y[idx]
+    for idx, i in enumerate(data.test_idx):
+        data['v'].test_mask[i] = True
+        data['v'].y[i] = data.test_y[idx]
 
 
 def ptr_to_tensor_slice(ptr: List, data: Tensor = None, is_sorted: bool = False) -> Tuple[TensorSlice, List]:
@@ -104,6 +119,8 @@ class HGT(torch.nn.Module):
         self.lin = Linear(hidden_channels, out_channels)
         if args.example == "dblp":
             self.node_out = "author"
+        elif args.example in ["aifb", "am", "bgs", "mutag"]:
+            self.node_out = "v"
         else:
             self.node_out = "book"
 
@@ -136,6 +153,8 @@ class FastenHGT(torch.nn.Module):
         self.lin = Linear(hidden_channels, out_channels)
         if args.example == "dblp":
             self.node_out = "author"
+        elif args.example in ["aifb", "am", "bgs", "mutag"]:
+            self.node_out = "v"
         else:
             self.node_out = "book"
 
@@ -208,6 +227,8 @@ def test(node_out: str):
 
 if args.example == 'dblp':
     node_out = 'author'
+elif args.example in ['aifb', 'am', 'bgs', 'mutag']:
+    node_out = 'v'
 else:
     node_out = 'book'
 
