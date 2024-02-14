@@ -6,7 +6,7 @@ from triton.runtime.autotuner import OutOfResources
 from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
-from .scheduler import BestConfig, CacheEntry, Scheduler, default_tiling, schedulers
+from .scheduler import BestConfig, CacheEntry, Scheduler, schedulers, tiling
 from .utils import TilingMethod, is_debug
 
 
@@ -24,7 +24,7 @@ class TensorSlice:
             num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, deterministic: bool = False) -> None:
         self._data = data
 
         if type(slices) is int:
@@ -47,7 +47,9 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = dict()
-        self._contiguous_ratio = self._get_contiguous_ratio(self.num_blocks)
+        self._contiguous_ratio = self._get_contiguous_ratio()
+        self._slice_tile_mapping = self._get_slice_tile_mapping()
+        self._deterministic = deterministic
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -97,12 +99,20 @@ class TensorSlice:
         return self._num_blocks
 
     @property
+    def deterministic(self):
+        return self._deterministic
+
+    @property
     def block_size(self):
         return self._block_size
 
     @property
     def contiguous_ratio(self):
         return self._contiguous_ratio
+
+    @property
+    def slice_tile_mapping(self):
+        return self._slice_tile_mapping
 
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
@@ -139,8 +149,20 @@ class TensorSlice:
         self._init_mappings()
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
-    def _get_contiguous_ratio(self, num_blocks: int) -> float:
-        return torch.sum(self.slices[:, 4] == 0).item() / float(num_blocks)
+    def _get_slice_tile_mapping(self) -> torch.Tensor:
+        # XXX: A hack, only works for default tiling method
+        subslices = self._slices.tolist()
+        segments = []
+        begin = 0
+        for i in range(1, len(subslices)):
+            if subslices[i][1] != subslices[i - 1][1]:
+                segments.append((subslices[i - 1][1], begin, i))
+                begin = i
+        segments.append((subslices[-1][1], begin, len(subslices)))
+        return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
+
+    def _get_contiguous_ratio(self) -> float:
+        return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
 
     def _lookup_cache(self, op_name: str, key: tuple) -> CacheEntry:
         if op_name in self._cache and key in self._cache[op_name]:
@@ -157,7 +179,9 @@ class TensorSlice:
         slices = self._slices.tolist()
         num_blocks = None
         if method == TilingMethod.DEFAULT:
-            subslices, num_blocks = default_tiling(slices, tile_size, block_size)
+            subslices, num_blocks = tiling(slices, tile_size, block_size, reorder=False)
+        elif method == TilingMethod.BALANCED:
+            subslices, num_blocks = tiling(slices, tile_size, block_size, reorder=True)
         else:
             raise ValueError(f'Unsupported tiling method {method}')
         return TensorSlice(self.data, subslices, self._slices.device, block_size=block_size, num_blocks=num_blocks)
@@ -202,6 +226,8 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
+                        slice_tile_mapping=input_tiles.slice_tile_mapping,
+                        deterministic=input_tiles.deterministic
                     ),
                     warmup=1,
                     rep=1,
@@ -211,7 +237,11 @@ class TensorSlice:
                 if scheduler.record:
                     scheduler.record(input_tiles.slices, key, config, ms)
                 if ms < best_ms:
-                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio)
+                    best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
+                                                                              input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
+                                                                              contiguous_ratio=input_tiles.contiguous_ratio,
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                                              deterministic=input_tiles.deterministic)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')

@@ -1,3 +1,4 @@
+import functools
 from typing import Optional
 
 import torch
@@ -128,23 +129,24 @@ def _noncontiguous_block(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
-                _dispatch(
-                    pid_n,
-                    start_off, end_off,
-                    input, other + type_id * stride_other_b, output,
-                    K, N,
-                    stride_input_m, stride_input_k,
-                    stride_other_k, stride_other_n,
-                    stride_output_m, stride_output_n,
-                    out_dtype=out_dtype,
-                    MASK_M=True,
-                    EVEN_K=EVEN_K,
-                    EVEN_N=EVEN_N,
-                    TILE_M=TILE_M,
-                    TILE_N=TILE_N,
-                    TILE_K=TILE_K,
-                    DYNAMIC_TILING=True,
-                )
+                for i in range(0, tl.cdiv(length, TILE_M)):
+                    _dispatch(
+                        pid_n,
+                        start_off + i * TILE_M, end_off,
+                        input, other + type_id * stride_other_b, output,
+                        K, N,
+                        stride_input_m, stride_input_k,
+                        stride_other_k, stride_other_n,
+                        stride_output_m, stride_output_n,
+                        out_dtype=out_dtype,
+                        MASK_M=True,
+                        EVEN_K=EVEN_K,
+                        EVEN_N=EVEN_N,
+                        TILE_M=TILE_M,
+                        TILE_N=TILE_N,
+                        TILE_K=TILE_K,
+                        DYNAMIC_TILING=True,
+                    )
             next_id = next_next_id
             next_next_id += 1
 
@@ -205,7 +207,7 @@ def _contiguous_block(
             )
 
 
-def _early_config_prune(configs, named_args):
+def _early_config_prune(configs, named_args, forward: bool):
     pruned_configs = []
     N = named_args['N']
     K = named_args['K']
@@ -215,9 +217,13 @@ def _early_config_prune(configs, named_args):
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if TILE_SIZE_K != K and \
-                ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
-            continue
+        if forward:
+            if TILE_SIZE_K != K and \
+                    ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
+        else:
+            if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
         pruned_configs.append(config)
     return pruned_configs
 
@@ -241,9 +247,9 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K', 'BLOCK_SIZE', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
-        'early_config_prune': _early_config_prune
+        'early_config_prune': functools.partial(_early_config_prune, forward=True)
     },
     rep=10,
 )
@@ -326,20 +332,22 @@ def segment_matmul_kernel(
 
 @triton.jit(noinline=True)
 def _split_dispatch(
-    pid_k, pid_n,
-    input, grad_output, grad_other,
+    pid_k, pid_n, next_id,
+    input, grad_output, grad_other, grad_other_tiles,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
-    stride_grad_other_k, stride_grad_other_n,
-    K, N, length,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N, M, length,
     out_dtype: tl.constexpr,
+    BLOCK_LENGTH: tl.constexpr,
     TILE_K: tl.constexpr,
     TILE_N: tl.constexpr,
     TILE_M: tl.constexpr,
     EVEN_N: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_M: tl.constexpr,
-    DYNAMIC_TILING: tl.constexpr
+    DYNAMIC_TILING: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     TILE_M_16: tl.constexpr = 16
     TILE_M_32: tl.constexpr = 32
@@ -347,74 +355,83 @@ def _split_dispatch(
 
     if length <= TILE_M_16 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, length,
             out_dtype=out_dtype,
+            BLOCK_LENGTH=BLOCK_LENGTH,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
             TILE_M=TILE_M_16,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     elif length <= TILE_M_32 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, length,
             out_dtype=out_dtype,
+            BLOCK_LENGTH=BLOCK_LENGTH,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
             TILE_M=TILE_M_32,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     elif length <= TILE_M_64 and DYNAMIC_TILING:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, length,
             out_dtype=out_dtype,
+            BLOCK_LENGTH=BLOCK_LENGTH,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
             TILE_M=TILE_M_64,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=EVEN_M,
+            DETERMINISTIC=DETERMINISTIC,
         )
     else:
         _dynamic_matmul(
-            pid_k, pid_n,
-            input, grad_output, grad_other,
+            pid_k, pid_n, next_id,
+            input, grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, length,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, length,
             out_dtype=out_dtype,
+            BLOCK_LENGTH=BLOCK_LENGTH,
             TILE_K=TILE_K,
             TILE_N=TILE_N,
             TILE_M=TILE_M,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=False,
+            DETERMINISTIC=DETERMINISTIC,
         )
 
 
 @triton.jit
 def _split_noncontiguous_block(
     pid_k, pid_n,
-    input, input_tiles, grad_output, grad_other,
+    input, input_slices, input_tiles,
+    grad_output, grad_other, grad_other_tiles,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
@@ -427,6 +444,7 @@ def _split_noncontiguous_block(
     TILE_M: tl.constexpr,
     EVEN_K: tl.constexpr,
     EVEN_N: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     for _ in range(0, BLOCK_SIZE):
         if next_id < NUM_TILES and next_id != -1:
@@ -438,17 +456,23 @@ def _split_noncontiguous_block(
 
             if length > 0:
                 type_id = tl.load(input_tiles + 5 * next_id + 1)
+                slice_id = tl.load(input_tiles + 5 * next_id + 0)
+                slice_start = tl.load(input_slices + 5 * slice_id + 2)
+                slice_end = tl.load(input_slices + 5 * slice_id + 3)
+                M = slice_end - slice_start
 
                 _split_dispatch(
-                    pid_k, pid_n,
+                    pid_k, pid_n, next_id,
                     input + start_off * stride_input_m,
                     grad_output + start_off * stride_grad_output_m,
                     grad_other + type_id * stride_grad_other_b,
+                    grad_other_tiles,
                     stride_input_m, stride_input_k,
                     stride_grad_output_m, stride_grad_output_n,
-                    stride_grad_other_k, stride_grad_other_n,
-                    K, N, length,
+                    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+                    K, N, M, length,
                     out_dtype=out_dtype,
+                    BLOCK_LENGTH=TILE_M * BLOCK_SIZE,
                     TILE_K=TILE_K,
                     TILE_N=TILE_N,
                     TILE_M=TILE_M,
@@ -456,6 +480,7 @@ def _split_noncontiguous_block(
                     EVEN_N=EVEN_N,
                     EVEN_M=False,
                     DYNAMIC_TILING=True,
+                    DETERMINISTIC=DETERMINISTIC,
                 )
             next_id = next_next_id
             next_next_id += 1
@@ -464,9 +489,9 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K'],
+    key=['N', 'K', 'TILE_SIZE_M'],
     prune_configs_by={
-        'early_config_prune': _early_config_prune
+        'early_config_prune': functools.partial(_early_config_prune, forward=False)
     }
 )
 @triton.heuristics({
@@ -475,7 +500,8 @@ def _split_noncontiguous_block(
 })
 @triton.jit
 def split_matmul_kernel(
-    input, input_tiles, grad_output, grad_other,
+    input, input_slices, input_tiles,
+    grad_output, grad_other, grad_other_tiles,
     K, N,
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
@@ -488,7 +514,8 @@ def split_matmul_kernel(
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
     EVEN_K: tl.constexpr,
-    EVEN_N: tl.constexpr
+    EVEN_N: tl.constexpr,
+    DETERMINISTIC: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     grid_k = tl.cdiv(K, TILE_SIZE_K)
@@ -501,29 +528,37 @@ def split_matmul_kernel(
 
     # contiguous block
     if next_next_id == 0:
-        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        slice_id = tl.load(input_tiles + 5 * next_id + 0)
         type_id = tl.load(input_tiles + 5 * next_id + 1)
+        start_off = tl.load(input_tiles + 5 * next_id + 2)
+        slice_start = tl.load(input_slices + 5 * slice_id + 2)
+        slice_end = tl.load(input_slices + 5 * slice_id + 3)
+        M = slice_end - slice_start
         _dynamic_matmul(
-            pid_k, pid_n,
+            pid_k, pid_n, next_id,
             input + start_off * stride_input_m,
             grad_output + start_off * stride_grad_output_m,
             grad_other + type_id * stride_grad_other_b,
+            grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
-            stride_grad_other_k, stride_grad_other_n,
-            K, N, TILE_SIZE_M * BLOCK_SIZE,
+            stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+            K, N, M, TILE_SIZE_M * BLOCK_SIZE,
             out_dtype=out_dtype,
+            BLOCK_LENGTH=TILE_SIZE_M * BLOCK_SIZE,
             TILE_K=TILE_SIZE_K,
             TILE_N=TILE_SIZE_N,
             TILE_M=TILE_SIZE_M,
             EVEN_K=EVEN_K,
             EVEN_N=EVEN_N,
             EVEN_M=True,
+            DETERMINISTIC=DETERMINISTIC,
         )
     else:
         _split_noncontiguous_block(
             pid_k, pid_n,
-            input, input_tiles, grad_output, grad_other,
+            input, input_slices, input_tiles,
+            grad_output, grad_other, grad_other_tiles,
             stride_input_m, stride_input_k,
             stride_grad_output_m, stride_grad_output_n,
             stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
@@ -535,14 +570,71 @@ def split_matmul_kernel(
             TILE_N=TILE_SIZE_N,
             TILE_M=TILE_SIZE_M,
             EVEN_K=EVEN_K,
-            EVEN_N=False,
+            EVEN_N=EVEN_N,
+            DETERMINISTIC=DETERMINISTIC,
         )
+
+
+def _generate_reduce_configs():
+    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    num_warps_options = [4, 8]  # Possible values for num_warps
+    num_stages_options = [1]  # Possible values for num_stages
+
+    configs = []
+    for tile_size_n in tile_sizes:
+        for tile_size_k in tile_sizes:
+            for num_warps in num_warps_options:
+                for num_stages in num_stages_options:
+                    config = triton.Config({'TILE_SIZE_N': tile_size_n, 'TILE_SIZE_K': tile_size_k},
+                                           num_warps=num_warps, num_stages=num_stages)
+                    configs.append(config)
+
+    return configs
+
+
+@triton.autotune(
+    configs=_generate_reduce_configs(),
+    key=['N', 'K'],
+    prune_configs_by={
+        'early_config_prune': functools.partial(_early_config_prune, forward=False)
+    },
+    rep=10,
+)
+@triton.jit
+def split_reduce_kernel(
+    slice_to_tiles, grad_other_tiles, grad_other,
+    stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    K, N,
+    TILE_SIZE_N: tl.constexpr,
+    TILE_SIZE_K: tl.constexpr
+):
+    pid = tl.program_id(axis=0)
+    grid_k = tl.cdiv(K, TILE_SIZE_K)
+    grid_n = tl.cdiv(N, TILE_SIZE_N)
+    slice_id = pid // (grid_k * grid_n)
+    pid_k = (pid % (grid_k * grid_n)) // grid_n
+    pid_n = (pid % (grid_k * grid_n)) % grid_n
+    type_id = tl.load(slice_to_tiles + slice_id * 3 + 0)
+    start_tile_id = tl.load(slice_to_tiles + slice_id * 3 + 1)
+    end_tile_id = tl.load(slice_to_tiles + slice_id * 3 + 2)
+    if start_tile_id == end_tile_id or end_tile_id - start_tile_id == 1:
+        return
+    acc = tl.zeros((TILE_SIZE_K, TILE_SIZE_N), dtype=grad_other.dtype.element_ty)
+    k_offs = pid_k * TILE_SIZE_K + tl.arange(0, TILE_SIZE_K)[:, None]
+    n_offs = pid_n * TILE_SIZE_N + tl.arange(0, TILE_SIZE_N)[None, :]
+    grad_other_tiles_ptrs = grad_other_tiles + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n
+    mask = (k_offs < K) & (n_offs < N)
+    for i in range(start_tile_id, end_tile_id):
+        acc += tl.load(grad_other_tiles_ptrs + stride_grad_other_b * i, mask=mask)
+    tl.store(grad_other + type_id * stride_grad_other_b + k_offs * stride_grad_other_k + n_offs * stride_grad_other_n, acc, mask=mask)
 
 
 def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
-                           num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64, out_dtype: torch.dtype = None):
+                           num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0,
+                           tile_size: int = 64, out_dtype: torch.dtype = None,
+                           deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -577,7 +669,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_input: torch.Tensor = None,
-                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64,
+                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input_tiles.device == input_slices.device == other.device
     assert other.dim() == 3
     K: int = other.size(1)
@@ -611,7 +704,8 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
 def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_other: torch.Tensor = None,
-                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64):
+                                  num_blocks: Optional[int] = None, block_size: int = 1, contiguous_ratio: float = 1.0, tile_size: int = 64,
+                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -619,6 +713,7 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
     K: int = input.size(1)
     N: int = other.size(2)
     num_tiles = input_tiles.size(0)
+    num_slices = input_slices.size(0)
     num_blocks = num_blocks or num_tiles
     grad_output = grad_output.contiguous()
 
@@ -627,11 +722,16 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         # grad_other might be sparse
         grad_other = torch.zeros_like(other)
 
+    grad_other_tiles = None
+    if deterministic:
+        grad_other_tiles = torch.zeros((num_tiles, K, N), device=grad_other.device, dtype=grad_other.dtype)
+
     def grid(meta):
         return ((num_blocks * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N'])), )
     out_dtype = torch_dtype_to_triton_dtype(grad_output.dtype, grad=True)
     split_matmul_kernel[grid](
-        input, input_tiles, grad_output, grad_other,
+        input, input_slices, input_tiles,
+        grad_output, grad_other, grad_other_tiles,
         K, N,
         input.stride(0), input.stride(1),
         grad_output.stride(0), grad_output.stride(1),
@@ -641,5 +741,14 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         NUM_TILES=num_tiles,
         TILE_SIZE_M=tile_size,
         BLOCK_SIZE=block_size,
+        DETERMINISTIC=deterministic,
     )
+    if deterministic:
+        def grid(meta):
+            return (num_slices * triton.cdiv(K, meta['TILE_SIZE_K']) * triton.cdiv(N, meta['TILE_SIZE_N']), )
+        split_reduce_kernel[grid](
+            slice_tile_mapping, grad_other_tiles, grad_other,
+            grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+            K, N
+        )
     return grad_other

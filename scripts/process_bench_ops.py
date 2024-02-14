@@ -11,7 +11,7 @@ def get_options(line: str, mode: str):
         phase = entries[5].strip()
     else:
         # 32-AIFB-slices0-fasten-float32-forward
-        k = entries[-1].strip()
+        k = entries[0].strip()
         dataset = entries[1].strip()
         engine = entries[3].strip()
         phase = entries[5].strip()
