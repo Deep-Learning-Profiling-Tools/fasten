@@ -15,6 +15,8 @@ class BestConfig:
     num_blocks: int = None  # number of blocks that group the tiles
     contiguous_ratio: float = None  # the ratio of contiguous tiles
     input_tiles: torch.Tensor = None
+    slice_tile_mapping: torch.Tensor = None
+    deterministic: bool = False
 
     def asdict(self):
         return asdict(self)
@@ -82,7 +84,7 @@ def _compress_slices(subslices: list[list], tile_size: int, block_size: int, num
     return compressed_subslices, small_subslices
 
 
-def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tuple[list[list], int]:
+def tiling(slices: list[tuple], tile_size: int, block_size: int, reorder: bool) -> Tuple[list[list], int]:
     """Create subslices based on the tile size and compress them into blocks."""
     # Generate subslices
     subslices = [
@@ -91,15 +93,34 @@ def default_tiling(slices: list[tuple], tile_size: int, block_size: int) -> Tupl
         for off in range(start, end, tile_size)
     ]
 
-    # Calculate the number of blocks
-    num_blocks = triton.cdiv(len(subslices), block_size)
+    if reorder:
+        # Calculate the number of blocks
+        num_blocks = triton.cdiv(len(subslices), block_size)
 
-    # Compress subslices into large and small blocks
-    compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks)
+        # Compress subslices into large and small blocks
+        compressed_subslices, small_subslices = _compress_slices(subslices, tile_size, block_size, num_blocks)
 
-    # Combine all subslices and return
-    compressed_subslices.extend(small_subslices)
-    return compressed_subslices, num_blocks
+        # Combine all subslices and return
+        compressed_subslices.extend(small_subslices)
+        return compressed_subslices, num_blocks
+    else:
+        blocks = []
+        cur_block = []
+
+        def append_block():
+            if cur_block[0][2] + tile_size * block_size == cur_block[-1][3]:
+                blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], 0])
+            else:
+                blocks.append([cur_block[0][0], cur_block[0][1], cur_block[0][2], cur_block[-1][3], -1])
+
+        for subslice in subslices:
+            if len(cur_block) == block_size or (len(cur_block) > 0 and subslice[1] != cur_block[-1][1]):
+                append_block()
+                cur_block = []
+            cur_block.append(subslice)
+        if len(cur_block) > 0:
+            append_block()
+        return blocks, len(blocks)
 
 
 def _init_segment_matmul_forward_scheduler():
@@ -116,7 +137,7 @@ def _init_segment_matmul_forward_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_input_scheduler():
@@ -133,7 +154,7 @@ def _init_segment_matmul_backward_input_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_other_scheduler():

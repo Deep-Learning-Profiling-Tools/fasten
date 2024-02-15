@@ -133,10 +133,10 @@ elif args.profile == "profile":
 
 else:  # args.profile == "benchmark"
     def pyg_fn():
-        model(edge_index, edge_type).argmax(dim=-1)
+        model(input, edge_index, edge_type).argmax(dim=-1)
 
     def fasten_fn():
-        model(edge_index, edge_type, tensor_slice).argmax(dim=-1)
+        model(input, edge_index, edge_type, tensor_slice).argmax(dim=-1)
     fn = pyg_fn if args.mode == "pyg" else fasten_fn
     inference_ms = do_bench(fn)
     train_ms = do_bench(train)
