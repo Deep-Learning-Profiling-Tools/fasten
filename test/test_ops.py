@@ -45,6 +45,8 @@ AmazonBook1 = read_slices_from_csv('datasets_csv/AmazonBook1.csv')
 IMDB2 = read_slices_from_csv('datasets_csv/IMDB2.csv')
 MovieLens1M1 = read_slices_from_csv('datasets_csv/MovieLens1M1.csv')
 MovieLens2 = read_slices_from_csv('datasets_csv/MovieLens2.csv')
+OGB_MAG1 = read_slices_from_csv('datasets_csv/OGB_MAG1.csv')
+OGB_MAG2 = read_slices_from_csv('datasets_csv/OGB_MAG2.csv')
 slices_obj = [("AIFB", AIFB), ("AM", AM), ("BGS", BGS), ("MUTAG", MUTAG)]
 
 # non-cudagraph tests are not stable on GPU, but pyg_lib only supports the cudagraph mode
