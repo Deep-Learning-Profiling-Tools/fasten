@@ -9,7 +9,7 @@ import torch_geometric
 import torch_geometric.transforms as T
 from torch import Tensor
 from torch.profiler import ProfilerActivity, profile
-from torch_geometric.datasets import DBLP, HGBDataset, Entities
+from torch_geometric.datasets import DBLP, Entities, HGBDataset
 from torch_geometric.nn import HGTConv, Linear
 from torch_geometric.utils.sparse import index2ptr
 from triton.testing import do_bench
