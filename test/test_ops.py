@@ -181,6 +181,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
 
+    # warmup again to trigger backward kernels
+    fn()
     proton.activate(session)
     with proton.scope(f"{slices_name}_{phase}_{engine}_{K}", metrics={"float16": get_matmul_flops(tensor_slice, other)}):
         fn()
