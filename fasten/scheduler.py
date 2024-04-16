@@ -16,7 +16,7 @@ class BestConfig:
     contiguous_ratio: float = None  # the ratio of contiguous tiles
     input_tiles: torch.Tensor = None
     slice_tile_mapping: torch.Tensor = None
-    deterministic: bool = False
+    deterministic: bool = True
 
     def asdict(self):
         return asdict(self)
