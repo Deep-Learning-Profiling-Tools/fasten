@@ -46,10 +46,10 @@ class TensorSlice:
         self._slices.requires_grad = False
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
-        self._cache = dict()
+        self._cache = {}
+        self._deterministic = deterministic
         self._contiguous_ratio = self._get_contiguous_ratio()
         self._slice_tile_mapping = self._get_slice_tile_mapping()
-        self._deterministic = deterministic
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -151,15 +151,18 @@ class TensorSlice:
 
     def _get_slice_tile_mapping(self) -> torch.Tensor:
         # XXX: A hack, only works for default tiling method
-        subslices = self._slices.tolist()
-        segments = []
-        begin = 0
-        for i in range(1, len(subslices)):
-            if subslices[i][1] != subslices[i - 1][1]:
-                segments.append((subslices[i - 1][1], begin, i))
-                begin = i
-        segments.append((subslices[-1][1], begin, len(subslices)))
-        return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
+        if self._deterministic:
+            subslices = self._slices.tolist()
+            segments = []
+            begin = 0
+            for i in range(1, len(subslices)):
+                if subslices[i][1] != subslices[i - 1][1]:
+                    segments.append((subslices[i - 1][1], begin, i))
+                    begin = i
+            segments.append((subslices[-1][1], begin, len(subslices)))
+            return torch.tensor(segments, dtype=torch.int, device=self._slices.device)
+        else:
+            return None
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
@@ -171,7 +174,7 @@ class TensorSlice:
 
     def _update_cache(self, op_name: str, key: tuple, entry: CacheEntry):
         if op_name not in self._cache:
-            self._cache[op_name] = dict()
+            self._cache[op_name] = {}
         self._cache[op_name][key] = entry
 
     def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_block_size, method: TilingMethod = Scheduler.default_tiling_method):
@@ -218,7 +221,7 @@ class TensorSlice:
                 continue
             try:
                 ms = do_bench(
-                    lambda: triton_op(
+                    lambda input_tiles=input_tiles, tile_size=tile_size: triton_op(
                         *args,
                         input_slices=self.slices,
                         input_tiles=input_tiles.slices,
@@ -251,7 +254,8 @@ class TensorSlice:
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
-        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks, contiguous_ratio=input_tiles.contiguous_ratio), getattr(triton_ops, op_name)
+        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
+                               contiguous_ratio=input_tiles.contiguous_ratio, deterministic=input_tiles.deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,
