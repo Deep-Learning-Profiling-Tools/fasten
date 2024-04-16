@@ -24,7 +24,7 @@ class TensorSlice:
             num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, deterministic: bool = True) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
         self._data = data
 
         if type(slices) is int:
@@ -47,7 +47,6 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = {}
-        self._deterministic = deterministic
         self._contiguous_ratio = self._get_contiguous_ratio()
         self._slice_tile_mapping = self._get_slice_tile_mapping()
 
@@ -99,10 +98,6 @@ class TensorSlice:
         return self._num_blocks
 
     @property
-    def deterministic(self):
-        return self._deterministic
-
-    @property
     def block_size(self):
         return self._block_size
 
@@ -150,8 +145,7 @@ class TensorSlice:
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
     def _get_slice_tile_mapping(self) -> torch.Tensor:
-        # XXX: A hack, only works for default tiling method
-        if self._deterministic:
+        if self.tiling_method == TilingMethod.DEFAULT:
             subslices = self._slices.tolist()
             segments = []
             begin = 0
@@ -230,7 +224,6 @@ class TensorSlice:
                         contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
                         slice_tile_mapping=input_tiles.slice_tile_mapping,
-                        deterministic=input_tiles.deterministic
                     ),
                     warmup=1,
                     rep=1,
@@ -243,8 +236,7 @@ class TensorSlice:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
                                                                               contiguous_ratio=input_tiles.contiguous_ratio,
-                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
-                                                                              deterministic=input_tiles.deterministic)
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
@@ -255,7 +247,7 @@ class TensorSlice:
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                               contiguous_ratio=input_tiles.contiguous_ratio, deterministic=input_tiles.deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
+                               contiguous_ratio=input_tiles.contiguous_ratio, slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,

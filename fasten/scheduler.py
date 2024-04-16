@@ -7,6 +7,10 @@ from dataclasses import asdict, dataclass, field
 from .utils import TilingMethod
 
 
+class GlobalConfig:
+    deterministic: bool = True
+
+
 # TODO: Merge best config into input_tiles
 @dataclass
 class BestConfig:
@@ -16,7 +20,7 @@ class BestConfig:
     contiguous_ratio: float = None  # the ratio of contiguous tiles
     input_tiles: torch.Tensor = None
     slice_tile_mapping: torch.Tensor = None
-    deterministic: bool = True
+    deterministic: bool = GlobalConfig.deterministic
 
     def asdict(self):
         return asdict(self)
@@ -137,7 +141,7 @@ def _init_segment_matmul_forward_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_input_scheduler():
@@ -154,13 +158,14 @@ def _init_segment_matmul_backward_input_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_other_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
+    # Only default tiling method is supported
     return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
 
 
