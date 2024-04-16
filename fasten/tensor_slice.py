@@ -24,7 +24,7 @@ class TensorSlice:
             num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, tiling_method: TilingMethod = TilingMethod.DEFAULT) -> None:
         self._data = data
 
         if type(slices) is int:
@@ -47,6 +47,7 @@ class TensorSlice:
         self._block_size = block_size
         self._num_blocks = num_blocks if num_blocks is not None else len(self._slices)
         self._cache = {}
+        self._tiling_method = tiling_method
         self._contiguous_ratio = self._get_contiguous_ratio()
         self._slice_tile_mapping = self._get_slice_tile_mapping()
 
@@ -145,7 +146,7 @@ class TensorSlice:
         return self._slices[index][1] if is_tensor else self._slices[index][1].item()
 
     def _get_slice_tile_mapping(self) -> torch.Tensor:
-        if self.tiling_method == TilingMethod.DEFAULT:
+        if self._tiling_method == TilingMethod.DEFAULT:
             subslices = self._slices.tolist()
             segments = []
             begin = 0
