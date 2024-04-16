@@ -1,11 +1,10 @@
-import csv
-import json
 from typing import Callable
 
 import pyg_lib
 import pytest
 import torch
 import triton
+import triton.profiler as proton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
@@ -109,20 +108,11 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
 
 
 @pytest.fixture(scope="session")
-def benchmark_results(format: str = "csv"):
-    results = []
-    yield results
+def session():
+    session_id = proton.start("benchmark_results", hook="triton")
+    yield session_id
 
-    if format == "json":
-        with open("benchmark_results.json", "w") as json_file:
-            json.dump(results, json_file, indent=4)
-    elif format == "csv":
-        header = results[0].keys()
-        with open("benchmark_results.csv", "w") as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=header)
-            writer.writeheader()
-            for row in results:
-                writer.writerow(row)
+    proton.finalize()
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
@@ -130,7 +120,7 @@ def benchmark_results(format: str = "csv"):
 @pytest.mark.parametrize("engine", ["fasten", "pyg", "torch"])
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
-def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
+def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, session: Callable[[], None]) -> None:
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -151,6 +141,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     if phase == "backward":
         data.requires_grad = True
         other.requires_grad = True
+
+    proton.deactivate(session)
 
     # warmup and get output
     if engine == "fasten":
@@ -188,17 +180,10 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
             pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
-    ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    tflops = get_matmul_flops(tensor_slice, other) / 1e12
-    print(f"{phase} ms {ms} tflops {tflops}")
 
-    benchmark_results.append({
-        "engine": engine,
-        "phase": phase,
-        "dataset": slices_name,
-        "K": K,
-        "ms": ms,
-    })
+    proton.activate(session)
+    with proton.scope(f"{slices_name}_{phase}_{engine}_{K}", metrics={"float16": get_matmul_flops(tensor_slice, other)}):
+        fn()
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
