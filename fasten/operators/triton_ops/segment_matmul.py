@@ -207,7 +207,7 @@ def _contiguous_block(
             )
 
 
-def _early_config_prune(configs, named_args, forward: bool):
+def _early_config_prune(configs: triton.Config, named_args: dict, forward: bool, **kwargs):
     pruned_configs = []
     N = named_args['N']
     K = named_args['K']
