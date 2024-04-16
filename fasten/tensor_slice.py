@@ -24,7 +24,7 @@ class TensorSlice:
             num_blocks: The number of blocks that group the tiles, default is None, which means the number of blocks is the same as the number of slices.
     '''
 
-    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, deterministic: bool = False) -> None:
+    def __init__(self, data: torch.Tensor, slices: Union[torch.Tensor, list, int], device: str = 'cpu', block_size: int = 1, num_blocks: Optional[int] = None, deterministic: bool = True) -> None:
         self._data = data
 
         if type(slices) is int:
