@@ -137,7 +137,7 @@ def _init_segment_matmul_forward_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_input_scheduler():
@@ -154,7 +154,7 @@ def _init_segment_matmul_backward_input_scheduler():
             return True
         return False
 
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.BALANCED], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
 
 
 def _init_segment_matmul_backward_other_scheduler():
