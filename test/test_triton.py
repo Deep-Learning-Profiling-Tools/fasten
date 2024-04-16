@@ -7,7 +7,7 @@ from fasten.utils import TilingMethod
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
-@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("dtype", ["float32", "float16"])
 @pytest.mark.parametrize("M", [128, 1024])
 @pytest.mark.parametrize("T", [16, 33])
 @pytest.mark.parametrize("tile_size", [16, 64])
