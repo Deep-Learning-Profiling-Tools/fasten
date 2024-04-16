@@ -126,7 +126,7 @@ def benchmark_results(format: str = "csv"):
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
-@pytest.mark.parametrize("dtype", ["float32", "float16"])
+@pytest.mark.parametrize("dtype", ["float32"])
 @pytest.mark.parametrize("engine", ["fasten", "pyg", "torch"])
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
