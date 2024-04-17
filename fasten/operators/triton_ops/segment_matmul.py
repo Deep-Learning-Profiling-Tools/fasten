@@ -255,9 +255,6 @@ def _perf_model(
         NUM_BLOCKS: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
         TILE_SIZE_M: tl.constexpr,
-        EVEN_K: tl.constexpr,
-        EVEN_N: tl.constexpr,
-        EQUAL_K: tl.constexpr,
         TILE_SIZE_N: tl.constexpr,
         TILE_SIZE_K: tl.constexpr,
         num_stages, num_warps, **kwargs):
