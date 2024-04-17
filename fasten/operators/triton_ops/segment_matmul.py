@@ -214,7 +214,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     element_size = named_args['input'].element_size()
     N = named_args['N']
     K = named_args['K']
-    TILE_SIZE_M = named_args['TILE_SIZE_M']
+    TILE_SIZE_M = kwargs['TILE_SIZE_M']
     device = torch.cuda.current_device()
     min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
     min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
