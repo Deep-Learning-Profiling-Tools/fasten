@@ -25,8 +25,8 @@ parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
 parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
-parser.add_argument('--example', type=str, default='dblp',
-                    choices=['dblp', 'freebase', 'aifb', 'am', 'bgs', 'mutag'])
+parser.add_argument('--example', type=str, default='DBLP',
+                    choices=['DBLP', 'Freebase', 'AIFB', 'AM', 'BGS', 'MUTAG'])
 parser.add_argument('--hidden_size', type=int, default=32)
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
