@@ -19,8 +19,6 @@ from fasten.utils import TilingMethod
 def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_size: int, block_size: int, device: str, tiling_method: str, deterministic: bool) -> None:
     if not deterministic and phase == "forward":
         pytest.skip("Non-deterministic test is not supported for forward pass")
-    if phase == "backward" and tiling_method == "balanced":
-        pytest.skip("Balanced tiling is not supported for backward pass")
     dtype = getattr(torch, dtype)
     data = torch.randn((M, K), dtype=dtype, device=device)
     types = torch.randint(0, T, (M,), device=device, dtype=torch.int)
@@ -48,12 +46,12 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output_grad = torch.randn_like(output)
         grad_input = triton_ops.segment_matmul_backward_input(tensor_slice.data, output_grad, other, input_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
-                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                              deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
-        grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, input_tiles.slices,
+                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
+        grad_tiles = tensor_slice.tiling(tile_size, method=TilingMethod.DEFAULT, block_size=block_size)
+        grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, grad_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
-                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                              deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                              num_blocks=grad_tiles.num_blocks, block_size=grad_tiles.block_size,
+                                                              deterministic=deterministic, slice_tile_mapping=grad_tiles.slice_tile_mapping)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)
         for i in range(len(tensor_slice)):

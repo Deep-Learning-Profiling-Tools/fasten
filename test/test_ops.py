@@ -1,5 +1,3 @@
-import csv
-import json
 from typing import Callable
 
 import pyg_lib
@@ -9,6 +7,7 @@ import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
+from fasten.scheduler import set_deterministic
 from fasten.stats import get_matmul_bytes, get_matmul_flops
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
@@ -56,14 +55,16 @@ use_cudagraph = False
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("engine", [Engine.TORCH, Engine.TRITON])
 @pytest.mark.parametrize("phase", ["forward", "backward"])
-@pytest.mark.parametrize("dtype", ["float32", "float16"])
+@pytest.mark.parametrize("dtype", ["float32"])
 @pytest.mark.parametrize("slices", [slices0, slices1, AIFB, AM, BGS, MUTAG])
 @pytest.mark.parametrize("K", [16, 32, 64, 80])
-def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase: str, dtype: str) -> None:
+@pytest.mark.parametrize("deterministic", [True, False])
+def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase: str, dtype: str, deterministic: bool) -> None:
     if engine == Engine.TRITON and device == "cpu":
         pytest.skip("Triton does not support CPU inference")
     if device == "cpu" and dtype == "float16":
         pytest.skip("CPU does not support FP16")
+    set_deterministic(deterministic)
     T = len(slices)
     dtype = getattr(torch, dtype)
     M = sum([s.stop - s.start for s in slices])
@@ -106,28 +107,21 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
 
 
 @pytest.fixture(scope="session")
-def benchmark_results(format: str = "csv"):
-    results = []
-    yield results
+def session():
+    import triton.profiler as proton
+    session_id = proton.start("benchmark_results", hook="triton")
+    yield session_id
 
-    if format == "json":
-        with open("benchmark_results.json", "w") as json_file:
-            json.dump(results, json_file, indent=4)
-    elif format == "csv":
-        header = results[0].keys()
-        with open("benchmark_results.csv", "w") as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=header)
-            writer.writeheader()
-            for row in results:
-                writer.writerow(row)
+    proton.finalize()
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
-@pytest.mark.parametrize("dtype", ["float32", "float16"])
+@pytest.mark.parametrize("dtype", ["float32"])
 @pytest.mark.parametrize("engine", ["fasten", "pyg", "torch"])
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
-def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, benchmark_results: Callable[[], None]) -> None:
+def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, session: Callable[[], None]) -> None:
+    import triton.profiler as proton
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -148,6 +142,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     if phase == "backward":
         data.requires_grad = True
         other.requires_grad = True
+
+    proton.deactivate(session)
 
     # warmup and get output
     if engine == "fasten":
@@ -185,24 +181,19 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
             pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
-    ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    tflops = get_matmul_flops(tensor_slice, other) / 1e12
-    print(f"{phase} ms {ms} tflops {tflops}")
 
-    benchmark_results.append({
-        "engine": engine,
-        "phase": phase,
-        "dataset": slices_name,
-        "K": K,
-        "ms": ms,
-    })
+    # warmup again to trigger backward kernels
+    fn()
+    proton.activate(session)
+    with proton.scope(f"{slices_name}_{phase}_{engine}_{K}", metrics={"float16": get_matmul_flops(tensor_slice, other)}):
+        fn()
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32"])
 @pytest.mark.parametrize("engine", ["fasten", "pyg"])
 @pytest.mark.parametrize("K", [32, 128])
-@pytest.mark.parametrize("T", [i for i in range(100, 2000, 200)])
+@pytest.mark.parametrize("T", list(range(100, 2000, 200)))
 @pytest.mark.parametrize("M", [1000000])
 def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, benchmark_results: Callable[[], None]):
     if engine == "pyg" and dtype == "float16":

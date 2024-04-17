@@ -345,7 +345,7 @@ class FastenRGATConv(MessagePassing):
                 :obj:`(edge_index, attention_weights)`, holding the computed
                 attention weights for each edge. (default: :obj:`None`)
         """
-        # propagate_type: (x: Tensor, edge_type: OptTensor, edge_attr: OptTensor)  # noqa
+        # propagate_type: (x: Tensor, edge_type: OptTensor, edge_attr: OptTensor, tensor_slice=tensor_slice)  # noqa
         out = self.propagate(edge_index=edge_index, edge_type=edge_type, x=x,
                              size=size, edge_attr=edge_attr, tensor_slice=tensor_slice)
 

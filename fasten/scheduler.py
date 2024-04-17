@@ -7,16 +7,19 @@ from dataclasses import asdict, dataclass, field
 from .utils import TilingMethod
 
 
+class GlobalConfig:
+    deterministic: bool = True
+
+
 # TODO: Merge best config into input_tiles
 @dataclass
 class BestConfig:
     tile_size: int = None  # the maximum size of each tile
     block_size: int = None  # the number of tiles belong to a block, -1: dynamic block size
     num_blocks: int = None  # number of blocks that group the tiles
-    contiguous_ratio: float = None  # the ratio of contiguous tiles
     input_tiles: torch.Tensor = None
     slice_tile_mapping: torch.Tensor = None
-    deterministic: bool = False
+    deterministic: bool = GlobalConfig.deterministic
 
     def asdict(self):
         return asdict(self)
@@ -159,8 +162,9 @@ def _init_segment_matmul_backward_input_scheduler():
 
 def _init_segment_matmul_backward_other_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
-        return (input.size(1), other.size(2))  # (K, N)
+        return (input.size(1), other.size(2), GlobalConfig.deterministic)  # (K, N)
 
+    # Only default tiling method is supported
     return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
 
 
@@ -169,3 +173,7 @@ schedulers = {
     'segment_matmul_backward_input': _init_segment_matmul_backward_input_scheduler(),
     'segment_matmul_backward_other': _init_segment_matmul_backward_other_scheduler(),
 }
+
+
+def set_deterministic(deterministic: bool):
+    GlobalConfig.deterministic = deterministic
