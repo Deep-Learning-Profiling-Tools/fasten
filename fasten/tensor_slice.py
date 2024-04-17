@@ -50,6 +50,8 @@ class TensorSlice:
         self._tiling_method = tiling_method
         self._contiguous_ratio = self._get_contiguous_ratio()
         self._slice_tile_mapping = self._get_slice_tile_mapping()
+        self._stddev_tile_size = self._get_stddev_tile_size()
+        self._avg_tile_size = self._get_avg_tile_size()
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -110,6 +112,14 @@ class TensorSlice:
     def slice_tile_mapping(self):
         return self._slice_tile_mapping
 
+    @property
+    def avg_tile_size(self):
+        return self._avg_tile_size
+
+    @property
+    def stddev_tile_size(self):
+        return self._stddev_tile_size
+
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -159,6 +169,12 @@ class TensorSlice:
         else:
             return None
 
+    def _get_avg_tile_size(self) -> float:
+        return torch.mean(self._slices[:, 3] - self._slices[:, 2]).item()
+
+    def _get_stddev_tile_size(self) -> float:
+        return torch.std(self._slices[:, 3] - self._slices[:, 2]).item()
+
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
 
@@ -173,7 +189,8 @@ class TensorSlice:
         self._cache[op_name][key] = entry
 
     def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_block_size, method: TilingMethod = Scheduler.default_tiling_method):
-        assert tile_size > 0
+        if tile_size <= 0:
+            raise ValueError(f'Invalid tile size {tile_size}')
         slices = self._slices.tolist()
         num_blocks = None
         if method == TilingMethod.DEFAULT:

@@ -9,9 +9,9 @@ from .utils import TilingMethod
 
 class GlobalConfig:
     deterministic: bool = True
+    with_perf_model: bool = False
 
 
-# TODO: Merge best config into input_tiles
 @dataclass
 class BestConfig:
     tile_size: int = None  # the maximum size of each tile

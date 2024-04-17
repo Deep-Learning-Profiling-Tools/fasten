@@ -4,7 +4,10 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
+from triton.runtime import driver
 
+from ...scheduler import GlobalConfig
 from ...utils import torch_dtype_to_triton_dtype
 from .kernels.matmul import _dynamic_matmul, _general_matmul, _reg_matmul
 
@@ -207,31 +210,91 @@ def _contiguous_block(
             )
 
 
-def _early_config_prune(configs: triton.Config, named_args: dict, forward: bool, **kwargs):
+def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: bool, **kwargs):
     pruned_configs = []
+    element_size = named_args['input'].element_size()
     N = named_args['N']
     K = named_args['K']
+    TILE_SIZE_M = named_args['TILE_SIZE_M']
+    device = torch.cuda.current_device()
     min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
     min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
+    max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
     for config in configs:
         kw = config.kwargs
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
-        if forward:
+        if is_weight:
+            if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
+        else:
+            # 1. Prune configs that use more stages than necessary
             if TILE_SIZE_K != K and \
                     ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
                 continue
-        else:
-            if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+            # 2. Prune configs by shared memory usage
+            required_shared_memory = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * config.num_stages * element_size
+            if required_shared_memory > max_shared_memory:
+                continue
+            # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
+            if TILE_SIZE_N >= 256 and TILE_SIZE_M >= 256 and config.num_warps == 4:
                 continue
         pruned_configs.append(config)
     return pruned_configs
 
 
+def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, BLOCK_SIZE, num_stages, num_warps, contiguous):
+    if not GlobalConfig.with_perf_model:
+        return
+    device = torch.cuda.current_device()
+    capability = torch.cuda.get_device_capability(device)
+    num_sm_map = {80: 108, 89: 128, 90: 114}
+    threads_sm_map = {80: 2048, 89: 1536, 90: 2048}
+    cap = capability[0] * 10 + capability[1]
+    if cap not in num_sm_map:
+        # Unknown architecture
+        return 1.0
+    # Parallel efficiency
+    sms = num_sm_map[cap]
+    threads_per_sm = threads_sm_map[cap]
+    element_size = input.element_size()
+    dtype = input.dtype()
+    max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
+    required_shared_memory = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * num_stages * element_size
+    num_ctas_per_sm = min(max_shared_memory // required_shared_memory, threads_per_sm // (num_warps * 32))
+    num_ctas = num_blocks * triton.cdiv(N, TILE_SIZE_N)
+    ctas_per_wave = num_ctas_per_sm * sms
+    parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
+    # Compute efficiency
+    # 1. Compute
+    ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
+    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
+    compute_ms = ops / tensorcore_tflops
+    # 2. Indexing
+    estimated_l2_latency = 200  # TODO: Fix
+    estimated_gld_throughput = 500  # TODO: Fix
+    indexing_ms = num_blocks * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
+    # 3. Sync
+    estimated_sync_latency = 50  # TODO: Fix
+    num_iters = triton.cdiv(K, TILE_SIZE_K)
+    sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
+    # 4. Store
+    store_bytes = TILE_SIZE_M * TILE_SIZE_N * element_size
+    estimated_l2_bw = 5 * 1e3
+    store_ms = store_bytes / estimated_l2_bw
+    # 5. Load
+    dram_bw = get_dram_gbps(device)
+    load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
+    load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
+    compute_efficiency = compute_ms / (compute_ms + indexing_ms + sync_ms + store_ms + load_ms)
+    # Only prune those with both low parallel and compute efficiency
+    return min(1 - parallel_efficiency, 1 - compute_efficiency)
+
+
 def _generate_configs():
-    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
-    num_warps_options = [4]  # Possible values for num_warps
-    num_stages_options = [2, 3, 4]  # Possible values for num_stages
+    tile_sizes = [32, 64, 128, 256]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    num_warps_options = [4, 8]  # Possible values for num_warps
+    num_stages_options = [3, 4]  # Possible values for num_stages
 
     configs = []
     for tile_size_n in tile_sizes:
@@ -247,9 +310,11 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K', 'TILE_SIZE_M'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'STD_TILE_M', 'AVG_TILE_M'],  # Tune for each N and K, high latency
     prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, forward=True)
+        'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
+        'perf_model': _perf_model,
+        'top_k': 10,
     },
     rep=10,
 )
@@ -275,6 +340,8 @@ def segment_matmul_kernel(
     EQUAL_K: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
     TILE_SIZE_K: tl.constexpr,
+    STD_TILE_M: tl.constexpr,
+    AVG_TILE_M: tl.constexpr,
 ):
     TILE_N: tl.constexpr = TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_K
@@ -595,9 +662,6 @@ def _generate_reduce_configs():
 @triton.autotune(
     configs=_generate_reduce_configs(),
     key=['N', 'K'],
-    prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, forward=False)
-    },
     rep=10,
 )
 @triton.jit
