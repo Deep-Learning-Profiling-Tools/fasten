@@ -7,6 +7,12 @@ import triton.language as tl
 from .operators import torch_ops, triton_ops
 
 
+class GlobalConfig:
+    deterministic: bool = True
+    with_perf_model: bool = False
+    binning_interval: float = 32.0
+
+
 class TilingMethod(Enum):
     DEFAULT = 'default'
     BALANCED = 'balanced'
@@ -55,3 +61,7 @@ def torch_dtype_to_triton_dtype(dtype, grad: bool = False):
 def is_debug():
     FLAG = os.environ.get('FASTEN_DEBUG', '0')
     return FLAG == '1' or FLAG.lower() == 'true' or FLAG.lower() == 'yes' or FLAG.lower() == 'on'
+
+
+def binning(x, interval: float = GlobalConfig.binning_interval):
+    return x // interval

@@ -36,7 +36,17 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     tensor_slice = compact_tensor_types(data, types, device=device)
     tensor_tile = tensor_slice.tiling(tile_size, block_size=block_size)
     num_slices = triton.cdiv(90 - 63, tile_size) + triton.cdiv(128 - 90, tile_size) + triton.cdiv(63, tile_size)
+    avg_tile_size = 128 / num_slices
+    # calculate stddev tile size
+    stddev_tile_size = 0
+    for i in len(tensor_tile):
+        start = tensor_tile.get_slice_from_index(i, is_tensor=False)[2]
+        end = tensor_tile.get_slice_from_index(i, is_tensor=False)[3]
+        stddev_tile_size += ((end - start) - avg_tile_size) ** 2
+    stddev_tile_size = (stddev_tile_size / num_slices) ** 0.5
     assert len(tensor_tile) == num_slices
+    assert tensor_tile.avg_tile_size == avg_tile_size
+    assert tensor_tile.stddev_tile_size == stddev_tile_size
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])

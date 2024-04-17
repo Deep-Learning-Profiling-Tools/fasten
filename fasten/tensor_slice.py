@@ -241,29 +241,34 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         tile_size=tile_size,
                         slice_tile_mapping=input_tiles.slice_tile_mapping,
+                        avg_tile_size=input_tiles.avg_tile_size,
+                        stddev_tile_size=input_tiles.stddev_tile_size
                     ),
                     warmup=1,
                     rep=1,
                 )
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}')
+                    print(f"op_name={op_name}, tile_size={tile_size}, block_size={block_size}, avg_tile_size={input_tiles.avg_tile_size},  \
+                           stddev_tile_size={input_tiles.stddev_tile_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}")
                 if scheduler.record:
                     scheduler.record(input_tiles.slices, key, config, ms)
                 if ms < best_ms:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, contiguous_ratio={best_config.contiguous_ratio}')
+            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, avg_tile_size={input_tiles.avg_tile_size},  \
+                    stddev_tile_size={input_tiles.stddev_tile_size}, contiguous_ratio={best_config.contiguous_ratio}')
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                               slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
+                               slice_tile_mapping=input_tiles.slice_tile_mapping, avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,

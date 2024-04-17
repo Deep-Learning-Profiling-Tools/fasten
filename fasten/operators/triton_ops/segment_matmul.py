@@ -7,8 +7,7 @@ import triton.language as tl
 from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
 from triton.runtime import driver
 
-from ...scheduler import GlobalConfig
-from ...utils import torch_dtype_to_triton_dtype
+from ...utils import GlobalConfig, binning, torch_dtype_to_triton_dtype
 from .kernels.matmul import _dynamic_matmul, _general_matmul, _reg_matmul
 
 
@@ -310,7 +309,7 @@ def _generate_configs():
 
 @triton.autotune(
     configs=_generate_configs(),
-    key=['N', 'K', 'STD_TILE_M', 'AVG_TILE_M'],  # Tune for each N and K, high latency
+    key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
         'perf_model': _perf_model,
@@ -330,6 +329,8 @@ def segment_matmul_kernel(
     stride_input_m, stride_input_k,
     stride_other_b, stride_other_k, stride_other_n,
     stride_output_m, stride_output_n,
+    stddev_tile_size_m,
+    avg_tile_size_m,
     out_dtype: tl.constexpr,
     NUM_TILES: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
@@ -339,9 +340,7 @@ def segment_matmul_kernel(
     EVEN_N: tl.constexpr,
     EQUAL_K: tl.constexpr,
     TILE_SIZE_N: tl.constexpr,
-    TILE_SIZE_K: tl.constexpr,
-    STD_TILE_M: tl.constexpr,
-    AVG_TILE_M: tl.constexpr,
+    TILE_SIZE_K: tl.constexpr
 ):
     TILE_N: tl.constexpr = TILE_SIZE_N
     TILE_K: tl.constexpr = TILE_SIZE_K
@@ -697,7 +696,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
                            input_tiles: torch.Tensor, input_slices: torch.Tensor,
                            output: torch.Tensor = None,
                            num_blocks: Optional[int] = None, block_size: int = 1,
-                           tile_size: int = 64, out_dtype: torch.dtype = None, **kwargs):
+                           tile_size: int = 64, out_dtype: Optional[torch.dtype] = None,
+                           avg_tile_size: Optional[float] = None, stddev_tile_size: Optional[float] = None, **kwargs):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
@@ -720,11 +720,14 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
+        stddev_tile_size=binning(stddev_tile_size),
+        avg_tile_size=binning(avg_tile_size),
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
         out_dtype=out_dtype,
         TILE_SIZE_M=tile_size,
+
     )
     return output
 
@@ -732,7 +735,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
 def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor,
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_input: torch.Tensor = None,
-                                  num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64, **kwargs):
+                                  num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64,
+                                  avg_tile_size: Optional[float] = None, stddev_tile_size: Optional[float] = None, **kwargs):
     assert input_tiles.device == input_slices.device == other.device
     assert other.dim() == 3
     K: int = other.size(1)
@@ -754,6 +758,8 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
         grad_output.stride(0), grad_output.stride(1),
         other.stride(0), other.stride(2), other.stride(1),  # swap K and N
         grad_input.stride(0), grad_input.stride(1),
+        stddev_tile_size=stddev_tile_size,
+        avg_tile_size=avg_tile_size,
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
@@ -767,7 +773,8 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
                                   input_tiles: torch.Tensor, input_slices: torch.Tensor,
                                   grad_other: torch.Tensor = None,
                                   num_blocks: Optional[int] = None, block_size: int = 1, tile_size: int = 64,
-                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None):
+                                  deterministic: bool = False, slice_tile_mapping: torch.Tensor = None,
+                                  avg_tile_size: Optional[float] = None, stddev_tile_size: Optional[float] = None, **kwargs):
     assert input.size(1) == other.size(1)
     assert input_tiles.device == input_slices.device == input.device == other.device
     assert input.dim() == 2
