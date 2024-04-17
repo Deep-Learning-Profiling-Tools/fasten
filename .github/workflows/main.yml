@@ -4,10 +4,10 @@ on:
   push:
     branches:
       - main
-      - Karthikg99-patch-1
   pull_request:
     branches:
       - main
+
 permissions: write-all
 jobs:
   build:
