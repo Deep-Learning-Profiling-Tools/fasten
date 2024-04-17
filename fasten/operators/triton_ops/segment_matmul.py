@@ -259,7 +259,7 @@ def _perf_model(
         TILE_SIZE_K: tl.constexpr,
         num_stages, num_warps, **kwargs):
     if not GlobalConfig.with_perf_model:
-        return
+        return 1.0
     device = torch.cuda.current_device()
     capability = torch.cuda.get_device_capability(device)
     num_sm_map = {80: 108, 89: 128, 90: 114}
@@ -328,7 +328,7 @@ def _generate_configs():
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
         'perf_model': _perf_model,
-        'top_k': 10,
+        'top_k': 10 if GlobalConfig.with_perf_model else 10,
     },
     rep=10,
 )
