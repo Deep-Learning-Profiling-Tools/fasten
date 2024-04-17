@@ -170,10 +170,10 @@ class TensorSlice:
             return None
 
     def _get_avg_tile_size(self) -> float:
-        return torch.mean(self._slices[:, 3] - self._slices[:, 2]).item()
+        return torch.mean(self._slices[:, 3].float() - self._slices[:, 2].float()).item()
 
     def _get_stddev_tile_size(self) -> float:
-        return torch.std(self._slices[:, 3] - self._slices[:, 2]).item()
+        return torch.std(self._slices[:, 3].float() - self._slices[:, 2].float()).item()
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
