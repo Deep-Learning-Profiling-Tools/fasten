@@ -242,7 +242,25 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     return pruned_configs
 
 
-def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, BLOCK_SIZE, num_stages, num_warps, **kwargs):
+def _perf_model(
+        input, input_tiles, other, output,
+        K, N,
+        stride_input_m, stride_input_k,
+        stride_other_b, stride_other_k, stride_other_n,
+        stride_output_m, stride_output_n,
+        stddev_tile_size_m,
+        avg_tile_size_m,
+        out_dtype: tl.constexpr,
+        NUM_TILES: tl.constexpr,
+        NUM_BLOCKS: tl.constexpr,
+        BLOCK_SIZE: tl.constexpr,
+        TILE_SIZE_M: tl.constexpr,
+        EVEN_K: tl.constexpr,
+        EVEN_N: tl.constexpr,
+        EQUAL_K: tl.constexpr,
+        TILE_SIZE_N: tl.constexpr,
+        TILE_SIZE_K: tl.constexpr,
+        num_stages, num_warps, **kwargs):
     if not GlobalConfig.with_perf_model:
         return
     device = torch.cuda.current_device()
@@ -261,7 +279,7 @@ def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, 
     max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
     required_shared_memory = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * num_stages * element_size
     num_ctas_per_sm = min(max_shared_memory // required_shared_memory, threads_per_sm // (num_warps * 32))
-    num_ctas = num_blocks * triton.cdiv(N, TILE_SIZE_N)
+    num_ctas = NUM_BLOCKS * triton.cdiv(N, TILE_SIZE_N)
     ctas_per_wave = num_ctas_per_sm * sms
     parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
     # Compute efficiency
@@ -272,7 +290,7 @@ def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, 
     # 2. Indexing
     estimated_l2_latency = 200  # TODO: Fix
     estimated_gld_throughput = 500  # TODO: Fix
-    indexing_ms = num_blocks * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
+    indexing_ms = NUM_BLOCKS * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
     # 3. Sync
     estimated_sync_latency = 50  # TODO: Fix
     num_iters = triton.cdiv(K, TILE_SIZE_K)
