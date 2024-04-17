@@ -4,7 +4,6 @@ import pyg_lib
 import pytest
 import torch
 import triton
-import triton.profiler as proton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
@@ -109,6 +108,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
 
 @pytest.fixture(scope="session")
 def session():
+    import triton.profiler as proton
     session_id = proton.start("benchmark_results", hook="triton")
     yield session_id
 
@@ -121,6 +121,7 @@ def session():
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
 def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, session: Callable[[], None]) -> None:
+    import triton.profiler as proton
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
