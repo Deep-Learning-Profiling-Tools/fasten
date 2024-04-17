@@ -572,7 +572,7 @@ def _split_noncontiguous_block(
     reset_to_zero=['grad_other'],
     key=['N', 'K', 'TILE_SIZE_M'],
     prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, forward=False)
+        'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
     }
 )
 @triton.heuristics({
