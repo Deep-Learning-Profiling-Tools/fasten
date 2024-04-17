@@ -46,8 +46,7 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output_grad = torch.randn_like(output)
         grad_input = triton_ops.segment_matmul_backward_input(tensor_slice.data, output_grad, other, input_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
-                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                              deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
         grad_tiles = tensor_slice.tiling(tile_size, method=TilingMethod.DEFAULT, block_size=block_size)
         grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, grad_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,

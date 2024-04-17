@@ -222,7 +222,6 @@ class TensorSlice:
                         input_tiles=input_tiles.slices,
                         num_blocks=input_tiles.num_blocks,
                         block_size=input_tiles.block_size,
-                        contiguous_ratio=input_tiles.contiguous_ratio,
                         tile_size=tile_size,
                         slice_tile_mapping=input_tiles.slice_tile_mapping,
                     ),
@@ -236,7 +235,6 @@ class TensorSlice:
                 if ms < best_ms:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                                                                              contiguous_ratio=input_tiles.contiguous_ratio,
                                                                               slice_tile_mapping=input_tiles.slice_tile_mapping)
             except OutOfResources:
                 if debug:
@@ -248,7 +246,7 @@ class TensorSlice:
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                               contiguous_ratio=input_tiles.contiguous_ratio, slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
+                               slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,

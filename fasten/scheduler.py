@@ -17,7 +17,6 @@ class BestConfig:
     tile_size: int = None  # the maximum size of each tile
     block_size: int = None  # the number of tiles belong to a block, -1: dynamic block size
     num_blocks: int = None  # number of blocks that group the tiles
-    contiguous_ratio: float = None  # the ratio of contiguous tiles
     input_tiles: torch.Tensor = None
     slice_tile_mapping: torch.Tensor = None
     deterministic: bool = GlobalConfig.deterministic
