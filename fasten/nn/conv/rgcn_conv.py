@@ -186,7 +186,7 @@ class FastenRGCNConv(MessagePassing):
         if isinstance(edge_index, SparseTensor):
             edge_type = edge_index.storage.value()
 
-        # propagate_type: (x: Tensor, edge_type_ptr: OptTensor)
+        # propagate_type: (x: Tensor, edge_tensor_slice: OptTensor)
         out = torch.zeros(x_r.size(0), self.out_channels, device=x_r.device)
 
         weight = self.weight
