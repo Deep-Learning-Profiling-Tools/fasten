@@ -242,7 +242,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     return pruned_configs
 
 
-def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, BLOCK_SIZE, num_stages, num_warps, contiguous):
+def _perf_model(input, K, N, num_blocks, TILE_SIZE_M, TILE_SIZE_N, TILE_SIZE_K, BLOCK_SIZE, num_stages, num_warps, **kwargs):
     if not GlobalConfig.with_perf_model:
         return
     device = torch.cuda.current_device()
