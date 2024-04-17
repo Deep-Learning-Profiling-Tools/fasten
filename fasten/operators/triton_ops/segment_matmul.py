@@ -328,7 +328,7 @@ def _generate_configs():
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
         'perf_model': _perf_model,
-        'top_k': 10 if GlobalConfig.with_perf_model else 10,
+        'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
     rep=10,
 )
