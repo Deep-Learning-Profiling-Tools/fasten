@@ -241,6 +241,9 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             # Not register blocking, too many stages, or too few stages
             if TILE_SIZE_K != K and (TILE_SIZE_K * (config.num_stages - 1) > K or TILE_SIZE_K * (config.num_stages + 1) < K):
                 continue
+            # 5. Large K don't use register blocking
+            if TILE_SIZE_K == K and K >= 128:
+                continue
         pruned_configs.append(config)
     if is_debug():
         print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}, is_weight={is_weight}")
