@@ -331,7 +331,7 @@ def _generate_configs():
     configs=_generate_configs(),
     key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],  # Tune for each N and K, high latency
     prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
+        'early_config_prune': functools.partial(_early_config_prune, is_weight=False),
         'perf_model': _perf_model,
         'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
