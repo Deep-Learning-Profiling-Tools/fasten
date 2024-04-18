@@ -53,8 +53,6 @@ python rgat.py --device cuda --dataset MUTAG
 python rgat.py --device cuda --mode fasten --dataset MUTAG
 ```
 
-## Publication
-
 ## Compatibility
 
 #### Supported Platforms
