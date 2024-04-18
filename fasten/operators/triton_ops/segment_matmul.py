@@ -227,9 +227,8 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
                 continue
         else:
-            # 1. Prune configs that use more stages than necessary
-            if TILE_SIZE_K != K and \
-                    ((TILE_SIZE_K * config.num_stages > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+            # 1. Prune configs that use more registers and shared memory than necessary
+            if TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n:
                 continue
             # 2. Prune configs by shared memory usage
             required_shared_memory = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * config.num_stages * element_size
@@ -238,8 +237,9 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
             if TILE_SIZE_N >= 256 and TILE_SIZE_K >= 256 and config.num_warps == 4:
                 continue
-            # 4. Prune small tile sizes
-            if (TILE_SIZE_N == 32 and N >= 128) or (TILE_SIZE_K == 32 and K >= 128):
+            # 4. Prune K dimension by only eliminating the following three cases:
+            # Not register blocking, too many stages, or too few stages
+            if TILE_SIZE_K != K and TILE_SIZE_K * (config.num_stages - 1) > K and TILE_SIZE_K * (config.num_stages + 1) < K:
                 continue
         pruned_configs.append(config)
     if is_debug():
