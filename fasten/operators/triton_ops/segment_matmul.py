@@ -217,6 +217,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     N = named_args['N']
     K = named_args['K']
     TILE_SIZE_M = kwargs['TILE_SIZE_M']
+    BLOCK_SIZE = kwargs['BLOCK_SIZE']
     device = torch.cuda.current_device()
     min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
     min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
@@ -238,6 +239,10 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
             if TILE_SIZE_K >= 256 and TILE_SIZE_N >= 256 and config.num_warps == 4:
                 print(f"Pruned 3: {config}")
+                continue
+            # 4. Prune M dimension by only eliminating the following three cases:
+            # Too many stages
+            if TILE_SIZE_M * (config.num_stages - 1) < BLOCK_SIZE * TILE_SIZE_M:
                 continue
         else:
             # 1. Prune configs that use more registers and shared memory than necessary
