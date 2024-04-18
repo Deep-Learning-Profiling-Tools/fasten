@@ -262,7 +262,7 @@ class TensorSlice:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
         if debug:
             print(f"best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, "
-                  f"avg_tile_size={input_tiles.avg_tile_size}, stddev_tile_size={input_tiles.stddev_tile_size}")
+                  f"avg_tile_size={best_config.avg_tile_size}, stddev_tile_size={best_config.stddev_tile_size}")
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:

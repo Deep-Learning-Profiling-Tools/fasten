@@ -163,15 +163,19 @@ def _init_segment_matmul_backward_other_scheduler():
 
     def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
-        largest_tile_size = torch.max(input_tiles[:, 3] - input_tiles[:, 2]).item()
-        smallest_tile_size = torch.min(input_tiles[:, 3] - input_tiles[:, 2]).item()
-        if smallest_tile_size > tile_size * (block_size + 1) or tile_size * (block_size - 1) > largest_tile_size:
-            # Too small tile or too large tile should be pruned
+        stddev_tile_size = input_tiles.stddev_tile_size
+        avg_tile_size = input_tiles.avg_tile_size
+        num_slices = len(input_tiles)
+        if num_slices < 128 and block_size >= 2:
+            # 1. low parallelism
+            return True
+        if block_size != 1 and stddev_tile_size / avg_tile_size >= 0.5:
+            # 2. low utilization
             return True
         return False
 
     # Only default tiling method is supported
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
 
 
 schedulers = {
