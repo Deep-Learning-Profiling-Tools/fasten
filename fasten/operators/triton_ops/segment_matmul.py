@@ -228,13 +228,16 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
         if is_weight:
             # 1. Prune too large tiles
             if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                print(f"Pruned 1: {config}")
                 continue
             # 2. Prune configs by shared memory usage
             required_shared_memory = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * config.num_stages * element_size
             if required_shared_memory > max_shared_memory:
+                print(f"Pruned 2: {config}")
                 continue
             # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
             if TILE_SIZE_K >= 256 and TILE_SIZE_N >= 256 and config.num_warps == 4:
+                print(f"Pruned 3: {config}")
                 continue
         else:
             # 1. Prune configs that use more registers and shared memory than necessary
@@ -254,6 +257,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             # 5. Large K don't use register blocking
             if TILE_SIZE_K == K and K >= 128:
                 continue
+        print(f"Kept: {config}")
         pruned_configs.append(config)
     if is_debug():
         print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}, is_weight={is_weight}")
