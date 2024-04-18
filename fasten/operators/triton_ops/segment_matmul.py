@@ -333,6 +333,7 @@ def _generate_configs():
         'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
     rep=10,
+    use_cuda_graph=True,
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -575,7 +576,8 @@ def _split_noncontiguous_block(
     key=['N', 'K', 'TILE_SIZE_M'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
-    }
+    },
+    use_cuda_graph=True,
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -679,6 +681,7 @@ def _generate_reduce_configs():
     configs=_generate_reduce_configs(),
     key=['N', 'K'],
     rep=10,
+    use_cuda_graph=True
 )
 @triton.jit
 def split_reduce_kernel(
@@ -737,8 +740,8 @@ def segment_matmul_forward(input: torch.Tensor, other: torch.Tensor,
         input.stride(0), input.stride(1),
         other.stride(0), other.stride(1), other.stride(2),
         output.stride(0), output.stride(1),
-        binning(stddev_tile_size),
-        binning(avg_tile_size),
+        binning(stddev_tile_size, 32),
+        binning(avg_tile_size, 16),
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
