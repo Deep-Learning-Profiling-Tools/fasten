@@ -242,7 +242,8 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
                 continue
             # 4. Prune M dimension by only eliminating the following three cases:
             # Too many stages
-            if TILE_SIZE_M * (config.num_stages - 1) < BLOCK_SIZE * TILE_SIZE_M:
+            if config.num_stages - 1 > BLOCK_SIZE:
+                print(f"Pruned 4: {config}")
                 continue
         else:
             # 1. Prune configs that use more registers and shared memory than necessary
