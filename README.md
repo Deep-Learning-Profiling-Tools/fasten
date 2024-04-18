@@ -7,7 +7,7 @@ Fasten implements a simple interface, making it easy to integrate with existing 
 
 ## Installation
 
-### Build instructions
+### Build Instructions
 
 Install pytorch nightly and triton nightly. We use relatively new triton features so old triton releases may crash.
 
