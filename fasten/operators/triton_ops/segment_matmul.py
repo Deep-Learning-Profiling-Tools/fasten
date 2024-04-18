@@ -226,7 +226,15 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
         if is_weight:
+            # 1. Prune too large tiles
             if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
+            # 2. Prune configs by shared memory usage
+            required_shared_memory = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * config.num_stages * element_size
+            if required_shared_memory > max_shared_memory:
+                continue
+            # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
+            if TILE_SIZE_K >= 256 and TILE_SIZE_N >= 256 and config.num_warps == 4:
                 continue
         else:
             # 1. Prune configs that use more registers and shared memory than necessary
