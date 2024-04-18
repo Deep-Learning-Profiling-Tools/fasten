@@ -7,7 +7,7 @@ import triton.language as tl
 from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
 from triton.runtime import driver
 
-from ...utils import GlobalConfig, binning, torch_dtype_to_triton_dtype
+from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
 from .kernels.matmul import _dynamic_matmul, _general_matmul, _reg_matmul
 
 
@@ -239,6 +239,8 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             if TILE_SIZE_N >= 256 and TILE_SIZE_M >= 256 and config.num_warps == 4:
                 continue
         pruned_configs.append(config)
+    if is_debug():
+        print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}")
     return pruned_configs
 
 
