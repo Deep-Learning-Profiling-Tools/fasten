@@ -210,6 +210,8 @@ def _contiguous_block(
 
 
 def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: bool, **kwargs):
+    if not GlobalConfig.with_autotune:
+        return [configs[0]]
     pruned_configs = []
     element_size = named_args['input'].element_size()
     N = named_args['N']

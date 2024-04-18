@@ -9,6 +9,7 @@ from .operators import torch_ops, triton_ops
 
 class GlobalConfig:
     deterministic: bool = True
+    with_autotune: bool = True
     with_perf_model: bool = False
     binning_interval: float = 32.0
 
