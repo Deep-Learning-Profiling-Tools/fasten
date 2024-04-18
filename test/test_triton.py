@@ -3,7 +3,9 @@ import torch
 
 from fasten import compact_tensor_types
 from fasten.operators import triton_ops
-from fasten.utils import TilingMethod
+from fasten.utils import GlobalConfig, TilingMethod
+
+GlobalConfig.with_autotune = False
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
