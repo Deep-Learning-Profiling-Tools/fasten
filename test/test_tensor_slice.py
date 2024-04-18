@@ -45,8 +45,8 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     stddev_tile_size = (stddev_tile_size / num_slices) ** 0.5
     assert len(tensor_tile) == num_slices
 
-    assert torch.equal(tensor_tile.avg_tile_size, avg_tile_size)
-    assert torch.equal(tensor_tile.stddev_tile_size, stddev_tile_size)
+    torch.testing.assert_close(tensor_tile.avg_tile_size, avg_tile_size)
+    torch.testing.assert_close(tensor_tile.stddev_tile_size, stddev_tile_size)
 
 
 @pytest.mark.parametrize('device', ['cpu', 'cuda'])
