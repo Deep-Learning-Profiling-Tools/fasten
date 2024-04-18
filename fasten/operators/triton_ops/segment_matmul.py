@@ -680,7 +680,7 @@ def split_matmul_kernel(
 
 
 def _generate_reduce_configs():
-    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    tile_sizes = [32, 64]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
     num_warps_options = [4, 8]  # Possible values for num_warps
     num_stages_options = [1]  # Possible values for num_stages
 
