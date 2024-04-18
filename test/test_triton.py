@@ -3,7 +3,9 @@ import torch
 
 from fasten import compact_tensor_types
 from fasten.operators import triton_ops
-from fasten.utils import TilingMethod
+from fasten.utils import GlobalConfig, TilingMethod
+
+GlobalConfig.with_autotune = False
 
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
@@ -30,7 +32,8 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices,
                                                    tile_size=tile_size, out_dtype=torch.float32,
                                                    num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
-                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                   avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
         output_ref = torch.zeros((M, K), dtype=dtype, device="cuda")
         for i in range(len(tensor_slice)):
             s = tensor_slice.get_slice_from_index(i, is_tensor=False)
@@ -42,11 +45,13 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         output = triton_ops.segment_matmul_forward(tensor_slice.data, other, input_tiles.slices, input_slices=tensor_slice.slices,
                                                    tile_size=tile_size, num_blocks=input_tiles.num_blocks,
                                                    block_size=input_tiles.block_size,
-                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                   deterministic=deterministic, slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                   avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
         output_grad = torch.randn_like(output)
         grad_input = triton_ops.segment_matmul_backward_input(tensor_slice.data, output_grad, other, input_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
-                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size)
+                                                              num_blocks=input_tiles.num_blocks, block_size=input_tiles.block_size,
+                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
         grad_tiles = tensor_slice.tiling(tile_size, method=TilingMethod.DEFAULT, block_size=block_size)
         grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, grad_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
