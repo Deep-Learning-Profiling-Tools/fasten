@@ -236,7 +236,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             if required_shared_memory > max_shared_memory:
                 continue
             # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
-            if TILE_SIZE_N >= 256 and TILE_SIZE_M >= 256 and config.num_warps == 4:
+            if TILE_SIZE_N >= 256 and TILE_SIZE_K >= 128 and config.num_warps == 4:
                 continue
         pruned_configs.append(config)
     if is_debug():
