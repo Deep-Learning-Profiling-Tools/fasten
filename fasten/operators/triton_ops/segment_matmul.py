@@ -581,7 +581,7 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K', 'TILE_SIZE_M'],
+    key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
     },
@@ -599,6 +599,8 @@ def split_matmul_kernel(
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    stddev_tile_size_m,
+    avg_tile_size_m,
     out_dtype: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
     NUM_TILES: tl.constexpr,
@@ -688,7 +690,7 @@ def _generate_reduce_configs():
 @triton.autotune(
     configs=_generate_reduce_configs(),
     key=['N', 'K'],
-    rep=10,
+    rep=1,
     use_cuda_graph=True
 )
 @triton.jit
@@ -785,8 +787,8 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
         grad_output.stride(0), grad_output.stride(1),
         other.stride(0), other.stride(2), other.stride(1),  # swap K and N
         grad_input.stride(0), grad_input.stride(1),
-        binning(stddev_tile_size),
-        binning(avg_tile_size),
+        binning(stddev_tile_size, 32),
+        binning(avg_tile_size, 16),
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
@@ -832,6 +834,8 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         input.stride(0), input.stride(1),
         grad_output.stride(0), grad_output.stride(1),
         grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+        binning(stddev_tile_size, 32),
+        binning(avg_tile_size, 16),
         out_dtype=out_dtype,
         NUM_BLOCKS=num_blocks,
         NUM_TILES=num_tiles,
