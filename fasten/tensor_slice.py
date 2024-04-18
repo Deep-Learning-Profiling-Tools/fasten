@@ -222,7 +222,7 @@ class TensorSlice:
         best_op = getattr(torch_ops, op_name)
         benchmarkig_stream = torch.cuda.Stream()
         with torch.cuda.stream(benchmarkig_stream):
-            best_ms = do_bench_cudagraph(lambda: best_op(*args, input_slices=self.slices), warmup=1, rep=1)
+            best_ms = do_bench_cudagraph(lambda: best_op(*args, input_slices=self.slices), rep=1)
         best_config = BestConfig()
         key = scheduler.get_key(*args)
         debug = is_debug()
@@ -248,7 +248,6 @@ class TensorSlice:
                                 avg_tile_size=input_tiles.avg_tile_size,
                                 stddev_tile_size=input_tiles.stddev_tile_size
                             ),
-                            warmup=1,
                             rep=1,
                         )
                 _do_bench(input_tiles, tile_size)  # warmup
