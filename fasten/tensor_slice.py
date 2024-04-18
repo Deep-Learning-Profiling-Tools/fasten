@@ -173,7 +173,7 @@ class TensorSlice:
         return torch.mean((self._slices[:, 3] - self._slices[:, 2]).float()).item()
 
     def _get_stddev_tile_size(self) -> float:
-        return torch.std((self._slices[:, 3] - self._slices[:, 2]).float()).item()
+        return torch.std((self._slices[:, 3] - self._slices[:, 2]).float(), correction=0.0).item()
 
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
