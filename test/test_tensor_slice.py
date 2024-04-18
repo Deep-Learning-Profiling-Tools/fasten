@@ -40,11 +40,11 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     # calculate stddev tile size
     stddev_tile_size = 0
     for i in range(len(tensor_tile)):
-        start = tensor_tile.get_slice_from_index(i, is_tensor=False).start
-        end = tensor_tile.get_slice_from_index(i, is_tensor=False).stop
-        stddev_tile_size += ((end - start) - avg_tile_size) ** 2
+        slice = tensor_tile.get_slice_from_index(i, is_tensor=False)
+        stddev_tile_size += ((slice.stop - slice.start) - avg_tile_size) ** 2
     stddev_tile_size = (stddev_tile_size / num_slices) ** 0.5
     assert len(tensor_tile) == num_slices
+
     assert torch.equal(tensor_tile.avg_tile_size, avg_tile_size)
     assert torch.equal(tensor_tile.stddev_tile_size, stddev_tile_size)
 
