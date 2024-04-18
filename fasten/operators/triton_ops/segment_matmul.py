@@ -586,6 +586,7 @@ def _split_noncontiguous_block(
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
     },
     use_cuda_graph=True,
+    rep=30,
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,

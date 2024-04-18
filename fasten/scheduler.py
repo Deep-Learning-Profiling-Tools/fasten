@@ -162,7 +162,12 @@ def _init_segment_matmul_backward_other_scheduler():
         return (input.size(1), other.size(2), GlobalConfig.deterministic)  # (K, N)
 
     def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
-        return True
+        tile_size, tiling_method, block_size = config
+        avg_tile_size = input_tiles.avg_tile_size
+        if avg_tile_size > tile_size * (block_size + 1) or tile_size * (block_size - 1) > avg_tile_size:
+            # Too small tile or too large tile should be pruned
+            return True
+        return False
 
     # Only default tiling method is supported
     return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8], prune=prune)
