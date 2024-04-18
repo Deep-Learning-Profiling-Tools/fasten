@@ -239,7 +239,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
                 continue
             # 4. Prune K dimension by only eliminating the following three cases:
             # Not register blocking, too many stages, or too few stages
-            if TILE_SIZE_K != K and TILE_SIZE_K * (config.num_stages - 1) > K and TILE_SIZE_K * (config.num_stages + 1) < K:
+            if TILE_SIZE_K != K and (TILE_SIZE_K * (config.num_stages - 1) > K or TILE_SIZE_K * (config.num_stages + 1) < K):
                 continue
         pruned_configs.append(config)
     if is_debug():
