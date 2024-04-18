@@ -41,7 +41,7 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     stddev_tile_size = 0
     for i in range(len(tensor_tile)):
         start = tensor_tile.get_slice_from_index(i, is_tensor=False).start
-        end = tensor_tile.get_slice_from_index(i, is_tensor=False).end
+        end = tensor_tile.get_slice_from_index(i, is_tensor=False).stop
         stddev_tile_size += ((end - start) - avg_tile_size) ** 2
     stddev_tile_size = (stddev_tile_size / num_slices) ** 0.5
     assert len(tensor_tile) == num_slices
