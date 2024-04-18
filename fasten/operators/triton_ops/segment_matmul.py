@@ -240,7 +240,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
                 continue
         pruned_configs.append(config)
     if is_debug():
-        print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}")
+        print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}, is_weight={is_weight}")
     return pruned_configs
 
 
