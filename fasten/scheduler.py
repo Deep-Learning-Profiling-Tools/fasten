@@ -163,8 +163,9 @@ def _init_segment_matmul_backward_other_scheduler():
 
     def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
-        avg_tile_size = input_tiles.avg_tile_size
-        if avg_tile_size > tile_size * (block_size + 1) or tile_size * (block_size - 1) > avg_tile_size:
+        largest_tile_size = torch.max(input_tiles[:, 3] - input_tiles[:, 2]).item()
+        smallest_tile_size = torch.min(input_tiles[:, 3] - input_tiles[:, 2]).item()
+        if smallest_tile_size > tile_size * (block_size + 1) or tile_size * (block_size - 1) > largest_tile_size:
             # Too small tile or too large tile should be pruned
             return True
         return False
