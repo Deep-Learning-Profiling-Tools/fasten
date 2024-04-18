@@ -4,17 +4,14 @@ import torch
 import triton
 from dataclasses import asdict, dataclass, field
 
-from .utils import TilingMethod
+from .utils import GlobalConfig, TilingMethod
 
 
-class GlobalConfig:
-    deterministic: bool = True
-
-
-# TODO: Merge best config into input_tiles
 @dataclass
 class BestConfig:
     tile_size: int = None  # the maximum size of each tile
+    avg_tile_size: float = None  # the average size of each tile
+    stddev_tile_size: float = None  # the standard deviation of tile size
     block_size: int = None  # the number of tiles belong to a block, -1: dynamic block size
     num_blocks: int = None  # number of blocks that group the tiles
     input_tiles: torch.Tensor = None

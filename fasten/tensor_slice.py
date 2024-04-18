@@ -50,6 +50,8 @@ class TensorSlice:
         self._tiling_method = tiling_method
         self._contiguous_ratio = self._get_contiguous_ratio()
         self._slice_tile_mapping = self._get_slice_tile_mapping()
+        self._stddev_tile_size = self._get_stddev_tile_size()
+        self._avg_tile_size = self._get_avg_tile_size()
 
     def _init_mappings(self):
         if not hasattr(self, '_type_slice_dict'):
@@ -110,6 +112,14 @@ class TensorSlice:
     def slice_tile_mapping(self):
         return self._slice_tile_mapping
 
+    @property
+    def avg_tile_size(self):
+        return self._avg_tile_size
+
+    @property
+    def stddev_tile_size(self):
+        return self._stddev_tile_size
+
     def get_slice_from_type(self, type: int, is_tensor: bool = True):
         '''
             Get the slice of the original tensor from the type.
@@ -159,6 +169,12 @@ class TensorSlice:
         else:
             return None
 
+    def _get_avg_tile_size(self) -> float:
+        return torch.mean((self._slices[:, 3] - self._slices[:, 2]).float()).item()
+
+    def _get_stddev_tile_size(self) -> float:
+        return torch.std((self._slices[:, 3] - self._slices[:, 2]).float(), correction=0.0).item()
+
     def _get_contiguous_ratio(self) -> float:
         return torch.sum(self.slices[:, 4] == 0).item() / float(self.num_blocks)
 
@@ -173,7 +189,8 @@ class TensorSlice:
         self._cache[op_name][key] = entry
 
     def tiling(self, tile_size: int = Scheduler.default_tile_size, block_size: int = Scheduler.default_block_size, method: TilingMethod = Scheduler.default_tiling_method):
-        assert tile_size > 0
+        if tile_size <= 0:
+            raise ValueError(f'Invalid tile size {tile_size}')
         slices = self._slices.tolist()
         num_blocks = None
         if method == TilingMethod.DEFAULT:
@@ -224,29 +241,34 @@ class TensorSlice:
                         block_size=input_tiles.block_size,
                         tile_size=tile_size,
                         slice_tile_mapping=input_tiles.slice_tile_mapping,
+                        avg_tile_size=input_tiles.avg_tile_size,
+                        stddev_tile_size=input_tiles.stddev_tile_size
                     ),
                     warmup=1,
                     rep=1,
                 )
                 if debug:
-                    print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}')
+                    print(f"op_name={op_name}, tile_size={tile_size}, block_size={block_size}, avg_tile_size={input_tiles.avg_tile_size}, "
+                          f"stddev_tile_size={input_tiles.stddev_tile_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}")
                 if scheduler.record:
                     scheduler.record(input_tiles.slices, key, config, ms)
                 if ms < best_ms:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping)
+                                                                              slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
         if debug:
-            print(f'best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, contiguous_ratio={best_config.contiguous_ratio}')
+            print(f"best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, "
+                  f"avg_tile_size={input_tiles.avg_tile_size}, stddev_tile_size={input_tiles.stddev_tile_size}")
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
         return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                               slice_tile_mapping=input_tiles.slice_tile_mapping), getattr(triton_ops, op_name)
+                               slice_tile_mapping=input_tiles.slice_tile_mapping, avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size), getattr(triton_ops, op_name)
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,

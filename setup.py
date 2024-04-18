@@ -1,5 +1,12 @@
 # Always prefer setuptools over distutils
+import os
+
 from setuptools import find_packages, setup
+
+ci_only = os.environ.get("CI_ONLY", False)
+pkgs = ['pytest', 'flake8', 'autopep8', 'isort', 'pre-commit', 'pytest']
+if not ci_only:
+    pkgs += ['pyg-nightly', 'pyg-lib@git+https://github.com/pyg-team/pyg-lib.git'],
 
 setup(
     name='fasten',  # Required
@@ -18,7 +25,7 @@ setup(
     packages=find_packages(),  # Required
 
     python_requires='>=3.6, <4',
-    install_requires=['pytest', 'flake8', 'autopep8', 'isort', 'pre-commit', 'pytest'],
+    install_requires=pkgs,
     include_package_data=True,
     long_description_content_type='text/markdown'
 )
