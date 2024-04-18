@@ -39,7 +39,7 @@ def test_tiling_default(tile_size: int, block_size: int, device: str):
     avg_tile_size = 128 / num_slices
     # calculate stddev tile size
     stddev_tile_size = 0
-    for i in len(tensor_tile):
+    for i in range(len(tensor_tile)):
         start = tensor_tile.get_slice_from_index(i, is_tensor=False)[2]
         end = tensor_tile.get_slice_from_index(i, is_tensor=False)[3]
         stddev_tile_size += ((end - start) - avg_tile_size) ** 2
