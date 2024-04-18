@@ -166,11 +166,15 @@ def _init_segment_matmul_backward_other_scheduler():
         stddev_tile_size = input_tiles.stddev_tile_size
         avg_tile_size = input_tiles.avg_tile_size
         num_slices = len(input_tiles)
-        if num_slices < 128 and block_size >= 2:
+        if num_slices < 100 and block_size >= 2:
             # 1. low parallelism
             return True
         if block_size != 1 and stddev_tile_size / avg_tile_size >= 0.5:
             # 2. low utilization
+            return True
+        print(tile_size, block_size, num_slices)
+        if block_size != 16 and num_slices >= 4000:
+            # 3. Too many slices
             return True
         return False
 
