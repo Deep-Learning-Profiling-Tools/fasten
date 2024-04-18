@@ -3,7 +3,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 from triton.runtime.autotuner import OutOfResources
-from triton.testing import do_bench
+from triton.testing import do_bench_cudagraph
 
 from .operators import torch_ops, triton_ops
 from .scheduler import BestConfig, CacheEntry, Scheduler, schedulers, tiling
@@ -220,7 +220,9 @@ class TensorSlice:
 
     def autotune(self, op_name: str, *args, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         best_op = getattr(torch_ops, op_name)
-        best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
+        benchmarkig_stream = torch.cuda.Stream()
+        with torch.cuda.stream(benchmarkig_stream):
+            best_ms = do_bench_cudagraph(lambda: best_op(*args, input_slices=self.slices), warmup=1, rep=1)
         best_config = BestConfig()
         key = scheduler.get_key(*args)
         debug = is_debug()
@@ -232,21 +234,25 @@ class TensorSlice:
             if scheduler.prune and scheduler.prune(input_tiles, key, config):
                 continue
             try:
-                ms = do_bench(
-                    lambda input_tiles=input_tiles, tile_size=tile_size: triton_op(
-                        *args,
-                        input_slices=self.slices,
-                        input_tiles=input_tiles.slices,
-                        num_blocks=input_tiles.num_blocks,
-                        block_size=input_tiles.block_size,
-                        tile_size=tile_size,
-                        slice_tile_mapping=input_tiles.slice_tile_mapping,
-                        avg_tile_size=input_tiles.avg_tile_size,
-                        stddev_tile_size=input_tiles.stddev_tile_size
-                    ),
-                    warmup=1,
-                    rep=1,
-                )
+                def _do_bench(input_tiles, tile_size):
+                    with torch.cuda.stream(benchmarkig_stream):
+                        return do_bench_cudagraph(
+                            lambda input_tiles=input_tiles, tile_size=tile_size: triton_op(
+                                *args,
+                                input_slices=self.slices,
+                                input_tiles=input_tiles.slices,
+                                num_blocks=input_tiles.num_blocks,
+                                block_size=input_tiles.block_size,
+                                tile_size=tile_size,
+                                slice_tile_mapping=input_tiles.slice_tile_mapping,
+                                avg_tile_size=input_tiles.avg_tile_size,
+                                stddev_tile_size=input_tiles.stddev_tile_size
+                            ),
+                            warmup=1,
+                            rep=1,
+                        )
+                _do_bench(input_tiles, tile_size)  # warmup
+                ms = _do_bench(input_tiles, tile_size)
                 if debug:
                     print(f"op_name={op_name}, tile_size={tile_size}, block_size={block_size}, avg_tile_size={input_tiles.avg_tile_size}, "
                           f"stddev_tile_size={input_tiles.stddev_tile_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}")
