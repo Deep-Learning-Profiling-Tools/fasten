@@ -25,8 +25,8 @@ parser.add_argument('--device', type=str, default='cpu',
                     choices=['cpu', 'cuda'])
 parser.add_argument('--mode', type=str, default='pyg',
                     choices=['pyg', 'fasten'])
-parser.add_argument('--example', type=str, default='dblp',
-                    choices=['dblp', 'freebase', 'aifb', 'am', 'bgs', 'mutag'])
+parser.add_argument('--example', type=str, default='DBLP',
+                    choices=['DBLP', 'Freebase', 'AIFB', 'AM', 'BGS', 'MUTAG'])
 parser.add_argument('--hidden_size', type=int, default=32)
 parser.add_argument('--profile', type=str, default='none',
                     choices=['none', 'profile', 'benchmark'])
@@ -37,7 +37,7 @@ if args.example == 'dblp':
     # We initialize conference node features with a single one-vector as feature:
     dataset = DBLP(path, transform=T.Constant(node_types='conference'))
     out_channels = 4  # 4 class labels
-elif args.example in ['aifb', 'am', 'bgs', 'mutag']:
+elif args.example in ['AIFB', 'AM', 'BGS', 'MUTAG']:
     path = osp.join(osp.dirname(osp.realpath(__file__)), '../../Entities')
     dataset = Entities(path, args.example, hetero=True)
     out_channels = dataset.num_classes
