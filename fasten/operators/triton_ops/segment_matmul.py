@@ -4,8 +4,7 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import (get_clock_rate_in_khz, get_dram_gbps,
-                                          get_max_tensorcore_tflops)
+from triton.ops.matmul_perf_model import get_clock_rate_in_khz, get_dram_gbps
 from triton.runtime import driver
 
 from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
@@ -290,9 +289,13 @@ def _weight_perf_model(
     capability = torch.cuda.get_device_capability(device)
     num_sm_map = {80: 108, 89: 128, 90: 114}
     threads_sm_map = {80: 2048, 89: 1536, 90: 2048}
+    max_tflops_map = {80: 156, 89: 82.58, 90: 989}
     cap = capability[0] * 10 + capability[1]
     if cap not in num_sm_map:
         # Unknown architecture
+        return 1.0
+    if input.dtype not in [torch.float32]:
+        # Only support TF32
         return 1.0
     # Parallel efficiency
     sms = num_sm_map[cap]
@@ -308,23 +311,22 @@ def _weight_perf_model(
     # Compute efficiency
     # 1. Compute
     ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
-    tensorcore_tflops = get_max_tensorcore_tflops(input.dtype, get_clock_rate_in_khz(), device)
-    print(tensorcore_tflops)
-    compute_ms = ops / tensorcore_tflops
-    # 3. Sync
-    estimated_sync_latency = 50 / get_clock_rate_in_khz()  # TODO: Fix
+    max_tflops = max_tflops_map[cap]
+    compute_us = ops / (max_tflops * 1e12 / 1e6)
+    # 2. Sync
+    estimated_sync_latency = 50.0 / get_clock_rate_in_khz()  # TODO: Fix
     num_iters = triton.cdiv(avg_tile_size_m, TILE_SIZE_M)
-    sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
+    sync_us = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size
     estimated_l2_bw = 5 * 1e3
-    store_ms = store_bytes / estimated_l2_bw
+    store_us = store_bytes / (estimated_l2_bw * 1e3 / 1e6)
     # 5. Load
     dram_bw = get_dram_gbps(device)
-    load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
-    load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
-    print(f"compute_ms: {compute_ms}, sync_ms: {sync_ms}, store_ms: {store_ms}, load_ms: {load_ms}")
-    compute_efficiency = compute_ms / (compute_ms + sync_ms + store_ms + load_ms)
+    load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
+    load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e3 / 1e6)
+    print(f"compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
+    compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
     # Only prune those with both low parallel and compute efficiency
     # Long indexing configurations have been pruned by blocking level pruning
     return min(1 - parallel_efficiency, 1 - compute_efficiency)
