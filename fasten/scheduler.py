@@ -127,7 +127,7 @@ def _init_segment_matmul_forward_scheduler():
     def get_key(input: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
-    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+    def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
         if tile_size >= 64 and block_size >= 4:
             # low cache utilization
@@ -144,7 +144,7 @@ def _init_segment_matmul_backward_input_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2))  # (K, N)
 
-    def prune(input_slices: torch.Tensor, key: Tuple, config: Tuple) -> bool:
+    def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
         tile_size, tiling_method, block_size = config
         if tile_size >= 64 and block_size >= 4:
             # low cache utilization
@@ -161,8 +161,24 @@ def _init_segment_matmul_backward_other_scheduler():
     def get_key(input: torch.Tensor, grad_output: torch.Tensor, other: torch.Tensor):
         return (input.size(1), other.size(2), GlobalConfig.deterministic)  # (K, N)
 
+    def prune(input_tiles, key: Tuple, config: Tuple) -> bool:
+        tile_size, tiling_method, block_size = config
+        stddev_tile_size = input_tiles.stddev_tile_size
+        avg_tile_size = input_tiles.avg_tile_size
+        num_slices = len(input_tiles)
+        if num_slices < 100 and block_size >= 2:
+            # 1. low parallelism
+            return True
+        if block_size != 1 and stddev_tile_size / avg_tile_size >= 0.5:
+            # 2. low utilization
+            return True
+        if block_size != 16 and num_slices >= 400:
+            # 3. Too many slices
+            return True
+        return False
+
     # Only default tiling method is supported
-    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8])
+    return Scheduler(get_key=get_key, tile_sizes=[32, 64, 128], tiling_methods=[TilingMethod.DEFAULT], block_sizes=[1, 2, 4, 8, 16], prune=prune)
 
 
 schedulers = {

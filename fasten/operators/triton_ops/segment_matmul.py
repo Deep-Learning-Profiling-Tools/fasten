@@ -217,6 +217,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     N = named_args['N']
     K = named_args['K']
     TILE_SIZE_M = kwargs['TILE_SIZE_M']
+    BLOCK_SIZE = kwargs['BLOCK_SIZE']
     device = torch.cuda.current_device()
     min_tile_size_n = min([config.kwargs['TILE_SIZE_N'] for config in configs])
     min_tile_size_k = min([config.kwargs['TILE_SIZE_K'] for config in configs])
@@ -226,7 +227,19 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
         TILE_SIZE_N = kw['TILE_SIZE_N']
         TILE_SIZE_K = kw['TILE_SIZE_K']
         if is_weight:
+            # 1. Prune too large tiles
             if ((TILE_SIZE_K > K and TILE_SIZE_K != min_tile_size_k) or (TILE_SIZE_N > N and TILE_SIZE_N != min_tile_size_n)):
+                continue
+            # 2. Prune configs by shared memory usage
+            required_shared_memory = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * config.num_stages * element_size
+            if required_shared_memory > max_shared_memory:
+                continue
+            # 3. Prune configs with large tile sizes and small warp sizes (register pressure)
+            if TILE_SIZE_K >= 256 and TILE_SIZE_N >= 256 and config.num_warps == 4:
+                continue
+            # 4. Prune M dimension by only eliminating the following three cases:
+            # Too many stages
+            if config.num_stages - 1 > BLOCK_SIZE:
                 continue
         else:
             # 1. Prune configs that use more registers and shared memory than necessary
@@ -581,11 +594,12 @@ def _split_noncontiguous_block(
 @triton.autotune(
     configs=_generate_configs(),
     reset_to_zero=['grad_other'],
-    key=['N', 'K', 'TILE_SIZE_M'],
+    key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
     },
     use_cuda_graph=True,
+    rep=20,  # If longer than 20ms, one iteration might be accurate enough
 )
 @triton.heuristics({
     'EVEN_K': lambda args: args['K'] % args['TILE_SIZE_K'] == 0,
@@ -599,6 +613,8 @@ def split_matmul_kernel(
     stride_input_m, stride_input_k,
     stride_grad_output_m, stride_grad_output_n,
     stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
+    stddev_tile_size_m,
+    avg_tile_size_m,
     out_dtype: tl.constexpr,
     NUM_BLOCKS: tl.constexpr,
     NUM_TILES: tl.constexpr,
@@ -669,7 +685,7 @@ def split_matmul_kernel(
 
 
 def _generate_reduce_configs():
-    tile_sizes = [32, 64, 128]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
+    tile_sizes = [32, 64]  # Possible values for TILE_SIZE_N and TILE_SIZE_K
     num_warps_options = [4, 8]  # Possible values for num_warps
     num_stages_options = [1]  # Possible values for num_stages
 
@@ -688,7 +704,7 @@ def _generate_reduce_configs():
 @triton.autotune(
     configs=_generate_reduce_configs(),
     key=['N', 'K'],
-    rep=10,
+    rep=1,
     use_cuda_graph=True
 )
 @triton.jit
@@ -785,8 +801,8 @@ def segment_matmul_backward_input(input: torch.Tensor, grad_output: torch.Tensor
         grad_output.stride(0), grad_output.stride(1),
         other.stride(0), other.stride(2), other.stride(1),  # swap K and N
         grad_input.stride(0), grad_input.stride(1),
-        binning(stddev_tile_size),
-        binning(avg_tile_size),
+        binning(stddev_tile_size, 32),
+        binning(avg_tile_size, 16),
         NUM_TILES=num_tiles,
         NUM_BLOCKS=num_blocks,
         BLOCK_SIZE=block_size,
@@ -832,6 +848,8 @@ def segment_matmul_backward_other(input: torch.Tensor, grad_output: torch.Tensor
         input.stride(0), input.stride(1),
         grad_output.stride(0), grad_output.stride(1),
         grad_other.stride(0), grad_other.stride(1), grad_other.stride(2),
+        binning(stddev_tile_size, 32),
+        binning(avg_tile_size, 16),
         out_dtype=out_dtype,
         NUM_BLOCKS=num_blocks,
         NUM_TILES=num_tiles,

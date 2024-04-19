@@ -220,7 +220,7 @@ class TensorSlice:
 
     def autotune(self, op_name: str, *args, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         best_op = getattr(torch_ops, op_name)
-        best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=5, rep=10)
+        best_ms = do_bench(lambda: best_op(*args, input_slices=self.slices), warmup=1, rep=1)
         best_config = BestConfig()
         key = scheduler.get_key(*args)
         debug = is_debug()
@@ -229,24 +229,27 @@ class TensorSlice:
         for config in scheduler.get_configs():
             tile_size, tiling_method, block_size = config
             input_tiles = self.tiling(tile_size, method=tiling_method, block_size=block_size)
-            if scheduler.prune and scheduler.prune(input_tiles.slices, key, config):
+            if scheduler.prune and scheduler.prune(input_tiles, key, config):
                 continue
             try:
-                ms = do_bench(
-                    lambda input_tiles=input_tiles, tile_size=tile_size: triton_op(
-                        *args,
-                        input_slices=self.slices,
-                        input_tiles=input_tiles.slices,
-                        num_blocks=input_tiles.num_blocks,
-                        block_size=input_tiles.block_size,
-                        tile_size=tile_size,
-                        slice_tile_mapping=input_tiles.slice_tile_mapping,
-                        avg_tile_size=input_tiles.avg_tile_size,
-                        stddev_tile_size=input_tiles.stddev_tile_size
-                    ),
-                    warmup=1,
-                    rep=1,
-                )
+                def _do_bench(input_tiles, tile_size):
+                    return do_bench(
+                        lambda input_tiles=input_tiles, tile_size=tile_size: triton_op(
+                            *args,
+                            input_slices=self.slices,
+                            input_tiles=input_tiles.slices,
+                            num_blocks=input_tiles.num_blocks,
+                            block_size=input_tiles.block_size,
+                            tile_size=tile_size,
+                            slice_tile_mapping=input_tiles.slice_tile_mapping,
+                            avg_tile_size=input_tiles.avg_tile_size,
+                            stddev_tile_size=input_tiles.stddev_tile_size
+                        ),
+                        warmup=1,
+                        rep=1,
+                    )
+                _do_bench(input_tiles, tile_size)  # warmup
+                ms = _do_bench(input_tiles, tile_size)
                 if debug:
                     print(f"op_name={op_name}, tile_size={tile_size}, block_size={block_size}, avg_tile_size={input_tiles.avg_tile_size}, "
                           f"stddev_tile_size={input_tiles.stddev_tile_size}, contiguous_ratio={input_tiles.contiguous_ratio}, ms={ms}")
@@ -262,7 +265,7 @@ class TensorSlice:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
         if debug:
             print(f"best op_name={op_name}, tile_size={best_config.tile_size}, block_size={best_config.block_size}, "
-                  f"avg_tile_size={input_tiles.avg_tile_size}, stddev_tile_size={input_tiles.stddev_tile_size}")
+                  f"avg_tile_size={best_config.avg_tile_size}, stddev_tile_size={best_config.stddev_tile_size}")
         return best_ms, best_config, best_op
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
