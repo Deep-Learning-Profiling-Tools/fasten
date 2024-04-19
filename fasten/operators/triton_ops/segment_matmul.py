@@ -314,10 +314,9 @@ def _weight_perf_model(
     max_tflops = max_tflops_map[cap]
     compute_us = ops / (max_tflops * 1e12 / 1e6)
     # 2. Sync
-    estimated_sync_latency = 50.0 / get_clock_rate_in_khz()  # TODO: Fix
-    num_iters = triton.cdiv(avg_tile_size_m, TILE_SIZE_M)
-    sync_us = num_iters * estimated_sync_latency * (num_warps // 32)
-    print(num_iters, estimated_sync_latency, num_warps // 32)
+    estimated_sync_latency = 100.0 / get_clock_rate_in_khz()  # TODO: Fix
+    sync_us = BLOCK_SIZE * estimated_sync_latency * (num_warps // 32)
+    print(BLOCK_SIZE, estimated_sync_latency, get_clock_rate_in_khz, num_warps // 32)
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size
     estimated_l2_bw = 5 * 1e3
