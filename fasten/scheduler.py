@@ -186,7 +186,3 @@ schedulers = {
     'segment_matmul_backward_input': _init_segment_matmul_backward_input_scheduler(),
     'segment_matmul_backward_other': _init_segment_matmul_backward_other_scheduler(),
 }
-
-
-def set_deterministic(deterministic: bool):
-    GlobalConfig.deterministic = deterministic

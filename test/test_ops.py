@@ -7,7 +7,6 @@ import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
-from fasten.scheduler import set_deterministic
 from fasten.stats import get_matmul_bytes, get_matmul_flops
 from fasten.utils import GlobalConfig
 
@@ -65,7 +64,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
         pytest.skip("Triton does not support CPU inference")
     if device == "cpu" and dtype == "float16":
         pytest.skip("CPU does not support FP16")
-    set_deterministic(deterministic)
+    GlobalConfig.deterministic = deterministic
     T = len(slices)
     dtype = getattr(torch, dtype)
     M = sum([s.stop - s.start for s in slices])
