@@ -307,7 +307,8 @@ def _weight_perf_model(
     num_ctas = NUM_BLOCKS * triton.cdiv(N, TILE_SIZE_N) * triton.cdiv(K, TILE_SIZE_K)
     ctas_per_wave = num_ctas_per_sm * sms
     parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
-    print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}, num_sms: {sms}")
+    if is_debug():
+        print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}, num_sms: {sms}")
     # Compute efficiency
     # 1. Compute
     ops = (TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2) * NUM_BLOCKS
@@ -324,8 +325,9 @@ def _weight_perf_model(
     dram_bw = get_dram_gbps(device)
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
     load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e9 / 1e6)
-    print(f"compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
+    if is_debug():
+        print(f"Compute efficiency: {compute_efficiency}, compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
     # Only prune those with both low parallel and compute efficiency
     # Long indexing configurations have been pruned by blocking level pruning
     return min(1 - parallel_efficiency, 1 - compute_efficiency)
