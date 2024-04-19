@@ -307,9 +307,9 @@ def _weight_perf_model(
     print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}, num_sms: {sms}")
     # Compute efficiency
     # 1. Compute
-    dtype = input.dtype()
     ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
-    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
+    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, input.dtype)
+    print(tensorcore_tflops)
     compute_ms = ops / tensorcore_tflops
     # 3. Sync
     estimated_sync_latency = 50 / get_clock_rate_in_khz()  # TODO: Fix
