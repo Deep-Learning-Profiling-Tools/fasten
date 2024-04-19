@@ -5,7 +5,7 @@ import torch
 import triton
 import triton.language as tl
 from triton.ops.matmul_perf_model import (get_clock_rate_in_khz, get_dram_gbps,
-                                          get_tensorcore_tflops)
+                                          get_max_tensorcore_tflops)
 from triton.runtime import driver
 
 from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
@@ -308,7 +308,7 @@ def _weight_perf_model(
     # Compute efficiency
     # 1. Compute
     ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
-    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, input.dtype)
+    tensorcore_tflops = get_max_tensorcore_tflops(input.dtype, get_clock_rate_in_khz(), device)
     print(tensorcore_tflops)
     compute_ms = ops / tensorcore_tflops
     # 3. Sync
