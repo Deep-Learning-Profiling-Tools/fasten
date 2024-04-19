@@ -314,8 +314,8 @@ def _weight_perf_model(
     max_tflops = max_tflops_map[cap]
     compute_us = ops / (max_tflops * 1e12 / 1e6)
     # 2. Sync
-    estimated_sync_latency = 1  # TODO: Fix
-    sync_us = BLOCK_SIZE * estimated_sync_latency * (num_warps // 32)
+    estimated_sync_latency = 0.01  # TODO: Fix
+    sync_us = BLOCK_SIZE * estimated_sync_latency * tl.cdiv(num_warps, 4)
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size * NUM_BLOCKS
     estimated_l2_bw = 5 * 1e3
@@ -323,7 +323,7 @@ def _weight_perf_model(
     # 5. Load
     dram_bw = get_dram_gbps(device)
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
-    load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e12 / 1e6)
+    load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e9 / 1e6)
     print(f"compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
     # Only prune those with both low parallel and compute efficiency
