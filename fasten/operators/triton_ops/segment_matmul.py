@@ -310,13 +310,14 @@ def _weight_perf_model(
     print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}, num_sms: {sms}")
     # Compute efficiency
     # 1. Compute
-    ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
+    ops = (TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2) * NUM_BLOCKS
     max_tflops = max_tflops_map[cap]
     compute_us = ops / (max_tflops * 1e12 / 1e6)
     # 2. Sync
     estimated_sync_latency = 50.0 / get_clock_rate_in_khz()  # TODO: Fix
     num_iters = triton.cdiv(avg_tile_size_m, TILE_SIZE_M)
-    sync_us = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
+    sync_us = num_iters * estimated_sync_latency * (num_warps // 32)
+    print(num_iters, estimated_sync_latency, num_warps // 32)
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size
     estimated_l2_bw = 5 * 1e3
