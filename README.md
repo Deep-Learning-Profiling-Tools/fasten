@@ -84,8 +84,6 @@ pytest -vs test_op.py::test_perf
 
 ## Publication
 
-```
-Keren Zhou, Karthik Ganapathi Subramanian, Po-Hsun Lin, Matthias Fey, Binqian Yin, and Jiajia Li. 2024.
+- Keren Zhou, Karthik Ganapathi Subramanian, Po-Hsun Lin, Matthias Fey, Binqian Yin, and Jiajia Li. 2024.
 FASTEN: Fast GPU-accelerated Segmented Matrix Multiplication for Heterogeneous Graph Neural Networks.
 In Proceedings of the 38th ACM International Conference on Supercomputing (ICS’24), June 4–7, 2024, Kyoto, Japan.
-```
