@@ -126,7 +126,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
-    GlobalConfig.with_autotune = True
+    GlobalConfig.with_perf_model = True
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
