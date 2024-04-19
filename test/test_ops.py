@@ -9,6 +9,7 @@ from utils import read_slices_from_csv
 from fasten import Engine, compact_tensor_types, ops
 from fasten.scheduler import set_deterministic
 from fasten.stats import get_matmul_bytes, get_matmul_flops
+from fasten.utils import GlobalConfig
 
 slices0 = [slice(0, 63), slice(63, 90), slice(90, 128)]
 slices1 = [slice(0, 127), slice(127, 256), slice(256, 257), slice(257, 512)]
@@ -125,6 +126,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
+    GlobalConfig.with_autotune = True
     T = len(slices)
     M = sum([s.stop - s.start for s in slices])
     dtype = getattr(torch, dtype)
