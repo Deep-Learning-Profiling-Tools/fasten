@@ -316,7 +316,7 @@ def _weight_perf_model(
     compute_us = ops / (max_tflops * 1e12 / 1e6)
     # 2. Sync
     estimated_sync_latency = 0.01  # TODO: Fix
-    sync_us = BLOCK_SIZE * estimated_sync_latency * tl.cdiv(num_warps, 4)
+    sync_us = BLOCK_SIZE * estimated_sync_latency * triton.cdiv(num_warps, 4)
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size * NUM_BLOCKS
     estimated_l2_bw = 5 * 1e3
