@@ -281,8 +281,6 @@ def _backward_weight_perf_model(
         TILE_SIZE_M: tl.constexpr,
         TILE_SIZE_N: tl.constexpr,
         TILE_SIZE_K: tl.constexpr,
-        EVEN_K: tl.constexpr,
-        EVEN_N: tl.constexpr,
         DETERMINISTIC: tl.constexpr,
         num_stages: int, num_warps: int, **kwargs):
     if not GlobalConfig.with_perf_model:
