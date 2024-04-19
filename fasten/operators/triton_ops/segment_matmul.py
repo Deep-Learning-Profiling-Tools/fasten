@@ -265,7 +265,7 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     return pruned_configs
 
 
-def _backward_weight_perf_model(
+def _weight_perf_model(
         input, input_slices, input_tiles,
         grad_output, grad_other, grad_other_tiles,
         K, N,
@@ -303,7 +303,7 @@ def _backward_weight_perf_model(
     num_ctas = NUM_BLOCKS * triton.cdiv(N, TILE_SIZE_N) * triton.cdiv(K, TILE_SIZE_K)
     ctas_per_wave = num_ctas_per_sm * sms
     parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
-    print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}")
+    print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}")
     return 1 - parallel_efficiency
     # Compute efficiency
     # 1. Compute
@@ -599,7 +599,7 @@ def _split_noncontiguous_block(
     key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
-        'perf_model': _backward_weight_perf_model,  # Only apply perf model to weight as forward is fast
+        'perf_model': _weight_perf_model,  # Only apply perf model to weight as forward is fast
         'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
     use_cuda_graph=True,
