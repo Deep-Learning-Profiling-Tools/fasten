@@ -4,7 +4,8 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
-# from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
+from triton.ops.matmul_perf_model import (get_clock_rate_in_khz, get_dram_gbps,
+                                          get_tensorcore_tflops)
 from triton.runtime import driver
 
 from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
@@ -304,32 +305,29 @@ def _weight_perf_model(
     ctas_per_wave = num_ctas_per_sm * sms
     parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
     print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}, max_shared_memory: {max_shared_memory}, required_shared_memory: {required_shared_memory}, threads_per_sm: {threads_per_sm}, num_warps: {num_warps}, num_sms: {sms}")
-    return 1 - parallel_efficiency
     # Compute efficiency
     # 1. Compute
-    # dtype = input.dtype()
-    # ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
-    # tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
-    # compute_ms = ops / tensorcore_tflops
-    # 2. Indexing
-    # estimated_l2_latency = 200  # TODO: Fix
-    # estimated_gld_throughput = 500  # TODO: Fix
-    # indexing_ms = NUM_BLOCKS * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
+    dtype = input.dtype()
+    ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
+    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
+    compute_ms = ops / tensorcore_tflops
     # 3. Sync
-    # estimated_sync_latency = 50  # TODO: Fix
-    # num_iters = triton.cdiv(K, TILE_SIZE_K)
-    # sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
+    estimated_sync_latency = 50 / get_clock_rate_in_khz()  # TODO: Fix
+    num_iters = triton.cdiv(avg_tile_size_m, TILE_SIZE_M)
+    sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
     # 4. Store
-    # store_bytes = TILE_SIZE_M * TILE_SIZE_N * element_size
-    # estimated_l2_bw = 5 * 1e3
-    # store_ms = store_bytes / estimated_l2_bw
+    store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size
+    estimated_l2_bw = 5 * 1e3
+    store_ms = store_bytes / estimated_l2_bw
     # 5. Load
-    # dram_bw = get_dram_gbps(device)
-    # load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
-    # load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
-    # compute_efficiency = compute_ms / (compute_ms + indexing_ms + sync_ms + store_ms + load_ms)
+    dram_bw = get_dram_gbps(device)
+    load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
+    load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
+    print(f"compute_ms: {compute_ms}, sync_ms: {sync_ms}, store_ms: {store_ms}, load_ms: {load_ms}")
+    compute_efficiency = compute_ms / (compute_ms + sync_ms + store_ms + load_ms)
     # Only prune those with both low parallel and compute efficiency
-    # return min(1 - parallel_efficiency, 1 - compute_efficiency)
+    # Long indexing configurations have been pruned by blocking level pruning
+    return min(1 - parallel_efficiency, 1 - compute_efficiency)
 
 
 def _generate_configs():
