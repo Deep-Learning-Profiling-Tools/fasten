@@ -4,7 +4,6 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import get_dram_gbps
 from triton.runtime import driver
 
 from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
@@ -290,6 +289,7 @@ def _weight_perf_model(
     num_sm_map = {80: 108, 89: 128, 90: 114}
     threads_sm_map = {80: 2048, 89: 1536, 90: 2048}
     max_tflops_map = {80: 156, 89: 82.58, 90: 989}
+    max_bw_map = {80: 2.0, 89: 1.0, 90: 3.3}
     cap = capability[0] * 10 + capability[1]
     if cap not in num_sm_map:
         # Unknown architecture
@@ -322,10 +322,9 @@ def _weight_perf_model(
     estimated_l2_bw = 5 * 1e3
     store_us = store_bytes / (estimated_l2_bw * 1e12 / 1e6)
     # 5. Load
-    dram_bw = get_dram_gbps(device)
-    print(dram_bw)
+    dram_bw = max_bw_map[cap]
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
-    load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e9 / 1e6)
+    load_us = load_bytes / ((0.5 * dram_bw + 0.5 * estimated_l2_bw) * 1e12 / 1e6)
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
     if is_debug():
         print(f"Compute efficiency: {compute_efficiency}, compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
