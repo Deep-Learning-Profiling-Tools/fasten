@@ -323,6 +323,7 @@ def _weight_perf_model(
     store_us = store_bytes / (estimated_l2_bw * 1e12 / 1e6)
     # 5. Load
     dram_bw = get_dram_gbps(device)
+    print(dram_bw)
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
     load_us = load_bytes / ((0.1 * dram_bw + 0.9 * estimated_l2_bw) * 1e9 / 1e6)
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
