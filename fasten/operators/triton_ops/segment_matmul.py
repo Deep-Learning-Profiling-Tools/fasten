@@ -4,7 +4,7 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
-from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
+# from triton.ops.matmul_perf_model import get_dram_gbps, get_tensorcore_tflops
 from triton.runtime import driver
 
 from ...utils import GlobalConfig, binning, is_debug, torch_dtype_to_triton_dtype
@@ -265,22 +265,26 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
     return pruned_configs
 
 
-def _perf_model(
-        input, input_tiles, other, output,
+def _backward_weight_perf_model(
+        input, input_slices, input_tiles,
+        grad_output, grad_other, grad_other_tiles,
         K, N,
         stride_input_m, stride_input_k,
-        stride_other_b, stride_other_k, stride_other_n,
-        stride_output_m, stride_output_n,
+        stride_grad_output_m, stride_grad_output_n,
+        stride_grad_other_b, stride_grad_other_k, stride_grad_other_n,
         stddev_tile_size_m,
         avg_tile_size_m,
         out_dtype: tl.constexpr,
-        NUM_TILES: tl.constexpr,
         NUM_BLOCKS: tl.constexpr,
+        NUM_TILES: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
         TILE_SIZE_M: tl.constexpr,
         TILE_SIZE_N: tl.constexpr,
         TILE_SIZE_K: tl.constexpr,
-        num_stages, num_warps, **kwargs):
+        EVEN_K: tl.constexpr,
+        EVEN_N: tl.constexpr,
+        DETERMINISTIC: tl.constexpr,
+        num_stages: int, num_warps: int, **kwargs):
     if not GlobalConfig.with_perf_model:
         return 1.0
     device = torch.cuda.current_device()
@@ -295,37 +299,39 @@ def _perf_model(
     sms = num_sm_map[cap]
     threads_per_sm = threads_sm_map[cap]
     element_size = input.element_size()
-    dtype = input.dtype()
     max_shared_memory = driver.active.utils.get_device_properties(device)["max_shared_mem"]
-    required_shared_memory = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * num_stages * element_size
+    required_shared_memory = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * num_stages * element_size
     num_ctas_per_sm = min(max_shared_memory // required_shared_memory, threads_per_sm // (num_warps * 32))
-    num_ctas = NUM_BLOCKS * triton.cdiv(N, TILE_SIZE_N)
+    num_ctas = NUM_BLOCKS * triton.cdiv(N, TILE_SIZE_N) * triton.cdiv(K, TILE_SIZE_K)
     ctas_per_wave = num_ctas_per_sm * sms
     parallel_efficiency = num_ctas / (triton.cdiv(num_ctas, ctas_per_wave) * ctas_per_wave)
+    print(f"Parallel efficiency: {parallel_efficiency}, num_ctas: {num_ctas}, num_ctas_per_sm: {num_ctas_per_sm}")
+    return 1 - parallel_efficiency
     # Compute efficiency
     # 1. Compute
-    ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
-    tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
-    compute_ms = ops / tensorcore_tflops
+    # dtype = input.dtype()
+    # ops = TILE_SIZE_M * TILE_SIZE_N * TILE_SIZE_K * 2
+    # tensorcore_tflops = get_tensorcore_tflops(device, num_ctas, num_warps, dtype)
+    # compute_ms = ops / tensorcore_tflops
     # 2. Indexing
-    estimated_l2_latency = 200  # TODO: Fix
-    estimated_gld_throughput = 500  # TODO: Fix
-    indexing_ms = NUM_BLOCKS * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
+    # estimated_l2_latency = 200  # TODO: Fix
+    # estimated_gld_throughput = 500  # TODO: Fix
+    # indexing_ms = NUM_BLOCKS * (0.1 * estimated_gld_throughput * 1e-3 + 0.9 * estimated_l2_latency * 1e-3)
     # 3. Sync
-    estimated_sync_latency = 50  # TODO: Fix
-    num_iters = triton.cdiv(K, TILE_SIZE_K)
-    sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
+    # estimated_sync_latency = 50  # TODO: Fix
+    # num_iters = triton.cdiv(K, TILE_SIZE_K)
+    # sync_ms = num_iters * estimated_sync_latency * 1e-3 * num_warps // 32
     # 4. Store
-    store_bytes = TILE_SIZE_M * TILE_SIZE_N * element_size
-    estimated_l2_bw = 5 * 1e3
-    store_ms = store_bytes / estimated_l2_bw
+    # store_bytes = TILE_SIZE_M * TILE_SIZE_N * element_size
+    # estimated_l2_bw = 5 * 1e3
+    # store_ms = store_bytes / estimated_l2_bw
     # 5. Load
-    dram_bw = get_dram_gbps(device)
-    load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
-    load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
-    compute_efficiency = compute_ms / (compute_ms + indexing_ms + sync_ms + store_ms + load_ms)
+    # dram_bw = get_dram_gbps(device)
+    # load_bytes = (TILE_SIZE_M + TILE_SIZE_N) * TILE_SIZE_K * element_size * BLOCK_SIZE
+    # load_ms = load_bytes / (0.6 * dram_bw + 0.4 * estimated_l2_bw)
+    # compute_efficiency = compute_ms / (compute_ms + indexing_ms + sync_ms + store_ms + load_ms)
     # Only prune those with both low parallel and compute efficiency
-    return min(1 - parallel_efficiency, 1 - compute_efficiency)
+    # return min(1 - parallel_efficiency, 1 - compute_efficiency)
 
 
 def _generate_configs():
@@ -350,8 +356,6 @@ def _generate_configs():
     key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],  # Tune for each N and K, high latency
     prune_configs_by={
         'early_config_prune': functools.partial(_early_config_prune, is_weight=False),
-        'perf_model': _perf_model,
-        'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
     rep=10,
     use_cuda_graph=True,
@@ -596,7 +600,9 @@ def _split_noncontiguous_block(
     reset_to_zero=['grad_other'],
     key=['N', 'K', 'stddev_tile_size_m', 'avg_tile_size_m'],
     prune_configs_by={
-        'early_config_prune': functools.partial(_early_config_prune, is_weight=True)
+        'early_config_prune': functools.partial(_early_config_prune, is_weight=True),
+        'perf_model': _backward_weight_perf_model,  # Only apply perf model to weight as forward is fast
+        'top_k': 100 if GlobalConfig.with_perf_model else 10,
     },
     use_cuda_graph=True,
     rep=20,  # If longer than 20ms, one iteration might be accurate enough
