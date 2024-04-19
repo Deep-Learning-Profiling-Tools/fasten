@@ -323,7 +323,7 @@ def _weight_perf_model(
     store_us = store_bytes / (estimated_l2_bw * 1e12 / 1e6)
     # 5. Load
     dram_bw = max_bw_map[cap]
-    load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * TILE_SIZE_M * element_size * BLOCK_SIZE
+    load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * avg_tile_size_m * element_size * BLOCK_SIZE
     load_us = load_bytes / ((0.5 * dram_bw + 0.5 * estimated_l2_bw) * 1e12 / 1e6)
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
     if is_debug():
