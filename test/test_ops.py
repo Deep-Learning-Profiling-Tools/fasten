@@ -3,7 +3,6 @@ from typing import Callable
 import pyg_lib
 import pytest
 import torch
-import triton
 from utils import read_slices_from_csv
 
 from fasten import Engine, compact_tensor_types, ops
@@ -197,7 +196,8 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 @pytest.mark.parametrize("K", [32, 128])
 @pytest.mark.parametrize("T", list(range(100, 2000, 200)))
 @pytest.mark.parametrize("M", [1000000])
-def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, benchmark_results: Callable[[], None]):
+def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, session: Callable[[], None]):
+    import triton.profiler as proton
     if engine == "pyg" and dtype == "float16":
         pytest.skip("pyg_lib does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -256,20 +256,11 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
             pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
 
     fn = pyg_fn if engine == "pyg" else fasten_fn
-    ms = triton.testing.do_bench(fn, grad_to_none=[data, other])
-    tflops = get_matmul_flops(tensor_slice, other) / 1e12
-    tbytes = get_matmul_bytes(tensor_slice, other) / 1e12
-    print(f"{phase} ms {ms} tflops {tflops} tbytes {tbytes}")
-
-    benchmark_results.append({
-        "engine": engine,
-        "phase": phase,
-        "T": T,
-        "K": K,
-        "ms": ms,
-        "tflops": tflops,
-        "tbytes": tbytes,
-    })
+    fn()
+    flops = get_matmul_flops(tensor_slice, other)
+    bytes = get_matmul_bytes(tensor_slice, other)
+    with proton.scope(f"random_{phase}_{engine}_{K}_{T}", metrics={"flops32": flops, "bytes": bytes}):
+        fn()
 
 
 def test_cache():
