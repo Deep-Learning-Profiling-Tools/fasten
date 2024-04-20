@@ -323,7 +323,7 @@ def _weight_perf_model(
     store_us = store_bytes / (estimated_l2_bw * 1e12 / 1e6)
     # 5. Load
     dram_bw = max_bw_map[cap]
-    cache_util = min(1 - triton.cdiv(K, TILE_SIZE_K), 1 - triton.cdiv(N, TILE_SIZE_N))
+    cache_util = min(1 - TILE_SIZE_K / K, 1 - TILE_SIZE_N / N)
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * avg_tile_size_m * element_size * BLOCK_SIZE
     load_us = load_bytes / (((1 - cache_util) * dram_bw + cache_util * estimated_l2_bw) * 1e12 / 1e6)
     compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
