@@ -259,6 +259,8 @@ def _early_config_prune(configs: triton.Config, named_args: dict, is_weight: boo
             if TILE_SIZE_K == K and K >= 128:
                 continue
         pruned_configs.append(config)
+    if len(pruned_configs) == 0:
+        pruned_configs.append(configs[0])
     if is_debug():
         print(f"Number of configs pruned from {len(configs)} to {len(pruned_configs)}, is_weight={is_weight}")
     return pruned_configs
