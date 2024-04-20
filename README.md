@@ -1,9 +1,9 @@
 # FASTEN: A Library of *Fast Segment* Operators
 
 ## Introduction
-FASTEN is a library aimed at speeding up Heterogeneous Graph Neural Network (HGNN) workloads.   
+FASTEN is a library aimed at speeding up Heterogeneous Graph Neural Network (HGNN) workloads.
 The current version of FASTEN focuses on improving segmented matrix multiplication, a critical operator in HGNNs.
-Fasten implements a simple interface, making it easy to integrate with existing graph library PyG with minimal changes.  
+Fasten implements a simple interface, making it easy to integrate with existing graph library PyG with minimal changes.
 
 ## Installation
 
@@ -22,7 +22,7 @@ pip install .
 ```
 
 ## Examples
-FASTEN's segment matrix multiplication operator has been integrated with various HGNN architecture such as *RGCN*, *HGT*, *RGAT* in PyG.  
+FASTEN's segment matrix multiplication operator has been integrated with various HGNN architecture such as *RGCN*, *HGT*, *RGAT* in PyG.
 Examples on how to run the examples can be found below:
 
 ### GNN Examples
