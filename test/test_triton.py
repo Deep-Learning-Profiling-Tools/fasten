@@ -56,7 +56,8 @@ def test_segment_matmul(M: int, K: int, T: int, phase: str, dtype: str, tile_siz
         grad_other = triton_ops.segment_matmul_backward_other(tensor_slice.data, output_grad, other, grad_tiles.slices,
                                                               input_slices=tensor_slice.slices, tile_size=tile_size,
                                                               num_blocks=grad_tiles.num_blocks, block_size=grad_tiles.block_size,
-                                                              deterministic=deterministic, slice_tile_mapping=grad_tiles.slice_tile_mapping)
+                                                              deterministic=deterministic, slice_tile_mapping=grad_tiles.slice_tile_mapping,
+                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
         sorted_data_grad_ref = torch.zeros_like(data, dtype=dtype)
         other_grad_ref = torch.zeros_like(other, dtype=dtype)
         for i in range(len(tensor_slice)):
