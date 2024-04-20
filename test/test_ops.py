@@ -64,6 +64,7 @@ def test_segment_matmul(K: int, slices: list, engine: Engine, device: str, phase
         pytest.skip("Triton does not support CPU inference")
     if device == "cpu" and dtype == "float16":
         pytest.skip("CPU does not support FP16")
+    GlobalConfig.with_autotune = False
     GlobalConfig.deterministic = deterministic
     T = len(slices)
     dtype = getattr(torch, dtype)
