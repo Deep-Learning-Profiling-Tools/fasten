@@ -315,7 +315,7 @@ def _weight_perf_model(
     max_tflops = max_tflops_map[cap]
     compute_us = ops / (max_tflops * 1e12 / 1e6)
     # 2. Sync
-    estimated_sync_latency = 0.01  # TODO: Fix
+    estimated_sync_latency = 0.001  # TODO: Fix
     sync_us = BLOCK_SIZE * estimated_sync_latency * triton.cdiv(num_warps, 4)
     # 4. Store
     store_bytes = TILE_SIZE_K * TILE_SIZE_N * element_size
@@ -326,7 +326,7 @@ def _weight_perf_model(
     cache_util = min(1 - TILE_SIZE_K / K, 1 - TILE_SIZE_N / N)
     load_bytes = (TILE_SIZE_K + TILE_SIZE_N) * avg_tile_size_m * element_size * BLOCK_SIZE
     load_us = load_bytes / (((1 - cache_util) * dram_bw + cache_util * estimated_l2_bw) * 1e12 / 1e6)
-    compute_efficiency = compute_us / max(compute_us, sync_us + store_us + load_us)
+    compute_efficiency = compute_us / (max(compute_us, store_us + load_us) + sync_us)
     if is_debug():
         print(f"Compute efficiency: {compute_efficiency}, compute_ms: {compute_us}, sync_ms: {sync_us}, store_ms: {store_us}, load_ms: {load_us}")
     # Only prune those with both low parallel and compute efficiency
