@@ -16,8 +16,10 @@ pip install --pre torch torchvision torchaudio --index-url https://download.pyto
 pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 ```
 
+You may need to build triton from source before *proton* is distributed with triton's pip wheel.
+
 ```bash
-git clone https://github.com/Jokeren/fasten.git && cd fasten
+git clone https://github.com/Deep-Learning-Profiling-Tools/fasten.git && cd fasten
 pip install .
 ```
 
