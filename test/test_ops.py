@@ -91,13 +91,13 @@ def session():
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32"])
-@pytest.mark.parametrize("engine", ["fasten", "pyg", "torch"])
+@pytest.mark.parametrize("engine", ["fasten", "cutlass", "torch"])
 @pytest.mark.parametrize("slices_name, slices", slices_obj)
 @pytest.mark.parametrize("K", [32, 64, 128])
 def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: list, K: int, session: Callable[[], None]) -> None:
     import triton.profiler as proton
-    if engine == "pyg" and dtype == "float16":
-        pytest.skip("pyg_lib does not support float16")
+    if engine == "cutlass" and dtype == "float16":
+        pytest.skip("pyg_lib cutlass does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
     GlobalConfig.with_perf_model = True
     T = len(slices)
@@ -123,14 +123,14 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
     # warmup and get output
     if engine == "fasten":
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
-    elif engine == "pyg":
+    elif engine == "cutlass":
         output = pyg_lib.ops.segment_matmul(data, ptr, other)
     elif engine == "torch":
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.TORCH)
 
     if phase == "backward":
         grad = torch.randn_like(output)
-        if engine == "pyg":
+        if engine == "cutlass":
             grouped_data = []
             grouped_grad = []
             for s in slices:
@@ -144,7 +144,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
         else:  # phase == "backward"
             output.backward(grad, retain_graph=True)
 
-    def pyg_fn():
+    def cutlass_fn():
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
@@ -155,7 +155,7 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
             # [M, K]^T * [M, N] = [K, N]
             pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
 
-    fn = pyg_fn if engine == "pyg" else fasten_fn
+    fn = cutlass_fn if engine == "pyg" else fasten_fn
 
     # warmup again to trigger backward kernels
     fn()
@@ -166,14 +166,14 @@ def test_perf(phase: str, dtype: str, engine: str, slices_name: str, slices: lis
 
 @pytest.mark.parametrize("phase", ["forward", "backward"])
 @pytest.mark.parametrize("dtype", ["float32"])
-@pytest.mark.parametrize("engine", ["fasten", "pyg"])
+@pytest.mark.parametrize("engine", ["fasten", "cutlass"])
 @pytest.mark.parametrize("K", [32, 128])
 @pytest.mark.parametrize("T", list(range(100, 2000, 200)))
 @pytest.mark.parametrize("M", [1000000])
 def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int, session: Callable[[], None]):
     import triton.profiler as proton
-    if engine == "pyg" and dtype == "float16":
-        pytest.skip("pyg_lib does not support float16")
+    if engine == "cutlass" and dtype == "float16":
+        pytest.skip("pyg_lib cutlass does not support float16")
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.random.manual_seed(T)
     dtype = getattr(torch, dtype)
@@ -196,14 +196,14 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     # warmup and get output
     if engine == "fasten":
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.AUTO)
-    elif engine == "pyg":
+    elif engine == "cutlass":
         output = pyg_lib.ops.segment_matmul(data, ptr, other)
     elif engine == "torch":
         output = ops.fasten_segment_matmul(data, other, tensor_slice, Engine.TORCH)
 
     if phase == "backward":
         grad = torch.randn_like(output)
-        if engine == "pyg":
+        if engine == "cutlass":
             grouped_data = []
             grouped_grad = []
             for i in range(len(tensor_slice)):
@@ -218,7 +218,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
         else:  # phase == "backward"
             output.backward(grad, retain_graph=True)
 
-    def pyg_fn():
+    def cutlass_fn():
         if phase == "forward":
             pyg_lib.ops.segment_matmul(data, ptr, other)
         else:  # phase == "backward"
@@ -229,7 +229,7 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
             # [M, K]^T * [M, N] = [K, N]
             pyg_lib.ops.grouped_matmul(grouped_data, grouped_grad)
 
-    fn = pyg_fn if engine == "pyg" else fasten_fn
+    fn = cutlass_fn if engine == "pyg" else fasten_fn
     fn()
     flops = get_matmul_flops(tensor_slice, other)
     bytes = get_matmul_bytes(tensor_slice, other)
