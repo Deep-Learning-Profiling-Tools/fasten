@@ -7,7 +7,7 @@ from triton.testing import do_bench
 
 from .operators import torch_ops, triton_ops
 from .scheduler import BestConfig, CacheEntry, Scheduler, schedulers, tiling
-from .utils import TilingMethod, is_debug
+from .utils import GlobalConfig, TilingMethod, is_debug
 
 
 class TensorSlice:
@@ -259,7 +259,8 @@ class TensorSlice:
                     best_ms, best_op, best_config = ms, triton_op, BestConfig(tile_size=tile_size, block_size=input_tiles.block_size,
                                                                               input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
                                                                               slice_tile_mapping=input_tiles.slice_tile_mapping,
-                                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size)
+                                                                              avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size,
+                                                                              deterministic=GlobalConfig.deterministic)
             except OutOfResources:
                 if debug:
                     print(f'op_name={op_name}, tile_size={tile_size}, block_size={block_size}, out of resources')
@@ -270,8 +271,9 @@ class TensorSlice:
 
     def use_defaults(self, op_name: str, scheduler: Scheduler) -> Tuple[float, BestConfig, callable]:
         input_tiles = self.tiling(scheduler.default_tile_size, method=scheduler.default_tiling_method, block_size=scheduler.default_block_size)
-        return 0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
-                               slice_tile_mapping=input_tiles.slice_tile_mapping, avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size), getattr(triton_ops, op_name)
+        return (0.0, BestConfig(tile_size=scheduler.default_tile_size, block_size=scheduler.default_block_size, input_tiles=input_tiles.slices, num_blocks=input_tiles.num_blocks,
+                                slice_tile_mapping=input_tiles.slice_tile_mapping, avg_tile_size=input_tiles.avg_tile_size, stddev_tile_size=input_tiles.stddev_tile_size, deterministic=GlobalConfig.deterministic),
+                getattr(triton_ops, op_name))
 
 
 def compact_tensor_types(data: torch.Tensor, types: torch.Tensor, *,
