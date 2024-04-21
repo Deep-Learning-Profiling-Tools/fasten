@@ -232,8 +232,9 @@ def test_perf_random(phase: str, dtype: str, engine: str, K: int, T: int, M: int
     fn = pyg_fn if engine == "pyg" else fasten_fn
     fn()
     flops = get_matmul_flops(tensor_slice, other)
+    flops = 2 * flops if phase == "backward" else flops
     bytes = get_matmul_bytes(tensor_slice, other)
-    with proton.scope(f"random_{phase}_{engine}_{K}_{T}", metrics={"flops32": flops, "bytes": bytes}):
+    with proton.scope(f"random_{phase}_{engine}_{K}_{T}", metrics={"flops": flops, "bytes": bytes}):
         fn()
 
 
