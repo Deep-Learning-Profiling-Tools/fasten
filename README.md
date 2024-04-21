@@ -46,9 +46,9 @@ python rgat.py --device cuda --mode fasten --dataset AIFB
 cd examples/rgcn
 # Without fasten
 # Available datasets are: DBLP, Freebase, AIFB, MUTAG, BGS, AM
-python rgcn.py --device cuda --dataset DBLP
+python rgcn.py --device cuda --example DBLP
 # With fasten
-python rgat.py --device cuda --mode fasten --dataset DBLP
+python rgat.py --device cuda --mode fasten --example DBLP
 ```
 
 - RGAT
