@@ -6,7 +6,7 @@ The current version of Fasten focuses on improving segmented matrix multiplicati
 Fasten implements a simple interface, making it easy to integrate with existing graph library PyG with minimal changes.
 Fasten achieved an average speedup of 5.71$\times$ and 2.46$\times$ in operator-wise benchmarks compared to CUTLASS and cuBLAS, respectively
 
-### Fasten vs CUTLASS (no autotune)
+### Fasten vs CUTLASS
 
 ![figure9_fasten_vs_cutlass(pyg)](https://github.com/Deep-Learning-Profiling-Tools/fasten/assets/2306281/d88fab7c-a331-4978-9157-08e448afcce5)
 
