@@ -1,10 +1,11 @@
 # Fasten: A Library of *Fast Segment* Operators
 
 ## Introduction
+
 Fasten is a library aimed at speeding up Heterogeneous Graph Neural Network (HGNN) workloads.
 The current version of Fasten focuses on improving segmented matrix multiplication, a critical operator in HGNNs.
 Fasten implements a simple interface, making it easy to integrate with existing graph library PyG with minimal changes.
-Fasten achieved an average speedup of 5.71$\times$ and 2.46$\times$ in operator-wise benchmarks compared to CUTLASS and cuBLAS, respectively
+Fasten achieved an average speedup of 5.71x and 2.46x in operator-wise benchmarks compared to CUTLASS and cuBLAS, respectively
 
 ### Fasten vs CUTLASS
 
@@ -33,6 +34,7 @@ pip install .
 ```
 
 ## Examples
+
 Fasten's segment matrix multiplication operator has been integrated with various HGNN architecture such as *RGCN*, *HGT*, *RGAT* in PyG.
 Examples on how to run the examples can be found below:
 
@@ -89,6 +91,7 @@ pytest -vs test_op.py::test_perf
 - NVIDIA GPUs (Compute Capability 7.0+)
 
 ### Software requirements
+
 - Pytorch >=2.2.0
 - Triton >=3.0.0
 - PyG >=2.6.0
