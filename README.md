@@ -5,7 +5,7 @@
 Fasten is a library aimed at speeding up Heterogeneous Graph Neural Network (HGNN) workloads.
 The current version of Fasten focuses on improving segmented matrix multiplication, a critical operator in HGNNs.
 Fasten implements a simple interface, making it easy to integrate with existing graph library PyG with minimal changes.
-Fasten achieved an average speedup of 5.71x and 2.46x in operator-wise benchmarks compared to CUTLASS and cuBLAS, respectively
+Fasten achieved an average speedup of 13.65x and 4.72x in operator-wise benchmarks compared to CUTLASS and cuBLAS, respectively
 
 ### Fasten vs CUTLASS
 
